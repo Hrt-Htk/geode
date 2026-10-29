@@ -1,0 +1,2 @@
+# Shell scripts are executed on Linux (and piped to remote bash): must stay LF.
+*.sh text eol=lf

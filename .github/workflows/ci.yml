@@ -1,0 +1,206 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+    # `edited` re-runs on PR-body changes (gate-evidence checkboxes);
+    # `ready_for_review` re-runs when a draft PR is marked ready; auto-ship then merges.
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+# Drafts run no job (#713): the local `deno task ci` gates every push. A newer
+# run for the same PR cancels the older one; pushes to main are never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  workflow-checks:
+    name: Workflow Checks
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine commit range
+        id: range
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "range=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "range=${{ github.event.before }}..${{ github.event.after }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check conventional commit format
+        run: |
+          RANGE="${{ steps.range.outputs.range }}"
+          BAD=$(git log --no-merges --format="%s" "$RANGE" | grep -cvE '^(feat|fix|chore|docs|refactor|test|perf|build|ci|style)(\(.+\))?: .+' || true)
+          if [ "$BAD" -gt 0 ]; then
+            echo "::error::$BAD commit(s) do not follow Conventional Commits format."
+            git log --no-merges --format="%s" "$RANGE" | grep -vE '^(feat|fix|chore|docs|refactor|test|perf|build|ci|style)(\(.+\))?: .+'
+            exit 1
+          fi
+
+      - name: Check branch naming (push only)
+        if: github.event_name == 'push'
+        run: |
+          BRANCH=$(echo "${{ github.ref }}" | sed 's|refs/heads/||')
+          if [ "$BRANCH" = "main" ]; then
+            echo "Skipping branch check for main"
+            exit 0
+          fi
+          if ! echo "$BRANCH" | grep -qE '^(feat|fix|chore|docs|refactor|test|perf|ci|build|style)/issue[0-9]+-.*'; then
+            echo "::error::Branch '$BRANCH' does not match type/issueN-description pattern."
+            exit 1
+          fi
+
+      - name: Check issue reference
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          RANGE="${{ steps.range.outputs.range }}"
+          COMMITS=$(git log --no-merges --format="%s %b" "$RANGE")
+          HAS_ISSUE=0
+          if echo "$COMMITS" | grep -qE '#[0-9]+'; then
+            HAS_ISSUE=1
+          fi
+          if echo "$PR_BODY" | grep -qE '#[0-9]+'; then
+            HAS_ISSUE=1
+          fi
+          # Exempt pure release-bump ranges: if every non-merge commit subject is a
+          # chore(release) commit, no issue reference is required.
+          NON_RELEASE=$(git log --no-merges --format="%s" "$RANGE" | grep -vE '^chore\(release\)' || true)
+          if [ -z "$(echo "$NON_RELEASE" | tr -d '[:space:]')" ]; then
+            HAS_ISSUE=1
+          fi
+          if [ "$HAS_ISSUE" -eq 0 ]; then
+            echo "::error::No issue reference (#[0-9]+) found in commits or PR body."
+            exit 1
+          fi
+
+      - name: Size limit warning
+        run: |
+          RANGE="${{ steps.range.outputs.range }}"
+          STATS=$(git diff --shortstat "$RANGE")
+          FILES=$(echo "$STATS" | grep -oE '[0-9]+ file' | grep -oE '[0-9]+' || true)
+          INSERTIONS=$(echo "$STATS" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || true)
+          DELETIONS=$(echo "$STATS" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || true)
+          FILES=${FILES:-0}
+          INSERTIONS=${INSERTIONS:-0}
+          DELETIONS=${DELETIONS:-0}
+          TOTAL_LINES=$((INSERTIONS + DELETIONS))
+          if [ "$FILES" -gt 10 ]; then
+            echo "::warning::PR touches $FILES files (soft limit: 10). Consider splitting."
+          fi
+          if [ "$TOTAL_LINES" -gt 300 ]; then
+            echo "::warning::PR changes $TOTAL_LINES lines (soft limit: 300). Consider splitting."
+          fi
+
+  gate-evidence:
+    # PR-only (#377): maps changed paths to the Done-table change classes and
+    # fails until the PR body ticks every required gate checkbox, and fails on
+    # docs drift (#646) unless the body carries `docs: unaffected - <reason>`.
+    # Reads the body from the GitHub event payload and the diff vs origin/main.
+    name: Gate evidence
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.x
+
+      - name: Check gate evidence
+        run: deno run -A scripts/check-gate-evidence.ts
+
+  secrets:
+    # gitleaks over the commits a PR adds (#642). Redacted output; no license
+    # key (personal-account repo) and no PR comment or SARIF artifact, so a
+    # fork PR with a read-only token still works.
+    name: Secret scan
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
+  deno-checks:
+    name: Deno checks
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.x
+
+      - name: Install npm deps
+        # Full tree from deno.lock: build:plugin needs libsodium-sumo, a
+        # transitive dep that --node-modules-dir=auto doesn't eagerly install.
+        run: deno install
+
+      - name: Type check (server + core)
+        run: deno check server/main.ts core/*.ts
+
+      - name: Setup Node
+        # tsc, eslint, jscpd and ts-unused-exports run from node_modules/.bin.
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build plugin
+        run: deno task build:plugin
+
+      - name: Standards (#377)
+        # Lint, plugin types, promise rules, unused exports vs the shrink-only
+        # baseline; duplication and LOC tripwires. Needs plugin/_generated.
+        run: deno task standards
+
+      - name: Test
+        # --no-check: `deno test` would type-check the whole graph, and sync
+        # tests transitively import the plugin, which carries out-of-scope
+        # Deno-strict-lib vs Obsidian friction (Uint8Array/BodyInit, etc.,
+        # #274 bucket 2). Runtime-critical types are covered by the server+core
+        # check above; the plugin's type gate is the esbuild build. This step
+        # exists to *run* the tests.
+        #
+        # --ignore=test/fuzz: the oracle fuzz suite is ~70% of total test time
+        # (~8.5 min) and is run deliberately via the geode-fuzz skill / quarantine
+        # model, not on every push. Keeps the per-push gate fast (~3.5 min).
+        #
+        # Shared with the local gate via `deno task test:ci` (see `deno task ci`)
+        # so local and CI cannot drift.
+        run: deno task test:ci
+
+      - name: Clean tree (#416)
+        # Build and tests must not leave untracked or modified files behind.
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Build/tests left the working tree dirty:"
+            git status --porcelain
+            exit 1
+          fi

@@ -1,0 +1,15 @@
+# Managed by Geode (deploy/install.sh) - edits here are overwritten on update.
+geode.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+	log {
+		output file /var/log/caddy/geode.log
+		format filter {
+			wrap json
+			fields {
+				request>headers>Sec-Websocket-Protocol delete
+				resp_headers>Sec-WebSocket-Protocol delete
+			}
+		}
+	}
+}

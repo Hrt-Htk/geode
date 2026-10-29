@@ -1,0 +1,70 @@
+# Runtime data: never commit
+data/
+*.db
+*.db-wal
+*.db-shm
+blobs/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+dist/
+*.tsbuildinfo
+
+# Plugin bundle output (built into vault, not into repo)
+plugin/main.js
+plugin-dist/
+
+# Node / Deno
+node_modules/
+.deno/
+
+# Agent / tooling scratch: .claude/skills/, settings, hooks, commands committed (#392)
+.claude/*
+!.claude/skills/
+.claude/skills/*/local.md
+!.claude/settings.json
+!.claude/hooks/
+!.claude/commands/
+.pi/
+.pi-sessions/
+.copilot-*
+.probe-*
+.vibe-wise/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Generated plugin files
+plugin/_generated/
+
+# Playwright artifacts
+test-results/
+playwright-report/
+# E2E screenshots: outside outputDir so runs never wipe each other's shots (#487)
+test/e2e/screenshots/
+.admin-token
+
+# Windows
+nul
+
+# Dev debris: temporary debugging artifacts
+*.png
+
+# Scratch / temporary work
+tmp/
+
+# #457 bench bundle (generated: deno run -A test/bench/build-bundle.ts)
+test/bench/crypto-bench.bundle.js

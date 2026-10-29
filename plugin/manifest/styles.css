@@ -1,0 +1,1739 @@
+/* Geode plugin styles */
+
+.geode-url-row,
+.geode-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.geode-url-row code,
+.geode-code-row code {
+  flex: 1;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.geode-error {
+  color: var(--text-error);
+  font-size: 0.9em;
+  margin: 4px 0;
+}
+
+/* Encryption-strength detail line under the dropdown (#441, #459). */
+.geode-strength-detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 0 0 var(--size-4-3);
+}
+
+.geode-warn {
+  color: var(--text-warning);
+}
+
+/* A long confirm question ("Delete 1,850 files on all devices?") must wrap on a phone
+   instead of ellipsizing; short titles stay on one line. */
+.geode-confirm .modal-title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Confirm dialog message: muted, readable, native look (#460) */
+.geode-confirm-modal p {
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+/* Forgot-passphrase device hint line (#440) */
+.geode-forgot-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 4px 0;
+}
+
+/* Collapsible settings sections (#134) */
+.geode-collapsible-heading,
+.geode-advanced-heading {
+  cursor: pointer;
+  user-select: none;
+}
+
+.geode-advanced-fields.geode-collapsed,
+.geode-section-fields.geode-collapsed {
+  display: none;
+}
+
+/* Sections hidden while the vault is locked (Devices, Trash) */
+.geode-hidden {
+  display: none;
+}
+
+.geode-section-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  margin-left: 4px;
+}
+
+.geode-section-chevron.geode-chevron-rotated {
+  transform: rotate(90deg);
+}
+
+/* Sync status dot (#134): Obsidian palette variables, no hardcoded colors */
+.geode-sync-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+.geode-sync-dot-green { background: var(--color-green); }
+.geode-sync-dot-blue { background: var(--color-blue); }
+.geode-sync-dot-orange { background: var(--color-orange); }
+.geode-sync-dot-red { background: var(--color-red); }
+.geode-sync-dot-grey { background: var(--text-faint); }
+.geode-sync-dot-hidden { display: none; }
+
+.geode-statusbar-clickable {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+/* Status bar color states */
+.geode-statusbar-ok { color: var(--text-success); }
+.geode-statusbar-syncing { color: var(--text-muted); }
+.geode-statusbar-error { color: var(--text-error); }
+.geode-statusbar-dirty { color: var(--text-warning); }
+.geode-statusbar-locked { color: var(--text-faint); }
+
+/* #443: pause-circle icon by pause age (grey 0-10 min, orange 10-30, red >30) */
+.geode-statusbar-paused-grey { color: var(--text-faint); }
+.geode-statusbar-paused-orange { color: var(--color-orange); }
+.geode-statusbar-paused-red { color: var(--color-red); }
+
+/* #432/#601: conflicts and a held mass delete are warnings, not errors: orange. */
+.geode-statusbar-conflict,
+.geode-statusbar-hold { color: var(--color-orange); }
+
+/* Degraded-sync error banner (settings): red name + warning icon, per the mockup */
+.geode-banner-name {
+  color: var(--text-error);
+}
+.geode-banner-icon {
+  margin-right: var(--size-4-2);
+}
+
+/* #443: pause banner name colour by pause age (grey 0-10 min, orange 10-30, red >30) */
+.geode-pause-banner-grey { color: var(--text-faint); }
+.geode-pause-banner-orange { color: var(--color-orange); }
+.geode-pause-banner-red { color: var(--color-red); }
+
+/* #443: conflicts sit on their own line under the paused copy, not appended */
+.geode-pause-conflicts {
+  margin-top: 4px;
+}
+
+/* Version warning banner icon (settings): amber for advisory, red for outdated */
+.geode-version-warning-icon {
+  color: var(--text-warning);
+  margin-left: var(--size-4-2);
+}
+.geode-version-warning-icon.mod-error {
+  color: var(--text-error);
+}
+
+/* Spinner animation */
+.geode-statusbar-spin > span > svg {
+  animation: geode-spin 1s linear infinite;
+}
+
+@keyframes geode-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* #453/#434: Logs section: details line, level tabs (activity tab style),
+   fixed-height scrollable monospace box, warn orange / error red (CSS vars). */
+.geode-log-details {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-log-tabs {
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-log-box {
+  height: 220px;
+  overflow-y: auto;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: var(--size-4-2);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  user-select: text;
+}
+
+.geode-log-line {
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.geode-log-warn { color: var(--text-warning); }
+.geode-log-error { color: var(--text-error); }
+
+/* Current-device row in the settings device panel: restrained native accent */
+.geode-device-current .setting-item-name {
+  color: var(--interactive-accent);
+  font-weight: var(--font-semibold);
+}
+
+/* Mobile status icon: sits in .view-actions next to the ⋮ menu */
+.geode-mobile-status {
+  /* inherits .clickable-icon .view-action styles from Obsidian */
+}
+
+.geode-mobile-status svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Mobile status color overrides: compound selectors beat .clickable-icon specificity. */
+.geode-mobile-status.geode-statusbar-ok { color: var(--text-success); }
+.geode-mobile-status.geode-statusbar-ok svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-syncing { color: var(--text-muted); }
+.geode-mobile-status.geode-statusbar-syncing svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-error { color: var(--text-error); }
+.geode-mobile-status.geode-statusbar-error svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-dirty { color: var(--text-warning); }
+.geode-mobile-status.geode-statusbar-dirty svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-locked { color: var(--text-faint); }
+.geode-mobile-status.geode-statusbar-locked svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-paused-grey { color: var(--text-faint); }
+.geode-mobile-status.geode-statusbar-paused-grey svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-paused-orange { color: var(--color-orange); }
+.geode-mobile-status.geode-statusbar-paused-orange svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-paused-red { color: var(--color-red); }
+.geode-mobile-status.geode-statusbar-paused-red svg { color: currentColor; }
+.geode-mobile-status.geode-statusbar-hold { color: var(--color-orange); }
+.geode-mobile-status.geode-statusbar-hold svg { color: currentColor; }
+
+/* Server storage row meter (#341/#553): two segments: this vault (accent) + the rest of the used space. */
+.geode-storage-meter {
+  width: 180px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: var(--background-secondary);
+  display: flex;
+  overflow: hidden;
+}
+
+.geode-storage-meter-vault {
+  background-color: var(--interactive-accent);
+}
+
+.geode-storage-meter-other {
+  background-color: var(--background-modifier-border);
+}
+
+.geode-storage-meter-warning .geode-storage-meter-vault {
+  background-color: var(--color-orange);
+}
+
+.geode-storage-meter-error .geode-storage-meter-vault {
+  background-color: var(--color-red);
+}
+
+.geode-storage-meter-disabled {
+  opacity: 0.5;
+}
+
+.geode-storage-meter-hidden {
+  display: none;
+}
+
+.geode-storage-text-warning {
+  color: var(--text-warning);
+}
+
+.geode-storage-text-error {
+  color: var(--text-error);
+}
+
+
+/* ── Devices view (#433/#447) ── */
+.geode-devices-modal {
+  --modal-width: 32rem;
+  --modal-height: 70vh;
+}
+
+.geode-device-list {
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.geode-device-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-3);
+  padding: var(--size-4-2);
+  border-radius: var(--radius-s);
+}
+
+.geode-device-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.geode-device-dot {
+  flex-shrink: 0;
+}
+
+.geode-device-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.geode-device-name {
+  font-size: var(--font-ui-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-device-desc {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-device-loading {
+  color: var(--text-muted);
+  padding: var(--size-4-3);
+}
+
+.geode-device-stale {
+  color: var(--text-warning);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-4-2);
+}
+
+.geode-device-only {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-4-1) var(--size-4-2) var(--size-4-2);
+}
+
+.geode-admin-token-modal .geode-admin-token-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: var(--size-4-3);
+}
+
+/* Phone: device names and status wrap; buttons move under the text. */
+.is-phone .geode-device-row {
+  flex-wrap: wrap;
+}
+
+.is-phone .geode-device-body {
+  flex: 1 1 calc(100% - 40px);
+}
+
+.is-phone .geode-device-body > div {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.is-phone .geode-device-body + button {
+  margin-inline-start: 28px;
+}
+
+/* #431: Sync activity modal (#448): a taller list surface like Obsidian's own
+   sync-log modal. Tabs + search pinned; the row list scrolls. */
+.geode-activity-modal {
+  --modal-width: 42rem;
+  --modal-height: 80vh;
+}
+
+.geode-activity-modal .search-input-container {
+  margin-bottom: var(--size-4-3);
+}
+
+.geode-activity-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--size-4-3);
+}
+
+.geode-activity-tab {
+  padding: var(--size-2-2) var(--size-4-2);
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.geode-activity-tab:hover {
+  background: var(--background-modifier-hover);
+}
+
+.geode-activity-tab.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: var(--font-semibold);
+}
+
+.geode-activity-scroll {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  margin-inline: calc(var(--size-4-2) * -1);
+  padding-inline: var(--size-4-2);
+}
+
+.geode-activity-header {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: var(--size-4-3) 0 var(--size-4-1);
+}
+
+.geode-activity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-3);
+  padding: var(--size-4-2);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.geode-activity-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.geode-activity-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.geode-activity-icon.mod-conflict {
+  color: var(--text-warning);
+}
+
+.geode-activity-icon.mod-error {
+  color: var(--text-error);
+}
+
+.geode-activity-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.geode-activity-name {
+  font-size: var(--font-ui-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-activity-desc {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-activity-time {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.geode-activity-time.mod-conflict {
+  color: var(--text-warning);
+}
+
+.geode-activity-time.mod-error {
+  color: var(--text-error);
+}
+
+.geode-activity-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-4-1);
+  padding: var(--size-4-8) var(--size-4-4);
+  text-align: center;
+}
+
+.geode-activity-empty-icon {
+  color: var(--text-faint);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-activity-empty-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.geode-activity-empty-title {
+  font-weight: var(--font-semibold);
+}
+
+.geode-no-matches {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-4-2) var(--size-4-2) 0;
+  text-align: left;
+}
+
+/* #522: sync status in the Done row: dot + one line of text, never pushing the button. */
+.geode-activity-status {
+  display: flex;
+  align-items: center;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.geode-activity-status > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geode-activity-status .geode-sync-dot {
+  flex-shrink: 0;
+}
+
+/* #522: phone: `.is-phone .setting-item` stacks natively (column), so order the
+   row's children to put the status line under the full-width Done. */
+body.is-phone .geode-activity-footer .setting-item-info {
+  order: 2;
+  margin-top: var(--size-4-2);
+}
+
+body.is-phone .geode-activity-footer .setting-item-control {
+  order: 1;
+}
+
+/* #431: desktop: fixed-height modal, tabs + search pinned, the list scrolls. */
+body:not(.is-phone) .geode-activity-modal {
+  height: min(var(--modal-height), var(--dialog-max-height));
+  overflow: hidden;
+}
+
+body:not(.is-phone) .geode-activity-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.geode-activity-modal .geode-activity-modal-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.geode-activity-modal .geode-activity-scroll {
+  min-height: 0;
+}
+
+/* ── Sync folders Manage modal (#342) ── */
+/* Fixed-size search modal: header + search + Done pinned, the folder tree
+   scrolls inside. The tree rows use the file explorer's own tree-item*
+   classes (styled by Obsidian's app.css); only the toggle slot, the off
+   state, and the partial badge need rules here. */
+.geode-folders-modal {
+  --modal-width: 32rem;
+  --modal-height: 70vh;
+}
+
+body:not(.is-phone) .geode-folders-modal {
+  height: min(var(--modal-height), var(--dialog-max-height));
+  overflow: hidden;
+}
+
+/* #432/#435: Conflicts modal (#449): one compact row per open conflict (file
+   name over its folder, type icon, Review + Open both) and the binary cards
+   (thumbnail, device, date; size), calm git-merge empty state. CSS variables
+   only, 4px grid. */
+.geode-conflicts-modal {
+  --modal-width: 34rem;
+  --modal-height: 70vh;
+}
+
+.geode-conflicts-modal .search-input-container {
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-conflicts-scroll {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  margin-inline: calc(var(--size-4-2) * -1);
+  padding-inline: var(--size-4-2);
+}
+
+.geode-conflict-row {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: var(--size-4-2) var(--size-4-3);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-conflict-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  min-width: 0;
+}
+
+.geode-conflict-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.geode-conflict-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.geode-conflict-name {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-conflict-folder {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-conflict-type {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.geode-conflict-thumb {
+  margin: 0 0 var(--size-2-1);
+}
+
+.geode-conflict-thumb img {
+  display: block;
+  max-width: 100%;
+  max-height: 110px;
+  object-fit: cover;
+  border-radius: var(--radius-s);
+}
+
+.geode-conflict-versions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+}
+
+.geode-conflict-version {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  padding: var(--size-4-2);
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  min-width: 0;
+}
+
+.geode-conflict-device {
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-conflict-meta {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-conflict-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+  flex-wrap: wrap;
+}
+
+.geode-conflict-actions button {
+  margin: 0;
+}
+
+.geode-conflict-subtle {
+  display: flex;
+  gap: var(--size-4-3);
+  margin-inline-start: auto;
+  font-size: var(--font-ui-smaller);
+}
+
+.geode-conflict-subtle a {
+  color: var(--text-muted);
+}
+
+/* #435: the review window: sized like the Version history window. The two
+   version names are the color key (accent for the original, cyan for the set
+   aside edit: neutral, never the red/green add/remove pair); a line only one
+   version has carries that color plus a margin bar at the same width. */
+.geode-conflict-review-modal {
+  --dialog-width: min(62rem, 80vw);
+  --geode-original-color: var(--text-accent);
+  --geode-conflict-color: var(--color-cyan);
+}
+
+/* The pastel ramp misses AA on white (cyan is about 2.3:1); these two light
+   theme colors reach 4.95:1 as text and as the margin bar. */
+.theme-light .geode-conflict-review-modal {
+  --geode-original-color: var(--color-purple);
+  --geode-conflict-color: var(--color-blue);
+}
+
+.geode-conflict-review-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.geode-conflict-key {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--size-4-3);
+  margin-bottom: var(--size-4-4);
+}
+
+.geode-conflict-key-item {
+  min-width: 0;
+  padding-inline-start: var(--size-4-2);
+  border-inline-start: 2px solid transparent;
+}
+
+.geode-conflict-key-item.mod-original {
+  border-inline-start-color: var(--geode-original-color);
+}
+
+.geode-conflict-key-item.mod-conflict {
+  border-inline-start-color: var(--geode-conflict-color);
+}
+
+.geode-conflict-key-label {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+}
+
+.geode-conflict-key-item.mod-original .geode-conflict-key-label {
+  color: var(--geode-original-color);
+}
+
+.geode-conflict-key-item.mod-conflict .geode-conflict-key-label {
+  color: var(--geode-conflict-color);
+}
+
+.geode-conflict-key-name {
+  font-size: var(--font-ui-small);
+  overflow-wrap: break-word;
+}
+
+.geode-conflict-key-meta {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+.geode-conflict-review-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.geode-conflict-diff {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: var(--size-4-2) 0;
+}
+
+.geode-conflict-diff-line {
+  font-size: var(--font-text-size);
+  line-height: var(--line-height-normal);
+  padding: 1px var(--size-4-2);
+  border-inline-start: 2px solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.geode-conflict-diff-line.mod-original {
+  color: var(--geode-original-color);
+  border-inline-start-color: var(--geode-original-color);
+}
+
+.geode-conflict-diff-line.mod-conflict {
+  color: var(--geode-conflict-color);
+  border-inline-start-color: var(--geode-conflict-color);
+}
+
+.geode-conflict-note {
+  padding: var(--size-4-2) 0;
+  color: var(--text-muted);
+}
+
+.geode-conflict-review-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  flex-wrap: wrap;
+  margin-top: var(--size-4-3);
+}
+
+.geode-conflict-review-actions button {
+  margin: 0;
+}
+
+.geode-conflict-review-actions .geode-conflict-back {
+  margin-inline-start: auto;
+}
+
+.is-phone .geode-conflict-key {
+  grid-template-columns: 1fr;
+  gap: var(--size-4-2);
+}
+
+/* A link is a real control: give it a touch sized tap target on a phone. */
+.is-phone .geode-conflict-subtle a,
+.is-phone .geode-conflict-subtle {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-size-s);
+}
+
+/* Phone: two rows of two, so the comparison keeps the room. */
+.is-phone .geode-conflict-review-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.is-phone .geode-conflict-review-actions button {
+  min-height: var(--touch-size-s);
+}
+
+/* Only Back is left when the conflict file went away. */
+.is-phone .geode-conflict-review-actions button:only-child {
+  grid-column: 1 / -1;
+}
+
+.is-phone .geode-conflict-review-actions .geode-conflict-back {
+  margin-inline-start: 0;
+}
+
+.geode-conflicts-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-4-1);
+  padding: var(--size-4-8) var(--size-4-4);
+  text-align: center;
+}
+
+.geode-conflicts-empty-icon {
+  color: var(--text-faint);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-conflicts-empty-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.geode-conflicts-empty-title {
+  font-weight: var(--font-semibold);
+}
+
+/* #432: desktop: fixed-height modal, search pinned, the rows scroll. */
+body:not(.is-phone) .geode-conflicts-modal {
+  height: min(var(--modal-height), var(--dialog-max-height));
+  overflow: hidden;
+}
+
+body:not(.is-phone) .geode-folders-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body:not(.is-phone) .geode-conflicts-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body:not(.is-phone) .geode-conflict-review-modal {
+  height: var(--dialog-max-height);
+  overflow: hidden;
+}
+
+.geode-folders-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--size-4-1) 0;
+}
+
+.geode-folder-toggle {
+  margin-inline-start: auto;
+  align-self: center;
+  padding-inline-start: var(--size-4-2);
+}
+
+.geode-folder-off .tree-item-self {
+  color: var(--text-faint);
+}
+
+.geode-folder-partial {
+  color: var(--text-faint);
+  font-size: 0.85em;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.geode-folders-no-matches {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-4-2) var(--size-4-2) 0;
+  text-align: left;
+}
+
+/* ── Config to sync Manage modal (#454): port of the mockup ConfigModal ── */
+/* Fixed-height search modal: heading + search + Done pinned, the rows scroll.
+   The collapsible headings reuse .geode-section-chevron / .geode-chevron-rotated
+   / .geode-collapsed from the settings tab. Phones keep Obsidian's own layout. */
+.geode-config-modal {
+  --modal-width: 34rem;
+  --modal-height: 70vh;
+}
+
+body:not(.is-phone) .geode-config-modal {
+  height: min(var(--modal-height), var(--dialog-max-height));
+  overflow: hidden;
+}
+
+body:not(.is-phone) .geode-config-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.geode-config-modal .geode-config-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Sticky search: pinned under the heading, same width as the rows beneath. */
+.geode-config-modal .geode-config-list .search-input-container {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: var(--size-4-3) 0;
+  background: var(--modal-background);
+}
+
+/* Section headings line up with the rows and the search bar (no extra indent). */
+.geode-config-modal .geode-config-heading {
+  cursor: pointer;
+  user-select: none;
+}
+
+.geode-config-nomatch {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  margin-left: var(--size-2-3);
+}
+
+.geode-config-nomatch {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  margin-left: var(--size-2-3);
+}
+
+.geode-conflicts-modal .geode-conflicts-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* #446: Trash modal (mockup 446-01..446-17): fixed-size modal, search +
+   pinned toolbar on top, per-file rows scroll. Bulk-select checkboxes per row
+   (leading, before the path); Select all lives in the toolbar, left-aligned
+   with the rows. */
+.geode-trash-modal {
+  --modal-width: 34rem;
+  --modal-height: 70vh;
+}
+
+.geode-trash-modal .search-input-container {
+  margin-bottom: var(--size-4-3);
+}
+
+.geode-trash-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-3);
+  padding: var(--size-4-2) 0;
+}
+
+.geode-trash-toolbar-select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+}
+
+.geode-trash-retention {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 0;
+}
+
+.geode-trash-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.geode-trash-toolbar-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-left: auto;
+}
+
+/* #638: phone: one row cannot hold Select all + the retention note + two
+   actions, so the toolbar splits in two. Line 1 keeps the list-level controls
+   (Select all, the retention note, the selection count pushed right); line 2 is
+   the actions, each half the width, never squeezed onto line 1. */
+body.is-phone .geode-trash-toolbar {
+  flex-wrap: wrap;
+  gap: var(--size-4-2) var(--size-4-3);
+}
+
+body.is-phone .geode-trash-toolbar-select,
+body.is-phone .geode-trash-retention {
+  white-space: nowrap;
+}
+
+body.is-phone .geode-trash-toolbar-actions {
+  flex: 1 0 100%;
+}
+
+body.is-phone .geode-trash-toolbar-actions button {
+  flex: 1 1 0;
+}
+
+.geode-trash-loading,
+.geode-trash-empty {
+  color: var(--text-muted);
+  padding: var(--size-4-2) 0;
+}
+
+.geode-trash-error {
+  color: var(--text-error);
+  padding: var(--size-4-2) 0;
+}
+
+.geode-trash-purges {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.geode-trash-expired {
+  color: var(--text-warning);
+  font-size: var(--font-ui-smaller);
+}
+
+.geode-trash-modal .setting-item-name input[type="checkbox"] {
+  margin-right: var(--size-4-2);
+  vertical-align: middle;
+}
+
+/* #446: desktop: fixed-height modal, search + toolbar pinned, the list scrolls. */
+body:not(.is-phone) .geode-trash-modal {
+  height: min(var(--modal-height), var(--dialog-max-height));
+  overflow: hidden;
+}
+
+body:not(.is-phone) .geode-trash-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.geode-trash-modal .geode-trash-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.geode-conflicts-modal .geode-conflicts-scroll {
+  min-height: 0;
+}
+
+.geode-trash-modal .geode-trash-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* #455: read-only deleted-file preview: markdown box, image, or the dead
+   binary line. Content is in memory only, never written to disk. */
+.geode-preview-loading {
+  color: var(--text-muted);
+  padding: var(--size-4-2) 0;
+}
+
+.geode-preview-md {
+  margin: 0 0 var(--size-4-3);
+  padding: var(--size-4-3) var(--size-4-4);
+  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+}
+
+.geode-preview-md :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 0;
+}
+
+.geode-preview-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 40vh;
+  margin: 0 0 var(--size-4-3);
+  border-radius: var(--radius-m);
+}
+
+.geode-preview-binary {
+  margin: var(--size-2-1) 0 var(--size-4-3);
+  padding: var(--size-4-3) var(--size-4-4);
+  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+  color: var(--text-muted);
+}
+
+.geode-preview-restore-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 0 0 var(--size-4-3);
+}
+
+/* #464: file history: editing periods on the left, the selected version's
+   preview on the right, and the Changes diff. Colors, spacing and type are
+   native variables; phone keeps the two panes stacked (list, then Back). */
+.geode-history-modal {
+  /* `.modal` sizes off --dialog-width; --modal-width only applies to
+     mod-sidebar-layout, so two panes need this one. */
+  --dialog-width: min(62rem, 80vw);
+}
+
+body:not(.is-phone) .geode-history-modal {
+  height: var(--dialog-max-height);
+  overflow: hidden;
+}
+
+body:not(.is-phone) .geode-history-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.geode-history-sub {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: var(--size-4-2);
+}
+
+/* #583: a window opened from a trash row stops at the version it was deleted at. */
+.geode-history-capped {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-history-body {
+  display: flex;
+  gap: var(--size-4-3);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.geode-history-list {
+  width: 40%;
+  min-width: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+/* Loading / error / older-page / retention-gap lines share one rule. */
+.geode-history-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-4-2);
+}
+
+.geode-history-note.is-faint {
+  color: var(--text-faint);
+}
+
+.geode-history-period {
+  margin-bottom: var(--size-4-1);
+  border-radius: var(--radius-s);
+}
+
+.geode-history-period.is-active {
+  background: var(--background-modifier-active-hover);
+}
+
+.geode-history-period-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  user-select: none;
+}
+
+.geode-history-period-head:hover {
+  background: var(--background-modifier-hover);
+}
+
+.geode-history-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: transform var(--anim-duration-fast) ease-in-out;
+}
+
+.geode-history-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.geode-history-period-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geode-history-period-count {
+  flex-shrink: 0;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.geode-history-version {
+  padding: var(--size-2-1) var(--size-4-2) var(--size-2-1) var(--size-4-5);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.geode-history-version:hover {
+  background: var(--background-modifier-hover);
+}
+
+.geode-history-version.is-active {
+  color: var(--text-accent);
+  background: var(--background-modifier-active-hover);
+}
+
+/* #583: the boundary between two names: a muted divider row, not a save. */
+.geode-history-marker {
+  display: flex;
+  align-items: center;
+  padding: var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.geode-history-marker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* #691: a deletion or a restore between two periods: one line, like the marker, cut
+   with an ellipsis. Both rows take a tap (a deletion shows the rest of its text, a
+   restore opens its preview), so both take the pointer and the hover. */
+.geode-history-event {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  user-select: none;
+}
+
+.geode-history-event:hover {
+  background: var(--background-modifier-hover);
+}
+
+.geode-history-event.is-active {
+  color: var(--text-accent);
+  background: var(--background-modifier-active-hover);
+}
+
+.geode-history-event-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A tapped deletion row, and a selected restore row, show the text the line cut off. */
+.geode-history-event.is-expanded .geode-history-event-label,
+.geode-history-event.is-active .geode-history-event-label {
+  white-space: normal;
+}
+
+.geode-history-older {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-4-2);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  text-align: center;
+}
+
+.geode-history-older:hover {
+  background: var(--background-modifier-hover);
+}
+
+.geode-history-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.geode-history-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-history-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.geode-history-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-top: var(--size-4-2);
+}
+
+.geode-history-diff-caption {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-history-diff {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.geode-history-diff-line {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  padding: 1px var(--size-4-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.geode-history-diff-line.mod-add {
+  background: rgba(var(--color-green-rgb), 0.15);
+}
+
+.geode-history-diff-line.mod-remove {
+  background: rgba(var(--color-red-rgb), 0.15);
+  text-decoration: line-through;
+}
+
+.geode-history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-4-1);
+  flex: 1 1 auto;
+  padding: var(--size-4-8) var(--size-4-4);
+  text-align: center;
+}
+
+.geode-history-empty-icon {
+  color: var(--text-faint);
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-history-empty-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.geode-history-empty-title {
+  font-weight: var(--font-semibold);
+}
+
+.geode-history-empty-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Phone: one pane at a time, full width, with Back into the list. */
+.is-phone .geode-history-body {
+  flex-direction: column;
+}
+
+.is-phone .geode-history-list {
+  width: auto;
+  border-right: none;
+}
+
+.geode-history-back {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  color: var(--text-accent);
+  font-size: var(--font-ui-medium);
+  cursor: pointer;
+  margin-bottom: var(--size-4-2);
+}
+
+.geode-history-back:hover {
+  color: var(--text-accent-hover);
+}
+
+.is-phone .geode-history-modal .setting-item-control button {
+  width: 100%;
+}
+
+/* ===== #601: confirm a held mass delete ===== */
+/* Unlike the fixed-size search modals this one sizes to its content up to 70vh:
+   the small set is a single folder row, the large set a 1,850 file list, and
+   neither should sit in a half empty card. */
+.geode-missing-modal {
+  --modal-width: 34rem;
+  --modal-height: 70vh;
+}
+
+body:not(.is-phone) .geode-missing-modal {
+  max-height: min(var(--modal-height), var(--dialog-max-height));
+}
+
+body:not(.is-phone) .geode-missing-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.geode-missing-head {
+  padding-bottom: var(--size-4-1);
+}
+
+/* "· partial" follows the folder name: muted, a little smaller, with a gap (the mockup's
+   label reads "Archive · partial", not "Archive· partial"). */
+.geode-missing-partial {
+  color: var(--text-faint);
+  font-size: 0.85em;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.geode-missing-total {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.geode-missing-sub {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Native horizontal-tab classes (Obsidian styles hover + .is-active); only the
+   Keep label and the phone active state need mockup rules. */
+.geode-missing-tabs {
+  align-items: center;
+  gap: var(--size-4-1);
+  margin: var(--size-4-2) 0 var(--size-4-1);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: var(--size-4-1);
+}
+
+.geode-missing-tabs .horizontal-tab-nav-item.is-active {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Column header: the Delete label plus the set-wide select-all switch. */
+.geode-missing-selectall {
+  margin-inline-start: auto;
+  margin-inline-end: var(--size-4-2);
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.geode-missing-col-label {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Delete, not sync: an enabled toggle reads red in both views (#601 round 2). */
+.geode-missing-modal .checkbox-container.is-enabled {
+  background-color: var(--background-modifier-error);
+}
+
+/* Some but not all: the switch stays off (a tap selects everything) with a light
+   red track. Shared by the header select-all switch and by partial folder rows. */
+.geode-missing-modal .checkbox-container.is-partial {
+  background-color: color-mix(in oklch, var(--background-modifier-error) 45%, var(--background-modifier-border-hover));
+}
+
+.geode-missing-body {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.geode-missing-tree,
+.geode-missing-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin-inline: calc(var(--size-4-2) * -1);
+  padding-inline: var(--size-4-2);
+}
+
+/* The folder row's right group: count, then the Keep toggle (the explorer look
+   keeps no room for a column header). */
+.geode-missing-row-right {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding-inline-start: var(--size-4-2);
+}
+
+.geode-missing-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5em;
+  text-align: right;
+}
+
+/* Recent rows: one line per file on desktop (name, folder, date, Keep). */
+.geode-missing-file {
+  display: grid;
+  grid-template-areas: "name meta toggle";
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-1) var(--size-4-2);
+  border-radius: var(--radius-s);
+}
+
+.geode-missing-file:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.geode-missing-file-name {
+  grid-area: name;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geode-missing-file-meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Fixed folder and date columns so the dates line up down the list whatever the
+   folder depth; a deep path truncates at its end. */
+.geode-missing-file-folder {
+  width: 13em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geode-missing-file-date {
+  width: 7em;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.geode-missing-file-toggle {
+  grid-area: toggle;
+}
+
+.geode-missing-file-del .geode-missing-file-name,
+.geode-missing-file-del .geode-missing-file-meta {
+  color: var(--text-faint);
+}
+
+.geode-missing-tree .tree-item.geode-missing-del .tree-item-self {
+  color: var(--text-faint);
+}
+
+.geode-missing-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+  padding-top: var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.geode-missing-foot-note {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.geode-missing-foot-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+}
+
+/* Phone: the folder and the date drop to a second line, Keep stays on the first. */
+.is-phone .geode-missing-file {
+  grid-template-areas: "name toggle" "meta toggle";
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: var(--size-2-1);
+}
+
+/* Phone: the folder takes whatever the date column leaves instead of a fixed 11em, and the
+   date is only as wide as its text, pinned to the row's right edge. Together they fit a real
+   path ("Archive/2023/Meetings/") at device width: expectFits reads a clipped span as
+   sideways overflow (#638). */
+/* Phone: a deep path wraps instead of truncating; the date stays on the first line. */
+.is-phone .geode-missing-file-folder {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.is-phone .geode-missing-file-date {
+  width: auto;
+  flex: none;
+  margin-inline-start: auto;
+  align-self: flex-start;
+}
+
+/* Phone: a mixed label ("Delete 1,370 files, restore 480") plus Copy list overflows one
+   row at real device width, so the main button takes its own full width line below the
+   note. Nothing is clipped; Copy list keeps the line above it. */
+.is-phone .geode-missing-foot-actions {
+  flex-wrap: wrap;
+}
+
+.is-phone .geode-missing-foot-actions button:last-child {
+  flex: 1 1 100%;
+}
+
+/* The detection notice is the review's first entry point, so the whole notice is
+   a target. */
+.geode-missing-notice {
+  cursor: pointer;
+}
+/* #601: the settings row above every banner: the only state that keeps sync from
+   moving at all. Its Review opens the same window as the notice and the menu. */
+.geode-hold-banner-name {
+  color: var(--color-orange);
+}
+
+/* #601: the trigger row in the Trash section: two number fields, unit after each. */
+.geode-threshold-input {
+  width: 5em;
+}
+
+.geode-threshold-unit {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 0 var(--size-4-2) 0 var(--size-2-2);
+}
+
+/* #601: a failed decision stays in the window, above its buttons. */
+.geode-missing-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+}
+

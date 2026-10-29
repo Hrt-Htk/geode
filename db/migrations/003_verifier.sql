@@ -1,0 +1,1 @@
+ALTER TABLE vaults ADD COLUMN verifier TEXT;

@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build plugin
+        run: deno task build:plugin
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Install or update via [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+            Changelog below is auto-generated from merged PRs since the previous tag.
+          files: |
+            plugin-dist/main.js
+            plugin-dist/manifest.json
+            plugin-dist/styles.css
+            plugin-dist/versions.json

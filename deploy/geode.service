@@ -1,0 +1,53 @@
+[Unit]
+Description=Geode sync server
+After=network.target
+
+[Service]
+Type=simple
+User=geode
+WorkingDirectory=/opt/geode
+# The admin token lives in /etc/geode/geode.env (mode 600, root:root), written by
+# deploy/install.sh. Never put it in this unit: the unit is world-readable and its
+# environment shows up in /proc/<pid>/environ.
+EnvironmentFile=/etc/geode/geode.env
+# geode is a --no-create-home user: point HOME/DENO_DIR at writable dirs under /opt/geode.
+# @db/sqlite is FFI: --allow-ffi + DENO_SQLITE_PATH load the system libsqlite3.
+# The bind host and port are rewritten by deploy/install.sh (127.0.0.1 behind Caddy,
+# 0.0.0.0 otherwise); --allow-net must match the bind host.
+Environment=HOME=/opt/geode
+Environment=DENO_DIR=/opt/geode/.deno-cache
+Environment=DENO_SQLITE_PATH=@SQLITE_LIB@
+ExecStart=/usr/local/bin/deno run \
+    --allow-net=@HOST@:@GEODE_PORT@ \
+    --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@ \
+    --allow-write=/opt/geode/data \
+    --allow-ffi \
+    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES \
+    /opt/geode/server/main.ts --data-dir /opt/geode/data --host @HOST@ --port @GEODE_PORT@
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
+
+# ── hardening (all verified to not break startup: /opt/geode/data + the
+# pre-fetched DENO_DIR are the only writable paths; FFI libsqlite3 still loads) ──
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/geode/data
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

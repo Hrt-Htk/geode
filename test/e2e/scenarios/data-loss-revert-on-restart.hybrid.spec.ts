@@ -1,0 +1,132 @@
+import { expect, test } from "@playwright/test";
+import type { SyncDevice } from "../helpers/device-abstraction";
+import { launchHybridPair } from "../fixtures/hybrid-pair";
+import { upsertVaultFile, waitForUnlocked } from "../helpers/geode";
+import { waitForConvergence, waitForStatusBar, waitForStatusBarAny } from "../helpers/waits";
+
+const PASSPHRASE = "data-loss-passphrase";
+const FILE = "notes/revert.md";
+const SERVER_CONTENT = "# Note\nSERVER ORIGINAL\n";
+const LOCAL_EDIT = "# Note\nLOCAL UNSAVED EDIT: must not be lost\n";
+
+async function listSiblingConflicts(device: SyncDevice, vaultPath: string): Promise<string[]> {
+  const parts = vaultPath.split("/");
+  const fileName = parts.pop()!;
+  const dir = parts.join("/");
+  const stem = fileName.replace(/\.[^.]+$/, "");
+  const dot = fileName.lastIndexOf(".");
+  const ext = dot >= 0 ? fileName.slice(dot) : "";
+  const entries = await device.listVaultDir(dir);
+  return entries
+    .filter((e) => e.startsWith(`${stem} (conflict `) && e.endsWith(ext))
+    .map((e) => (dir ? `${dir}/${e}` : e));
+}
+
+async function showFileInEditor(device: SyncDevice, file: string): Promise<void> {
+  await device.eval(`
+    if (app.setting && typeof app.setting.close === "function") app.setting.close();
+    const f = app.vault.getAbstractFileByPath(${JSON.stringify(file)});
+    if (f) { const leaf = app.workspace.getLeaf(true); await leaf.openFile(f); }
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 800));
+}
+
+for (const phoneAsA of [false, true]) {
+  const role = phoneAsA ? "phone-as-A" : "desktop-as-A";
+  test(`untracked local edit survives restart (no silent revert) (${role})`, async () => {
+    test.skip(process.env.GEODE_PHONE !== "1", "requires connected phone (GEODE_PHONE=1)");
+    test.slow();
+
+    const pair = await launchHybridPair({ passphrase: PASSPHRASE, phoneAsA });
+
+    try {
+      // --- Phase 1: Both devices synced ---
+      await waitForUnlocked(pair.A);
+      await waitForUnlocked(pair.B);
+      await waitForStatusBar(pair.A, "Geode: synced", 60_000);
+      await waitForStatusBar(pair.B, "Geode: synced", 60_000);
+
+      // --- Phase 2: A creates the file and it syncs to B ---
+      await upsertVaultFile(pair.A, FILE, SERVER_CONTENT);
+      await waitForConvergence(pair.A, pair.B, FILE, 60_000);
+
+      await showFileInEditor(pair.A, FILE);
+      await pair.A.screenshot("dataloss-01-synced-A");
+      await showFileInEditor(pair.B, FILE);
+      await pair.B.screenshot("dataloss-01-synced-B");
+
+      expect(
+        await pair.B.eval(`await app.vault.adapter.read(${JSON.stringify(FILE)})`),
+      ).toBe(SERVER_CONTENT);
+
+      // --- Phase 3: Make an UNTRACKED local edit on B ---
+      // Stop the event handler via lockVault, THEN write to disk so no pending op is recorded.
+      await pair.B.eval("app.plugins.plugins.geode.lockVault()");
+      await pair.B.eval(
+        `await app.vault.adapter.write(${JSON.stringify(FILE)}, ${JSON.stringify(LOCAL_EDIT)})`,
+      );
+
+      // Confirm disk now has the local edit
+      const beforeRestart = await pair.B.eval(
+        `await app.vault.adapter.read(${JSON.stringify(FILE)})`,
+      );
+      expect(beforeRestart).toBe(LOCAL_EDIT);
+
+      await showFileInEditor(pair.B, FILE);
+      await pair.B.screenshot("dataloss-02-local-edit-B");
+
+      // --- Phase 4: Restart B's session (fresh state + replay) ---
+      await pair.B.eval(
+        `app.plugins.plugins.geode.unlockVault(${JSON.stringify(PASSPHRASE)})`,
+      );
+      await waitForUnlocked(pair.B);
+      await waitForStatusBarAny(pair.B, ["Geode: synced", "conflict"], 60_000);
+      await new Promise((r) => setTimeout(r, 3000));
+
+      await showFileInEditor(pair.A, FILE);
+      await pair.A.screenshot("dataloss-03-after-restart-A");
+      await showFileInEditor(pair.B, FILE);
+      await pair.B.screenshot("dataloss-03-after-restart-B");
+
+      // --- Phase 5: Assert the bug (screenshots already captured) ---
+      const after = await pair.B.eval(
+        `await app.vault.adapter.read(${JSON.stringify(FILE)})`,
+      );
+
+      // Check for conflict files that might have preserved the local edit
+      const conflictFiles = await listSiblingConflicts(pair.B, FILE);
+      let conflictContents = "";
+      if (conflictFiles.length > 0) {
+        const contents = await Promise.all(
+          conflictFiles.map(async (cf) => {
+            const content = await pair.B.eval(
+              `await app.vault.adapter.read(${JSON.stringify(cf)})`,
+            );
+            return `${cf}:\n${content}`;
+          }),
+        );
+        conflictContents = `\nConflict files found:\n${contents.join("\n")}`;
+      }
+
+      expect(
+        after,
+        `B local edit was overwritten by server version (data loss). Content after restart:\n${after}${conflictContents}`,
+      ).toContain("LOCAL UNSAVED EDIT");
+
+      // Also verify: if a conflict file was created, it should contain the local edit
+      // (acceptable correct behavior: conflict preserves both versions)
+      if (conflictFiles.length > 0) {
+        const conflictContent = await pair.B.eval(
+          `await app.vault.adapter.read(${JSON.stringify(conflictFiles[0])})`,
+        );
+        expect(
+          conflictContent,
+          `Conflict file should preserve local edit. Content:\n${conflictContent}`,
+        ).toContain("LOCAL UNSAVED EDIT");
+      }
+    } finally {
+      await pair.stop();
+    }
+  });
+}

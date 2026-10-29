@@ -1,0 +1,82 @@
+name: Epic autoclose
+
+# Close a parent epic automatically once all of its native sub-issues are closed.
+# Sub-issues are linked via GitHub's native parent/child relationship (not text),
+# so we read `subIssuesSummary { total, completed }` off the parent.
+
+on:
+  issues:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      epic:
+        description: "Epic issue number to reconcile directly (backfill a completed-but-open epic)"
+        required: true
+        type: string
+
+permissions:
+  issues: write
+
+jobs:
+  autoclose:
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - name: Close epic if all sub-issues are done
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // The epic to evaluate: on workflow_dispatch it's the input directly;
+            // on an issue close it's the closed issue's parent (if any).
+            let epicNumber;
+            if (context.eventName === "workflow_dispatch") {
+              epicNumber = parseInt(context.payload.inputs.epic, 10);
+            } else {
+              const closed = context.payload.issue.number;
+              const res = await github.graphql(
+                `query($owner:String!,$repo:String!,$num:Int!){
+                   repository(owner:$owner,name:$repo){
+                     issue(number:$num){ parent { number } }
+                   }
+                 }`,
+                { owner, repo, num: closed },
+              );
+              epicNumber = res.repository.issue.parent?.number;
+              if (!epicNumber) {
+                core.info(`#${closed} has no parent epic: nothing to do.`);
+                return;
+              }
+            }
+
+            const epic = await github.graphql(
+              `query($owner:String!,$repo:String!,$num:Int!){
+                 repository(owner:$owner,name:$repo){
+                   issue(number:$num){ number state subIssuesSummary { total completed } }
+                 }
+               }`,
+              { owner, repo, num: epicNumber },
+            );
+            const issue = epic.repository.issue;
+            const { total, completed } = issue.subIssuesSummary;
+            core.info(`Epic #${epicNumber}: state=${issue.state}, sub-issues ${completed}/${total} complete.`);
+
+            if (issue.state !== "OPEN") {
+              core.info(`Epic #${epicNumber} is not open: skipping.`);
+              return;
+            }
+            if (total === 0 || completed !== total) {
+              core.info(`Epic #${epicNumber} still has open sub-issues: leaving open.`);
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: epicNumber,
+              body: `All ${total} sub-issues are closed: auto-closing this epic. 🤖`,
+            });
+            await github.rest.issues.update({
+              owner, repo, issue_number: epicNumber,
+              state: "closed", state_reason: "completed",
+            });
+            core.info(`Closed epic #${epicNumber}.`);

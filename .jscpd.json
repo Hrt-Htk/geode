@@ -1,0 +1,9 @@
+{
+  "path": ["server", "core", "plugin"],
+  "ignore": ["**/_generated/**"],
+  "format": ["typescript"],
+  "minTokens": 50,
+  "threshold": 2,
+  "reporters": ["console"],
+  "silent": false
+}

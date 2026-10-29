@@ -1,0 +1,15 @@
+{
+  "id": "geode",
+  "name": "Geode",
+  "version": "0.41.7",
+  "minAppVersion": "1.8.7",
+  "description": "Self-hosted, end-to-end encrypted sync for your vaults.",
+  "author": "Hrt-Htk",
+  "main": "main.js",
+  "views": {
+    "geode-debug": {
+      "id": "geode-debug",
+      "type": "right"
+    }
+  }
+}

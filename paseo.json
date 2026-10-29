@@ -1,0 +1,6 @@
+{
+  "worktree": {
+    "setup": "npm ci\ndeno install\ndeno task build:plugin\nmain=\"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")\"; [ -f \"$main/.env.local\" ] && { [ -e .env.local ] || ln -s \"$main/.env.local\" .env.local; } || true",
+    "teardown": "pat=\"${PWD%${PWD#?}}\"; pkill -f \"[$pat]${PWD#?}\" || true"
+  }
+}

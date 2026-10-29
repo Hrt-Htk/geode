@@ -1,0 +1,28 @@
+#!/bin/bash
+# Quick geode vault log viewer
+# Usage: geode-log <vault-id-or-4-char-suffix> [limit]
+VAULT="${1:?usage: geode-log <vault-id|4-char-suffix> [limit]}"
+LIMIT="${2:-30}"
+
+# Both arguments land inside the SQL text, so both are held to the shape they can
+# legitimately have: a UUID (or its 4-char prefix) and a non-negative count (#680 L-6).
+case "$VAULT" in
+  *[!0-9a-fA-F-]*) echo "Error: not a vault id: $VAULT" >&2; exit 1 ;;
+esac
+case "$LIMIT" in
+  *[!0-9]*) echo "Error: limit must be a non-negative integer: $LIMIT" >&2; exit 1 ;;
+esac
+
+# If VAULT looks like a 4-char suffix, find the full vault_id
+if [[ ${#VAULT} -eq 4 ]]; then
+  VAULT=$(sqlite3 /opt/geode/data/geode.db "SELECT vault_id FROM devices WHERE id LIKE '%${VAULT}%' LIMIT 1;" 2>/dev/null)
+fi
+
+if [[ -z "$VAULT" ]]; then
+  echo "Error: could not resolve vault ID for '$1'" >&2
+  exit 1
+fi
+
+echo "=== Version log (last $LIMIT) for vault ${VAULT:0:8}... ==="
+sqlite3 -header -column /opt/geode/data/geode.db \
+  "SELECT seq, substr(device_id,-4) as dev, substr(hex(path_hash),1,16) as path_hash, version, datetime(created_at/1000, 'unixepoch') as created FROM file_versions WHERE vault_id='${VAULT}' ORDER BY seq DESC LIMIT ${LIMIT};"

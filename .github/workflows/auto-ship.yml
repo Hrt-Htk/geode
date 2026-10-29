@@ -1,0 +1,87 @@
+name: Auto-ship
+
+# Green ready PR → merge (#377). Drafts are left alone (#551): mark a PR ready
+# once nothing is owed. Only the maintainer's own PRs from this repo ship; a PR
+# from a fork or another author is merged by hand after review (#682). Runs when the CI workflow completes successfully for a
+# pull_request event. No release and no deploy in Actions,
+# release/deploy stays local (see the issue): the agent prunes and runs
+# `deno task release X.Y.Z` after the merge.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  ship:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Find PR for the head branch
+        id: pr
+        run: |
+          NUMBER="${{ github.event.workflow_run.pull_requests[0].number }}"
+          if [ -z "$NUMBER" ]; then
+            echo "No pull request for this run: skipping."
+            exit 0
+          fi
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the run matches the PR head
+        # CI re-runs on `synchronize`/`edited`, so an older run can finish green
+        # after a newer commit was pushed. Merge only the SHA this run verified,
+        # skip otherwise; `gh pr merge --match-head-commit` fails closed if it
+        # still races.
+        id: verify
+        if: steps.pr.outputs.number != ''
+        run: |
+          N="${{ steps.pr.outputs.number }}"
+          RUN_SHA="${{ github.event.workflow_run.head_sha }}"
+          PR_SHA=$(gh pr view "$N" --json headRefOid --jq '.headRefOid')
+          if [ "$RUN_SHA" != "$PR_SHA" ]; then
+            echo "Run head $RUN_SHA != PR head $PR_SHA: newer commit pushed, skipping."
+            echo "match=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "match=true" >> "$GITHUB_OUTPUT"
+
+      - name: Merge
+        id: merge
+        if: steps.verify.outputs.match == 'true'
+        run: |
+          N="${{ steps.pr.outputs.number }}"
+          if [ "$(gh pr view "$N" --json isDraft --jq '.isDraft')" = "true" ]; then
+            echo "PR #$N is a draft: leaving it open."
+            exit 0
+          fi
+          AUTHOR=$(gh pr view "$N" --json author --jq '.author.login')
+          if [ "$AUTHOR" != "${{ github.repository_owner }}" ]; then
+            echo "PR #$N is by $AUTHOR, not the maintainer: merge by hand after review."
+            exit 0
+          fi
+          gh pr merge "$N" --merge --delete-branch \
+            --match-head-commit "${{ github.event.workflow_run.head_sha }}"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      - name: Close referenced issues
+        # A github-actions merge doesn't trigger GitHub's `Closes #N` auto-close.
+        if: steps.merge.outputs.merged == 'true'
+        run: |
+          N="${{ steps.pr.outputs.number }}"
+          gh pr view "$N" --json body,commits \
+            --jq '[.body, (.commits[] | .messageHeadline + "\n" + .messageBody)] | join("\n")' |
+            grep -oiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' | grep -oE '[0-9]+' | sort -u |
+            while read -r I; do
+              gh issue close "$I" --reason completed -c "Closed by #$N (auto-ship merge)." || true
+            done
