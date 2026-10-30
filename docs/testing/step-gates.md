@@ -387,9 +387,10 @@ release.
   `app.saveLocalStorage("key-cache", null)`), a throwing clear is logged, the legacy in-vault cache
   file is removed, and `resolveCachedKeys` returns null for a missing or corrupt cache.
 - Cached unlock makes no Argon2id call (count them) and, after the cache is cleared, the next unlock
-  takes the slow path.
-  Not yet met: no test calls `tryCachedKeys`, the cached unlock path at
-  `plugin/plumbing/vault-lock.ts:161-185`, called from `plugin/main.ts:540`.
+  takes the slow path. `test/unit/plugin/vault-lock-cached-unlock.test.ts` drives `tryCachedKeys`
+  (the cached path at `plugin/plumbing/vault-lock.ts:161-185`, called from `plugin/main.ts:540`) with
+  the Argon2id primitive counted: the cached unlock derives 0 times, the cleared cache falls through
+  to `unlockVault` and derives exactly once.
 - The slow passphrase path is `unlockVault` (`plugin/plumbing/vault-lock.ts:49-81`); the re-key
   retry inside it is `unlockAfterRemoteRekeyFlow` (`plugin/plumbing/vault-lock.ts:93-114`).
 
