@@ -66,7 +66,7 @@ runner. Desktop `--project=default` runs take no lock.
 **FIFO order (#508):** a run registers a ticket under `/tmp/geode-phone.queue/` and only takes the
 flock when its ticket is at the head (dead-pid tickets are pruned), so concurrent runs are served in
 arrival order, not flock's unspecified wake order. While queued it logs every minute
-`queued for the phone: position 2, holder <worktree> (<project>, 14/21 specs, ~3 min left)`: the
+`queued for the phone: position 2, holder <worktree> (<project>, 14/51 specs, ~3 min left)`: the
 holder's progress (project + specs done/total) is published to the lock sidecar by a tiny Playwright
 reporter, so waiters and `deno task phone:status` show a live ETA. `deno task phone:status` prints
 the holder (worktree, pid, project, d/t, elapsed, ETA) plus the queue (position, worktree, since).
@@ -198,13 +198,17 @@ xvfb-run -a node node_modules/@playwright/test/cli.js test \
 
 Run it in the background and watch results with a Monitor that also greps for
 `unauthorized|no devices|Out of memory|Stream closed` so a mid-run drop is caught early, not mistaken
-for a slow test. Hybrid takes about 4 to 5 min for 21 tests. The lock is taken automatically by the
-global setup: no manual `flock` around the run.
+for a slow test. Hybrid is 51 tests in 28 files and runs long: `mass-delete.hybrid` alone is about
+31 min, so budget well over half an hour. The lock is taken automatically by the global setup: no
+manual `flock` around the run.
 
 ## Expected green baseline (Obsidian mobile 1.13.4)
 
-Phone **29 active pass + 2 skip** (gate6-export-vault, gate7-brat-shape-smoke = desktop-only).
-Hybrid **21/21 pass** both directions. Full phone run ~5 min all-green.
+Phone **63 active pass + 3 skip** of 66 tests in 58 files (skips: gate6-export-vault and
+gate7-brat-shape-smoke are desktop-only, bench457 needs `GEODE_BENCH=1`). Hybrid **51/51 pass** both
+directions, 51 tests in 28 files. Count them with `--list`, never from the log's last line alone:
+`--project=phone --list` prints `Total: 66 tests in 58 files`, `--project=hybrid --list`
+`Total: 51 tests in 28 files`.
 
 > Obsidian mobile 1.13.4 runs persistent navbar/drawer CSS animations that hang `page.screenshot()`
 > and Playwright actionability, and Escape stopped closing modals. All phone specs route UI through

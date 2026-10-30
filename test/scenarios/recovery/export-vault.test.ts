@@ -38,6 +38,35 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name: "export-vault - a trailing separator on the target dir is not doubled",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    // Users type the folder path with a trailing slash: the destination must still be one
+    // separator below it, not an empty path segment.
+    const exportDir = Deno.makeTempDirSync() + "/";
+    const { A, stop } = await pair();
+    try {
+      A.fakeVault.write("docs/nested/notes.txt", "hello export");
+      await A.flushPending();
+      await A.waitForVersion("docs/nested/notes.txt", 1);
+
+      const destinations: string[] = [];
+      const result = await A.exportDecryptedVault(exportDir, (destination) => {
+        destinations.push(destination);
+        return Promise.resolve();
+      });
+
+      assertEquals(result.exportedFiles, A.fakeVault.files.size);
+      assertEquals(destinations, [`${exportDir}docs/nested/notes.txt`]);
+    } finally {
+      await stop();
+      Deno.removeSync(exportDir, { recursive: true });
+    }
+  },
+});
+
 async function listFiles(root: string): Promise<string[]> {
   const results: string[] = [];
 

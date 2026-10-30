@@ -1,4 +1,4 @@
-import type { App, Command } from "obsidian";
+import { type App, type Command, Platform } from "obsidian";
 import { ExportModal } from "../ui/export-modal.ts";
 import { HISTORY_ENTRY_TITLE } from "../ui/history-view.ts";
 import { formatError, log } from "./log.ts";
@@ -64,14 +64,20 @@ export function registerCommands(plugin: PluginInstance): void {
       });
     },
   });
+  // Desktop only: the export writes outside the vault through Node's filesystem (#15),
+  // so the command is not offered on mobile at all.
   plugin.addCommand({
     id: "export-decrypted-vault",
     name: "Export decrypted vault to folder...",
-    callback: () => {
-      new ExportModal(
-        plugin.app,
-        (dir) => plugin.exportDecryptedVault(dir),
-      ).open();
+    checkCallback: (checking) => {
+      if (!Platform.isDesktop) return false;
+      if (!checking) {
+        new ExportModal(
+          plugin.app,
+          (dir) => plugin.exportDecryptedVault(dir),
+        ).open();
+      }
+      return true;
     },
   });
   plugin.addCommand({

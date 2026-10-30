@@ -3,6 +3,7 @@ import { builtinModules } from "node:module";
 import path from "node:path";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
 import { stampManifest } from "./manifest-stamp.ts";
+import { findLoadTimeNodeRequires } from "./bundle-node-requires.ts";
 
 const watch = Deno.args.includes("--watch");
 const rootDir = Deno.cwd();
@@ -59,6 +60,10 @@ const options = {
   sourcemap: true,
   logLevel: "info" as const,
   external,
+  // Dynamic imports compile to a lazy require at the call site. A native ESM
+  // `import("node:...")` inside the CJS bundle fails in Obsidian's renderer ("Failed to
+  // fetch dynamically imported module", gate6 export spec, #15).
+  supported: { "dynamic-import": false },
   plugins: [copyAssetsPlugin],
 };
 
@@ -115,6 +120,13 @@ if (watch) {
   await new Promise(() => {});
 } else {
   await build(options);
+  // #15: Node's modules do not exist on mobile and the community scanner forbids a Node
+  // import at load, so a bundle that carries one must not ship. Dynamic imports stay
+  // inside functions and are not load-time requires.
+  const loadTime = findLoadTimeNodeRequires(await Deno.readTextFile(options.outfile));
+  if (loadTime.length > 0) {
+    throw new Error(`main.js requires Node modules at load: ${loadTime.join(", ")}`);
+  }
 }
 
 async function syncAssets() {

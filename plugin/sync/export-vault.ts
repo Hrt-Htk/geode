@@ -3,6 +3,7 @@ import { VaultKeys } from "../../core/crypto.ts";
 import { formatUserError } from "../plumbing/errors.ts";
 import { Transport } from "./transport.ts";
 import { exportDecryptedVault } from "./recovery.ts";
+import { writeExportedFile } from "./export-writer.ts";
 
 type ExportVaultHost = {
   keys: VaultKeys | null;
@@ -18,6 +19,7 @@ export async function exportVaultFlow(host: ExportVaultHost, targetDir: string):
     const result = await exportDecryptedVault(normalizedTarget, {
       transport: host.transport,
       keys: host.keys,
+      write: writeExportedFile,
     });
     new Notice(`Geode: exported ${result.exportedFiles} files`);
   } catch (error) {
