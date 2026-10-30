@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { launchPair } from "../fixtures/pair";
-import { commitPath, upsertVaultFile } from "../helpers/geode";
-import { waitForConvergence, waitForStatusBar } from "../helpers/waits";
+import { commitPath, revealFileInExplorer, upsertVaultFile } from "../helpers/geode";
+import { waitForConvergence, waitForFileInExplorer, waitForStatusBar } from "../helpers/waits";
 
 const PASSPHRASE = "gate10-restore-pass";
 const FILE_PATH = "notes/restore-me.md";
@@ -80,13 +80,19 @@ test(
       // 6. File should converge back to its original content on BOTH A and B.
       expect(await waitForConvergence(pair.A, pair.B, FILE_PATH, 60_000)).toBe(CONTENT);
 
-      // 7. Trash should now be empty.
+      // 7. The restored file shows in the real file-explorer DOM on both instances.
+      for (const inst of [pair.A, pair.B]) {
+        await revealFileInExplorer(inst, FILE_PATH);
+        await waitForFileInExplorer(inst.win, FILE_PATH, 60_000);
+      }
+
+      // 8. Trash should now be empty.
       const trashAfter = await pair.A.eval<TrashEntry[]>(
         "await app.plugins.plugins.geode.trash.list()",
       );
       expect(trashAfter.length).toBe(0);
 
-      // 8. No console errors on either instance.
+      // 9. No console errors on either instance.
       expect(pair.A.consoleErrors()).toEqual([]);
       expect(pair.B.consoleErrors()).toEqual([]);
     } finally {

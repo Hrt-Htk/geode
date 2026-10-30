@@ -486,12 +486,11 @@ not seconds.
 
 ### E2E (Playwright, real Obsidian)
 
-- `test/e2e/scenarios/gate10-trash-restore.spec.ts` (+ `.hybrid`): delete a file in real Obsidian,
-  `trash.list()` returns the entry, restore it programmatically, and the restored file shows in the
-  file explorer on both instances while the trash is empty.
-  Not yet met: the explorer DOM, `test/e2e/scenarios/gate10-trash-restore.spec.ts:81` converges
-  through `waitForConvergence` (adapter reads), and `test/e2e/scenarios/trash-ui.spec.ts:66-111`
-  asserts no explorer entry either.
+- `test/e2e/scenarios/gate10-trash-restore.spec.ts`: delete a file in real Obsidian, `trash.list()`
+  returns the entry, restore it programmatically, and the desktop spec asserts the restored file in
+  the real file-explorer DOM of both instances (`.nav-file-title[data-path=…]`, revealed in the tree)
+  while the trash is empty. The `.hybrid` variant runs the same cycle against a phone peer and
+  asserts convergence (`waitForContent`), not the explorer DOM.
 - `test/e2e/scenarios/trash-ui.spec.ts`: the Trash modal lists the deleted file and restores it from
   the row's Restore button.
 - `test/e2e/scenarios/trash-purge-admin.spec.ts`: a purge inside the server's retention floor asks
