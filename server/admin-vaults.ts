@@ -1,4 +1,3 @@
-import { clearTokenCache } from "./auth.ts";
 import { adminGate, jsonResp, readJson, requireDevice } from "./http-helpers.ts";
 import { disconnectDeviceIfLive } from "./ws.ts";
 import { log } from "./log.ts";
@@ -203,7 +202,6 @@ function doRevoke(
     deviceId,
     vaultId,
   );
-  clearTokenCache();
   disconnectDeviceIfLive(vaultId, deviceId);
 
   log.info("device revoked", { device_id: deviceId, vault_id: vaultId });

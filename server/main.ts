@@ -1,4 +1,5 @@
 import { openDb } from "./db.ts";
+import { removeStrandedTempFiles } from "./blobs.ts";
 import { recoverRekeyBlobs } from "./rekey-store.ts";
 import { purgeExpiredTrash } from "./trash-db.ts";
 import { TRASH_RETENTION_DAYS } from "./compaction.ts";
@@ -35,6 +36,11 @@ async function main(): Promise<void> {
   const db = openDb(dataDir);
 
   recoverRekeyBlobs(db, dataDir);
+
+  // A crash mid-write strands a `.tmp-*` blob; putBlob's finally cannot run then, and nothing is
+  // in flight before the listener exists.
+  const stranded = removeStrandedTempFiles(dataDir);
+  if (stranded > 0) log.info("removed stranded blob temp files", { count: stranded });
 
   const purged = purgeExpiredTrash(db, TRASH_RETENTION_DAYS * 24 * 3600);
   log.info("trash auto-purge", { purged, retention_days: TRASH_RETENTION_DAYS });

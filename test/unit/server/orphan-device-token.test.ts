@@ -64,7 +64,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "orphan device token - a cached lookup stops working the moment its vault is gone",
+  name: "orphan device token - a lookup stops working the moment its vault is gone",
   fn() {
     const dataDir = makeTempDataDir();
     const db = openDb(dataDir);
@@ -81,16 +81,17 @@ Deno.test({
         "dev1",
         "gone-vault",
         "test-device",
-        "cached-token",
+        "orphan-token",
       );
-      // Warm the 60 s cache, then delete the vault the way an operator does.
-      assert(validateToken(db, "cached-token") !== null);
+      // Delete the vault the way an operator does: the next lookup must fail. The rows outlive
+      // the vault because that manual delete runs with foreign_keys off.
+      assert(validateToken(db, "orphan-token") !== null);
       db.exec("PRAGMA foreign_keys=OFF");
       db.run("DELETE FROM vaults WHERE id = ?", "gone-vault");
       assertEquals(
-        validateToken(db, "cached-token"),
+        validateToken(db, "orphan-token"),
         null,
-        "a cached token must not outlive its vault for a minute",
+        "a token must not outlive its vault",
       );
     } finally {
       db.close();

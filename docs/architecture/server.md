@@ -176,9 +176,12 @@ request.
    and the bytes it replaced are subtracted from `bytesAdded`.
 4. Creates the shard dir, writes `…/<rest>.tmp-<uuid8>`, fsyncs, then places it with `Deno.link`. Link
    is an exclusive create, so of two concurrent uploads of one new chunk exactly one wins and the other
-   gets `AlreadyExists`, which `putBlob` reports as a dedup hit (`bytesAdded: 0`) and removes its temp
-   file. `overwrite` (re-key replace) renames instead, since it must replace the file; a failed rename
-   removes its temp file. This needs hard link support on the data dir, which plain ext4 or xfs as
+   gets `AlreadyExists`, which `putBlob` reports as a dedup hit (`bytesAdded: 0`). `overwrite` (re-key
+   replace) renames instead, since it must replace the file. One `try/finally` spans the whole temp
+   lifecycle, so a failure in the write, the fsync, the link or the rename removes the temp file. A
+   crash mid-write runs no `finally`, so the next startup removes every `.tmp-*` left behind
+   (`removeStrandedTempFiles`, called from `main.ts` before the listener accepts anything; nothing is
+   in flight at that point). This needs hard link support on the data dir, which plain ext4 or xfs as
    `deploy/` creates it has; a data dir on FAT/exFAT or an SMB/CIFS mount does not.
 
 **`putBlob` does not verify `blake3(body) == hash`.** The stored body is ciphertext and the URL hash is
@@ -186,9 +189,10 @@ the plaintext chunk hash; the client verifies integrity during reassembly.
 
 ### Garbage collection
 
-`gcUnreferencedBlobs` walks the vault's shard dirs and deletes every file whose hash is not in
+`gcUnreferencedBlobs` walks the vault's shard dirs and deletes every blob whose hash is not in
 `retained` and whose mtime is older than `graceMs` (24 h, so an in-flight upload is never collected),
-returning how many it deleted. `server/compaction.ts` builds `retained` from every surviving
+returning how many it deleted. `.tmp-*` files are skipped here: startup owns them (above), and only a
+crash can leave one behind. `server/compaction.ts` builds `retained` from every surviving
 `chunk_hashes` row plus the trashed heads, purges expired trash first, then re-measures the vault's
 storage counter (the pass both dropped rows and freed blobs), and skips the pass while a re-key
 session is open. It is armed off the commit path: at most once an hour per vault, and only when a
@@ -496,7 +500,7 @@ boxes would not see each other live.
 | `ws-receive.ts` | the per-connection receive queue: buffering, the overflow close, `recv()` |
 | `env.ts` | `envNum`, the guarded integer env read shared by the knobs |
 | `ws-types.ts` | hub types, `rowToVersion`, buffer/queue limits |
-| `auth.ts` | token lookup (60 s cache), admin token compare, bearer/subprotocol parsing |
+| `auth.ts` | token lookup (one `devices`-`vaults` join per request, no cache), admin token compare, bearer/subprotocol parsing |
 | `http-helpers.ts` | `requireDevice`, `adminGate` (ours or a dedicated header), `withCors` + the header allowlist, JSON responses, client IP, capped body/JSON readers |
 | `rate-limit.ts` | admin-token failure window (5 failures / 15 min per IP) |
 | `kdf-bounds.ts` | the Argon2 band a client may install (ops 1 to 10, mem 8 MiB to 1 GiB) |
@@ -566,25 +570,24 @@ boxes would not see each other live.
 
 ### Validation flow
 
-- HTTP: parse `Authorization: Bearer …`, look the token up in `devices` (cached 60 s; a cache hit also
-  re-checks that its vault row still exists, one primary-key lookup, so a deleted vault's token dies on
-  its next request), resolve `device_id` and `vault_id`, reject when the route's `:vaultId` does not
-  match.
+- HTTP: parse `Authorization: Bearer …`, look the token up in `devices` joined to `vaults` (one
+  indexed read per request, nothing cached), resolve `device_id` and `vault_id`, reject when the
+  route's `:vaultId` does not match.
 - WS: parse `Sec-WebSocket-Protocol: bearer.<token>`, same lookup, close 1008 on failure.
 
 ### Revocation
 
 `DELETE /vaults/:vaultId/devices/:deviceId` replaces the token with `revoked:<uuid>` (the column is
-`NOT NULL UNIQUE`, so a sentinel instead of NULL), clears the in-process token cache, and closes that
-device's live socket immediately (`disconnectDeviceIfLive`). New requests fail at once, not after the
-cache TTL. A device can revoke itself through the same route.
+`NOT NULL UNIQUE`, so a sentinel instead of NULL) and closes that device's live socket immediately
+(`disconnectDeviceIfLive`). Every request reads the device row, so new requests fail at once. A device
+can revoke itself through the same route.
 
 Deleting a vault row loses its devices two ways. Through the schema the `ON DELETE CASCADE` on
 `devices.vault_id` fires, but the server has no vault-delete route: a vault is removed with a manual
 `sqlite3` `DELETE`, which runs with `foreign_keys` off and leaves the device rows behind (#680). Those
 tokens used to stay live, and every blob route keys storage off the token's own `vault_id`, so they
-could still write chunks into a directory no counter budgets. `validateToken` joins `vaults`, and a
-cached lookup re-checks that row, so an orphan device token stops authenticating on its next request.
+could still write chunks into a directory no counter budgets. `validateToken` joins `vaults`,
+so an orphan device token stops authenticating on its next request.
 
 A device joins a vault with the long-lived admin token. Per-device revocation is the mitigation.
 

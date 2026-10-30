@@ -76,26 +76,28 @@ Deno.test({
   },
 });
 
-// IGNORED: FastCDC locality property is not guaranteed on the synthetic (i%256) pattern
-// with this spec-as-written non-sliding hash. The (i%256) repeating byte pattern has
-// periodic structure that can cause different cut points after a prefix insertion, so
-// >=50% shared chunk hashes is not reliably met. With real markdown inputs the locality
-// property holds: revisit with real content once the two-vault driver exercises it.
-// See docs/crypto/encryption-chunking.md for FastCDC design.
-// No tracking issue covers this synthetic-pattern locality gap yet: revisit with real
-// markdown content instead of filing one against a test-only concern.
-Deno.test({
-  name:
-    "chunker - chunk(insertion at start) keeps majority of chunk hashes after the prefix [IGNORED: synthetic pattern breaks locality]",
-  ignore: true,
-  fn() {
-    // The doc's FastCDC variant uses a non-sliding hash (hash carries from each chunk start),
-    // so per-chunk byte-equality after a 1-byte prepend isn't guaranteed by the algorithm.
-    // What FastCDC *does* guarantee in practice is locality: most chunks past the insertion
-    // re-sync. Assert the locality property via set intersection rather than positional equality.
-    const base = new Uint8Array(500_000);
-    for (let i = 0; i < base.length; i++) base[i] = (i % 256) as number;
+// Deterministic pseudorandom input (mulberry32): an (i % 256) pattern repeats every 256 bytes,
+// which collapses distinct chunks onto the same hash and masks the locality property.
+function pseudoRandomBytes(length: number, seed: number): Uint8Array {
+  const out = new Uint8Array(length);
+  let state = seed >>> 0;
+  for (let i = 0; i < length; i++) {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    out[i] = (t ^ (t >>> 14)) >>> 0;
+  }
+  return out;
+}
 
+Deno.test({
+  name: "chunker - chunk(insertion at start) keeps most chunk hashes (locality)",
+  fn() {
+    // The fastcdc variant uses a non-sliding hash (the hash carries from each chunk start), so
+    // per-chunk byte-equality after a 1 byte prepend is not what it guarantees. What it does
+    // guarantee in practice is locality: most chunks past the insertion re-sync.
+    const base = pseudoRandomBytes(500_000, 1);
     const withPrefix = new Uint8Array(base.length + 1);
     withPrefix[0] = 0xff;
     withPrefix.set(base, 1);

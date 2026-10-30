@@ -82,39 +82,79 @@ export async function putBlob(
   await Deno.mkdir(scopedDirPath, { recursive: true });
 
   const tmp = scopedTmpPath(dataDir, vaultId, hash);
-  await Deno.writeFile(tmp, body);
-  const fd = await Deno.open(tmp, { write: true });
-  await fd.sync();
-  fd.close();
-
-  if (overwrite) {
-    // #679: the counter needs the size this re-key rewrite replaces.
-    let replaced = 0;
+  try {
+    await Deno.writeFile(tmp, body);
+    const fd = await Deno.open(tmp, { write: true });
     try {
-      replaced = (await Deno.stat(dest)).size;
-    } catch {
-      // absent: the whole body is new
+      await fd.sync();
+    } finally {
+      fd.close();
     }
-    try {
+
+    if (overwrite) {
+      // #679: the counter needs the size this re-key rewrite replaces.
+      let replaced = 0;
+      try {
+        replaced = (await Deno.stat(dest)).size;
+      } catch {
+        // absent: the whole body is new
+      }
       await Deno.rename(tmp, dest);
       return { ok: true, bytesAdded: body.length - replaced };
-    } finally {
-      // Consumed by the rename; a failed rename leaves it behind.
-      await Deno.remove(tmp).catch(() => {});
+    }
+
+    try {
+      await Deno.link(tmp, dest);
+      return { ok: true, bytesAdded: body.length };
+    } catch (e) {
+      if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
+      return { ok: true, bytesAdded: 0 };
+    }
+  } finally {
+    await Deno.remove(tmp).catch(() => {});
+  }
+}
+
+/** A `.tmp-*` file can only outlive its upload when the process died mid-write: nothing is in
+ * flight before the server listens, so startup removes every one of them. */
+export function removeStrandedTempFiles(dataDir: string): number {
+  let vaults: Deno.DirEntry[];
+  try {
+    vaults = [...Deno.readDirSync(`${dataDir}/blobs`)];
+  } catch {
+    return 0; // no blobs dir yet
+  }
+  let removed = 0;
+  for (const vault of vaults) {
+    if (!vault.isDirectory) continue;
+    const vaultDir = `${dataDir}/blobs/${vault.name}`;
+    let shards: Deno.DirEntry[];
+    try {
+      shards = [...Deno.readDirSync(vaultDir)];
+    } catch {
+      continue;
+    }
+    for (const shard of shards) {
+      if (!shard.isDirectory) continue;
+      const shardPath = `${vaultDir}/${shard.name}`;
+      let entries: Deno.DirEntry[];
+      try {
+        entries = [...Deno.readDirSync(shardPath)];
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile || !entry.name.includes(".tmp-")) continue;
+        try {
+          Deno.removeSync(`${shardPath}/${entry.name}`);
+          removed++;
+        } catch {
+          // already gone
+        }
+      }
     }
   }
-
-  // link is exclusive: of two concurrent uploads of one new chunk, the loser is the
-  // dedup hit, so the chunk's bytes are counted once.
-  try {
-    await Deno.link(tmp, dest);
-    return { ok: true, bytesAdded: body.length };
-  } catch (e) {
-    if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
-    return { ok: true, bytesAdded: 0 };
-  } finally {
-    await Deno.remove(tmp);
-  }
+  return removed;
 }
 
 /** Sum of this vault's blob file sizes; in-flight `.tmp-*` uploads don't count. */
@@ -175,7 +215,7 @@ export async function gcUnreferencedBlobs(
     for (const entry of entries) {
       if (!entry.isFile) continue;
       const filename = entry.name;
-      if (filename.includes(".tmp-")) continue; // in-flight upload
+      if (filename.includes(".tmp-")) continue; // in-flight upload: startup swept the stranded ones
       const hash = shard.name + filename;
       if (retained.has(hash)) continue;
       try {

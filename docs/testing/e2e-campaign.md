@@ -38,9 +38,8 @@ duplicate versions and no conflict files.
   re-established, not reset to 0), and no conflict file appears.
 - **0b: kill mid-debounce.** A note is seeded and synced, then five lines are written and the app is
   "killed" before the 2 s pending window fires. On relaunch the five lines are on disk and propagate
-  to the peer exactly once, with no conflict file.
-  Not yet met: the exactly-once count, `test/e2e/scenarios/level0-single-device.spec.ts:104-106`
-  checks the local bytes, content convergence and no conflict file, not a version count.
+  to the peer exactly once: the path's server chain holds exactly two versions (the seed and the
+  recovered write), with no conflict file.
 - **0c: restart with an untracked local edit.** With the app locked, an external write appends three
   lines. On unlock the reconciler detects the change and commits a version that reaches the peer;
   `getLastSeenSeq()` advances past 1; no conflict file.

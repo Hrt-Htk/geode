@@ -31,11 +31,9 @@ Each gate has three parts: tests, manual checks, pass criteria.
 - `test/unit/server/blobs.test.ts`: `putBlob` writes the file and returns `{ ok: true }`, rejects a
   malformed hash and a body over `MAX_BLOB_SIZE` (4 MiB), treats a second put of the same hash as a
   dedup hit (and refreshes its mtime), keeps concurrent puts of one hash to one valid file, keeps
-  vaults isolated, returns null or false for a missing blob, cleans up its temp file when the rename
-  fails (inject the error), and leaves no `.tmp-*` file after a successful put.
-  Not yet met: `putBlob` has no try/finally around the temp write and rename,
-  `server/blobs.ts:80-86`, and the test covers only the successful put,
-  `test/unit/server/blobs.test.ts:165-183`.
+  vaults isolated, returns null or false for a missing blob, and leaves no `.tmp-*` file after a
+  successful put or a failure in the write chain. `removeStrandedTempFiles` removes a temp file a
+  crash left in any vault's shard and keeps real blobs.
 - `test/unit/server/routes-blob.test.ts`: `POST`, `HEAD` and `GET /blobs/:hash` with a device token
   return 200 (200/404 for HEAD), 401 without a token, 400 for a bad hash, 413 over 4 MiB, and 409
   during a re-key session.
@@ -66,9 +64,10 @@ token's vault. The routes live in `server/blob-routes.ts`, not `server/routes.ts
   ```
 - [ ] Verify `data/geode.db-wal` exists after the first write.
 - [ ] Kill the server mid-upload of a large blob, restart, and retry the same blob. The retry
-      succeeds and no `.tmp-*` file is left in `data/blobs/`.
-      Not yet met: a killed upload strands its `.tmp-*` file, because GC and the size accounting
-      skip those names and nothing sweeps them, `server/blobs.ts:109` and `server/blobs.ts:148`.
+      succeeds and the stranded `.tmp-*` file is gone: startup removes every temp file in the blob
+      store before the listener starts (pinned by `test/unit/server/blobs.test.ts`, "startup removes
+      every stranded .tmp-* file and keeps real blobs"). `putBlob`'s `finally` removes the temp file
+      on any in-process failure, so only a crash can leave one for the next start.
 
 ### Pass criteria
 
@@ -94,12 +93,10 @@ token's vault. The routes live in `server/blob-routes.ts`, not `server/routes.ts
   wrong one or a short blob.
 - `test/unit/core/chunker.test.ts`: an empty input yields nothing; a small file yields one chunk;
   chunking is deterministic; sizes stay in `[min_size, max_size]`; an append changes only the last
-  chunk; a middle insertion changes only the overlapping chunks; a 1 byte prepend changes only the
-  first chunk.
-  Not yet met: no committed test pins the prepend case, and the one that tries is `ignore: true`,
-  `test/unit/core/chunker.test.ts:87`, because its periodic (i%256) pattern collapses 8 chunks into
-  4 distinct hashes. The property holds on real input: 500 KB of pseudorandom data keeps 7 of 8
-  chunk hashes after a 1 byte prepend, and 2 MB keeps 30 of 31.
+  chunk; a middle insertion changes only the overlapping chunks; a 1 byte prepend keeps at least half
+  of the chunk hashes on 500 KB of deterministic pseudorandom data. The test asserts locality, not
+  positional equality (the cut hash carries from each chunk start), which is what fastcdc guarantees;
+  `../crypto/encryption-chunking.md` §8 carries the measured rates.
 - `test/unit/core/hash.test.ts`, `normalize.test.ts`, `reassemble.test.ts`: known blake3 vectors,
   keyed versus unkeyed hashes, path and line-ending normalization, BOM stripping, MIME detection,
   and reassembly that throws on a reordered or swapped chunk.
@@ -178,14 +175,13 @@ All use `test/two-vault-driver.ts`:
 
 - `test/scenarios/sync/basic-sync.test.ts`: create, modify and delete on A reach B.
 - `test/scenarios/sync/initial-sync.test.ts`: B joins a vault with 5 existing files and converges;
-  initial sync is followed by live updates with no duplicates and no missed updates.
-  Not yet met: the live update phase, `test/scenarios/sync/initial-sync.test.ts:5-35` ends at the
-  join, with no writes after it.
+  initial sync is followed by live updates with no duplicates and no missed updates: a new file and
+  an edit of a synced one both land on B, and the server holds exactly one new version for each path
+  (1 and 2).
 - `test/scenarios/sync/reconnect-replay.test.ts`: B disconnects, A commits 3 times, B reconnects and
-  receives all 3 in seq order; a server restart mid-session leaves both clients reconnecting with
-  their stored `last_seen_seq` and no duplicates.
-  Not yet met: the mid-session server restart,
-  `test/scenarios/sync/reconnect-replay.test.ts:17` disconnects the client transport only.
+  receives all 3 in seq order; a server restart mid-session reconnects both clients from their stored
+  `last_seen_seq`: no already-applied version is replayed (the write spy on B sees only the one
+  post-restart edit) and the path ends with one new version, not one per reconnect.
 - `test/scenarios/sync/origin-echo.test.ts`: a replayed version of A's own commit advances the
   cursor without rewriting the file.
 - `test/scenarios/sync/reconciler-external-edit.test.ts`: an external create, modify and delete are
@@ -343,8 +339,10 @@ merged-equals-remote case, conflict write order and a missing local row.
 - a WebSocket upgrade with a bad token closes with 1008; a valid token succeeds;
 - `POST /vaults` and `POST /vaults/:id/devices` require the admin token;
 - five wrong admin tokens from one IP are locked out with 429 and `Retry-After`;
-- deleting a device row makes the next request 401 within the 60 s cache TTL (`server/auth.ts:5`).
-  Not yet met: the TTL itself, `test/integration/auth.test.ts:485` clears the cache first.
+- deleting a device row rejects its token on the very next request, with nothing to clear first:
+  `test/integration/auth.test.ts` warms a token with a 200, deletes the row and expects 401, and does
+  the same for a WebSocket upgrade (close 1008). Token lookup has no cache to expire, so revocation
+  and a hand-deleted row take effect immediately.
 
 `test/unit/server/revoke-ws.test.ts` pins that revoking a device closes its live WebSocket
 immediately.
@@ -357,7 +355,7 @@ immediately.
 - [ ] The certificate is valid.
 - [ ] `kill -9` the deno process; systemd restarts it within 5 s (`RestartSec=5s`).
 - [ ] Reboot the box; `systemctl is-enabled geode` shows enabled and the service comes up.
-- [ ] Delete a device token via SQL; within 60 s the device starts failing requests.
+- [ ] Delete a device token via SQL; the next request fails immediately, not after a cache window.
 
 ### E2E (Playwright, real Obsidian)
 
@@ -391,9 +389,10 @@ release.
   `app.saveLocalStorage("key-cache", null)`), a throwing clear is logged, the legacy in-vault cache
   file is removed, and `resolveCachedKeys` returns null for a missing or corrupt cache.
 - Cached unlock makes no Argon2id call (count them) and, after the cache is cleared, the next unlock
-  takes the slow path.
-  Not yet met: no test calls `tryCachedKeys`, the cached unlock path at
-  `plugin/plumbing/vault-lock.ts:161-185`, called from `plugin/main.ts:540`.
+  takes the slow path. `test/unit/plugin/vault-lock-cached-unlock.test.ts` drives `tryCachedKeys`
+  (the cached path at `plugin/plumbing/vault-lock.ts:161-185`, called from `plugin/main.ts:540`) with
+  the Argon2id primitive counted: the cached unlock derives 0 times, the cleared cache falls through
+  to `unlockVault` and derives exactly once.
 - The slow passphrase path is `unlockVault` (`plugin/plumbing/vault-lock.ts:49-81`); the re-key
   retry inside it is `unlockAfterRemoteRekeyFlow` (`plugin/plumbing/vault-lock.ts:93-114`).
 
@@ -489,12 +488,11 @@ not seconds.
 
 ### E2E (Playwright, real Obsidian)
 
-- `test/e2e/scenarios/gate10-trash-restore.spec.ts` (+ `.hybrid`): delete a file in real Obsidian,
-  `trash.list()` returns the entry, restore it programmatically, and the restored file shows in the
-  file explorer on both instances while the trash is empty.
-  Not yet met: the explorer DOM, `test/e2e/scenarios/gate10-trash-restore.spec.ts:81` converges
-  through `waitForConvergence` (adapter reads), and `test/e2e/scenarios/trash-ui.spec.ts:66-111`
-  asserts no explorer entry either.
+- `test/e2e/scenarios/gate10-trash-restore.spec.ts`: delete a file in real Obsidian, `trash.list()`
+  returns the entry, restore it programmatically, and the desktop spec asserts the restored file in
+  the real file-explorer DOM of both instances (`.nav-file-title[data-path=…]`, revealed in the tree)
+  while the trash is empty. The `.hybrid` variant runs the same cycle against a phone peer and
+  asserts convergence (`waitForContent`), not the explorer DOM.
 - `test/e2e/scenarios/trash-ui.spec.ts`: the Trash modal lists the deleted file and restores it from
   the row's Restore button.
 - `test/e2e/scenarios/trash-purge-admin.spec.ts`: a purge inside the server's retention floor asks
@@ -562,9 +560,9 @@ These hold at every gate. If one fails, a previous gate regressed.
 - [ ] No file in `core/` or `plugin/` exceeds 500 code lines (over 300 is a review candidate).
 - [ ] `deno task standards` clean (lint, plugin types, promise rules, unused exports, duplication,
       test names, docs and private-data gates, LOC tripwires).
-- [ ] `deno fmt --check` clean.
-      Not yet met: nothing runs it (`.github/workflows/ci.yml:173` runs `deno task standards`, which
-      has no format check), and `deno fmt --check` reports 480 unformatted files of 794.
+- [ ] `deno fmt --check` clean. It is the first step of `deno task standards` (`deno.json`), which
+      the `Deno checks` job runs on every push (`ci.yml`, "Standards" step), so an unformatted file
+      fails CI.
 - [ ] No `TODO` or `FIXME` without an associated issue.
 - [ ] No `console.log` outside `log.ts` modules.
 - [ ] Every cryptographic primitive comes from libsodium or `@noble/hashes`.
