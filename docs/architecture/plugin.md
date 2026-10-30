@@ -528,6 +528,11 @@ trailing chevron, and its preview caption reads the row's own words (`Restored f
 cut off. A name the vault never saw (a version the retired pseudo device authored, a revoked device)
 leaves its row bare: `Deleted`, `Restored from trash`.
 
+**History on the phone** (`manifest/styles.css`, `.is-phone .geode-history-*`): a full-height sheet
+as wide as the phone (the desktop sizing no longer overrides it); the rows are `--touch-size-s` tap
+targets. The title wraps in the space left of ✕, the list or the preview takes the rest of the height
+(the list scrolls; Back opens the preview), and the two-pane sizing stays behind `body:not(.is-phone)`.
+
 **Admin token gate** (`ui/admin-token-modal.ts`): `withAdminToken(host, ask, onOk)` runs a privileged
 action with the session's in-memory admin token, prompting for it (validated against the server, never
 persisted, asked once per Obsidian session) when it is not cached. A 401 from the action drops the
@@ -587,3 +592,6 @@ reviewer can check against those gates:
   and only a `clean` outcome commits (`merge.md` §6).
 - Mobile: a cached-key launch skips Argon2; a resumed app reconnects and reconciles; HTTP goes through
   `fetch` on mobile and `requestUrl` on desktop.
+- Phone history fits: the title stays clear of ✕, no row or toolbar button is cut, and the list or the
+  preview takes over half the screen height
+  (`test/e2e/scenarios/file-history.phone.spec.ts`).
