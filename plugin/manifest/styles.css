@@ -1169,13 +1169,11 @@ body:not(.is-phone) .geode-trash-modal .modal-content {
 /* #464: file history: editing periods on the left, the selected version's
    preview on the right, and the Changes diff. Colors, spacing and type are
    native variables; phone keeps the two panes stacked (list, then Back). */
-.geode-history-modal {
-  /* `.modal` sizes off --dialog-width; --modal-width only applies to
-     mod-sidebar-layout, so two panes need this one. */
-  --dialog-width: min(62rem, 80vw);
-}
-
 body:not(.is-phone) .geode-history-modal {
+  /* `.modal` sizes off --dialog-width; --modal-width only applies to
+     mod-sidebar-layout, so two panes need this one. A phone leaves it native:
+     a sheet the width of the screen. */
+  --dialog-width: min(62rem, 80vw);
   height: var(--dialog-max-height);
   overflow: hidden;
 }
@@ -1444,13 +1442,38 @@ body:not(.is-phone) .geode-history-modal .modal-content {
   font-size: var(--font-ui-smaller);
 }
 
-/* Phone: one pane at a time, full width, with Back into the list. */
+/* Phone: one pane at a time, full width and full height, with Back into the list. */
+.is-phone .geode-history-modal {
+  /* #10: a full-height sheet, so the preview gets the screen instead of a third of it. */
+  height: var(--dialog-max-height);
+}
+
+.is-phone .geode-history-modal .modal-content {
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-4));
+}
+
+/* #10: the title wraps in the space left of ✕ instead of running under it. */
+.is-phone .geode-history-modal .modal-header {
+  padding-inline-end: calc(var(--touch-size-m, 44px) + var(--size-4-4) * 2);
+}
+
+.is-phone .geode-history-modal .modal-title {
+  max-width: 100%;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .is-phone .geode-history-body {
   flex-direction: column;
 }
 
 .is-phone .geode-history-list {
+  flex: 1 1 auto;
   width: auto;
+  min-height: 0;
   border-right: none;
 }
 
@@ -1466,6 +1489,34 @@ body:not(.is-phone) .geode-history-modal .modal-content {
 
 .geode-history-back:hover {
   color: var(--text-accent-hover);
+}
+
+/* #10: the day and time picker is a tap target too: no row under 40px. */
+.is-phone .geode-history-period-head,
+.is-phone .geode-history-version,
+.is-phone .geode-history-event,
+.is-phone .geode-history-older,
+.is-phone .geode-history-back {
+  min-height: var(--touch-size-s);
+}
+
+.is-phone .geode-history-version,
+.is-phone .geode-history-older {
+  display: flex;
+  align-items: center;
+}
+
+.is-phone .geode-history-older {
+  justify-content: center;
+}
+
+/* #10: two toolbar buttons share the row; neither is squeezed out of the modal. */
+.is-phone .geode-history-toolbar {
+  flex-wrap: wrap;
+}
+
+.is-phone .geode-history-toolbar button {
+  flex: 1 1 0;
 }
 
 .is-phone .geode-history-modal .setting-item-control button {

@@ -10,9 +10,101 @@ import { shotPath } from "../helpers/shots";
 // stacked: the period list alone, then the selected version's preview with
 // Back, never side by side.
 const PASSPHRASE = "file-history-phone-pass";
-const NOTE = "history-phone.md";
+const NOTE = "history-phone-2026-10-06-tuesday-notes.md";
 
 const MODAL = ".geode-history-modal";
+
+type Box = {
+  left: number;
+  right: number;
+  height: number;
+  /** How much of the content is clipped away: 0 when the box holds all of it. */
+  cut: number;
+};
+
+type Layout = {
+  viewportHeight: number;
+  viewportWidth: number;
+  modal: Box;
+  title: Box;
+  close: Box;
+  list: Box | null;
+  pane: Box | null;
+  controls: Box[];
+};
+
+/** #10: the phone layout, measured in the WebView: the header, the rows and the buttons. */
+async function phoneLayout(obsidian: PhoneInstance): Promise<Layout> {
+  return await obsidian.eval<Layout>(`
+    (() => {
+      const modal = document.querySelector(${JSON.stringify(MODAL)});
+      if (!modal) throw new Error("phoneLayout: the history modal is not open");
+      const box = (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left,
+          right: r.right,
+          height: r.height,
+          cut: Math.max(el.scrollWidth - el.clientWidth, el.scrollHeight - el.clientHeight),
+        };
+      };
+      const one = (selector) => {
+        const el = modal.querySelector(selector);
+        if (!el) throw new Error("phoneLayout: missing " + selector);
+        return box(el);
+      };
+      const found = (selector) => modal.querySelector(selector) ? one(selector) : null;
+      return {
+        viewportHeight: innerHeight,
+        viewportWidth: innerWidth,
+        modal: box(modal),
+        title: one(".modal-title"),
+        /* Mobile's Modal builds the close button as a header button; desktop uses the close one. */
+        close: one(".modal-close-button, .modal-header-button"),
+        list: found(".geode-history-list"),
+        pane: found('[data-testid="geode-history-pane"]'),
+        controls: [
+          ...modal.querySelectorAll(
+            ".geode-history-toolbar button, .geode-history-back, .geode-history-period-head, " +
+              ".geode-history-version, .geode-history-event, .geode-history-older",
+          ),
+        ].map(box),
+      };
+    })()
+  `);
+}
+
+/** #10: nothing is cut or cramped in the state on screen: the title clear of ✕, every row and
+ * toolbar button a 40px tap target inside the modal, and the list or the preview most of the
+ * height. Soft, so one device run reports every defect instead of only the first. */
+async function expectFitsPhone(obsidian: PhoneInstance): Promise<void> {
+  const l = await phoneLayout(obsidian);
+  expect.soft(l.modal.right - l.modal.left, "the sheet is not as wide as the phone")
+    .toBeGreaterThan(l.viewportWidth * 0.9);
+  expect.soft(l.title.cut, "the title is clipped, so the name is unreadable").toBeLessThanOrEqual(
+    0,
+  );
+  expect.soft(l.close.left - l.title.right, "the title runs under the close button")
+    .toBeGreaterThanOrEqual(4);
+  expect.soft(
+    l.controls.filter((c) => c.height < 40).map((c) => `${Math.round(c.height)}px tall`),
+    "tap targets under 40px",
+  ).toEqual([]);
+  expect.soft(
+    l.controls
+      .filter((c) => c.left < l.modal.left - 1 || c.right > l.modal.right + 1 || c.cut > 0)
+      .map((c) =>
+        `${Math.round(c.left)}..${Math.round(c.right)} in ${Math.round(l.modal.left)}..${
+          Math.round(l.modal.right)
+        }, ${c.cut}px cut`
+      ),
+    "controls the modal cuts off",
+  ).toEqual([]);
+  const content = l.list ?? l.pane;
+  expect.soft(content, "the modal shows neither the list nor a preview").not.toBeNull();
+  expect.soft(content?.height, "the content is a sliver of the screen")
+    .toBeGreaterThan(l.viewportHeight * 0.5);
+}
 
 async function openHistory(obsidian: PhoneInstance): Promise<void> {
   await obsidian.eval(`
@@ -65,14 +157,21 @@ test("file history (phone): list, tap a period, preview with Back", async () => 
     /* ---- The list comes first, full width, with no preview beside it ---- */
     await openHistory(obsidian);
     await expect(obsidian.win.locator(`${MODAL} .modal-title`)).toHaveText(
-      "History · history-phone.md",
+      "History · history-phone-2026-10-06-tuesday-notes.md",
     );
     const period = obsidian.win.locator(`${MODAL} [data-testid="geode-history-period"]`);
     await expect(period).toHaveCount(1);
     await expect(period).toContainText("2 saves");
     await expect(obsidian.win.locator(`${MODAL} [data-testid="geode-history-markdown"]`))
       .toHaveCount(0);
+    /* The period expands into its two save times: the day and time picker. */
+    await evalClick(obsidian, `${MODAL} [data-testid="geode-history-chevron"]`);
+    await expect(obsidian.win.locator(`${MODAL} [data-testid="geode-history-save"]`)).toHaveCount(
+      2,
+    );
+    await clearNotices(obsidian);
     await obsidian.screenshot(shotPath("464-phone-01-list.png"));
+    await expectFitsPhone(obsidian);
 
     /* ---- Tapping the period opens the preview with Back ---- */
     await evalClick(obsidian, `${MODAL} [data-testid="geode-history-period"]`);
@@ -86,7 +185,20 @@ test("file history (phone): list, tap a period, preview with Back", async () => 
     await expect(obsidian.win.locator(`${MODAL} [data-testid="geode-history-period"]`)).toHaveCount(
       0,
     );
+    await clearNotices(obsidian);
     await obsidian.screenshot(shotPath("464-phone-02-preview.png"));
+    await expectFitsPhone(obsidian);
+
+    /* ---- Changes: the diff, whose toolbar carries Show version and Restore ---- */
+    await evalClick(obsidian, `${MODAL} [data-testid="geode-history-diff-toggle"]`);
+    const diffToggle = obsidian.win.locator(`${MODAL} [data-testid="geode-history-diff-toggle"]`);
+    await expect(diffToggle).toHaveText("Show version", { timeout: 20_000 });
+    await expect(obsidian.win.locator(`${MODAL} [data-testid="geode-history-diff"]`)).toBeVisible();
+    await clearNotices(obsidian);
+    await obsidian.screenshot(shotPath("464-phone-03-diff.png"));
+    await expectFitsPhone(obsidian);
+    await evalClick(obsidian, `${MODAL} [data-testid="geode-history-diff-toggle"]`);
+    await expect(diffToggle).toHaveText("Changes");
 
     /* ---- Back returns to the list ---- */
     await evalClick(obsidian, `${MODAL} [data-testid="geode-history-back"]`);
@@ -148,7 +260,7 @@ test("file history (phone): a deletion and a restore row, and only the restore p
 
   const server = await useRemoteServer();
   /* A device name long enough to cut a row on a phone screen, as a real one is. */
-  const device = await server.mintToken("Pixel 9 Pro XL of Alex");
+  const device = await server.mintToken("Pixel 9 Pro XL of Alexandra Montgomery-Smith");
   const obsidian = await connectPhone({
     geodeSettings: {
       serverUrl: server.url,
@@ -206,7 +318,9 @@ test("file history (phone): a deletion and a restore row, and only the restore p
     /* The row's own words, since the preview screen has one version and its clock time
        alone would not say what it is (#691). */
     await expect(obsidian.win.locator(`${MODAL} .geode-history-meta`))
-      .toHaveText(/^Restored from trash on Pixel 9 Pro XL of Alex · \d{2}:\d{2}$/);
+      .toHaveText(
+        /^Restored from trash on Pixel 9 Pro XL of Alexandra Montgomery-Smith · \d{2}:\d{2}$/,
+      );
     await clearNotices(obsidian);
     await obsidian.screenshot(shotPath("691-phone-02-restore-preview.png"));
 
