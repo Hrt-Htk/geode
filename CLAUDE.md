@@ -240,15 +240,21 @@ intermediate ones. CI hard-fails on bad commit format, branch name, or a missing
 6. **Transient CI** (empty `runner_name`, cancelled-while-queued, "Service Unavailable") **→ re-run, not a code bug** (`gh api repos/OWNER/REPO/actions/runs/<id>/jobs`).
 
 **Release to users**: `deno task release X.Y.Z` is the manual release path, one atomic step: bumps the
-version files (root `manifest.json`, `versions.json`, `package.json`), commits `chore(release): X.Y.Z`,
-pushes the bare `X.Y.Z` tag (→ `release.yml` → attested release → BRAT), and deploys the server: plugin
-and server together (never one without the other; a version difference no longer blocks sync: the
-server gates on wire protocol + minimum version only, and a compatible difference shows an update hint
-instead). No `--no-deploy` mode. `after-merge` calls it automatically (step 5).
-`deploy/deploy.sh` alone is only a server-config redeploy primitive, not a release path. The task
-loads `.env.local` for the deploy (`GEODE_SSH_HOST`) and refuses before the version bump while that
-value is unset. Skill `geode-release`. While `RELEASE_HOLD` exists at the repo root, `after-merge`
-skips the release and `deno task release` refuses: remove the file in its own PR to resume.
+shared version line (`package.json` only), commits `chore(release): X.Y.Z`, pushes the bare `X.Y.Z` tag
+(→ `release.yml` → attested pre-release → BRAT), and deploys the server: plugin and server together
+(never one without the other; a version difference no longer blocks sync: the server gates on wire
+protocol + minimum version only, and a compatible difference shows an update hint instead). The build
+stamps `package.json`'s version into `plugin-dist/manifest.json`, so the release asset says `X.Y.Z`
+while the root `manifest.json` keeps the last promoted version. **Every release is a pre-release:**
+BRAT picks it up, the community directory does not. `deno task promote X.Y.Z` moves a tested release
+to the directory: root `manifest.json` + `versions.json`, commit `chore(release): promote X.Y.Z`, push
+`main`, clear the pre-release flag, mark it latest, notes since the last promoted version. No rebuild
+and no server deploy. No `--no-deploy` mode. `after-merge` calls `release` automatically (step 5);
+promote is always manual. `deploy/deploy.sh` alone is only a server-config redeploy primitive, not a
+release path. The release task loads `.env.local` for the deploy (`GEODE_SSH_HOST`) and refuses before
+the version bump while that value is unset. Skill `geode-release`. While `RELEASE_HOLD` exists at the
+repo root, `after-merge` skips the release and `deno task release` / `deno task promote` refuse:
+remove the file in its own PR to resume.
 
 Full process spec: `docs/dev/workflow.md`, `CONTRIBUTING.md`.
 

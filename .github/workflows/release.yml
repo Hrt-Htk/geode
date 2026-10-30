@@ -50,6 +50,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
+          # #22: every release is a beta: BRAT installs it, the community
+          # directory does not until `deno task promote X.Y.Z` clears the flag.
+          prerelease: true
           generate_release_notes: true
           body: |
             Install or update via [BRAT](https://github.com/TfTHacker/obsidian42-brat).

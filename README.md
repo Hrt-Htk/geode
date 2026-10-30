@@ -273,7 +273,10 @@ sudo GEODE_DOMAIN=geode.example.com bash deploy/install.sh
 For a home server, leave out `GEODE_DOMAIN`.
 
 **Plugin:** in BRAT's settings, click **Update** next to Geode, or replace the three files with the
-ones from the latest release.
+ones from the latest release. BRAT installs every release, including pre-releases: a new build
+reaches you as soon as it is cut. Only a release that has been out for a while without trouble is
+promoted, and that promoted build is the one the Obsidian community directory offers once Geode is
+listed there.
 
 ## Backup and restore
 
