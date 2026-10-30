@@ -55,6 +55,12 @@ hard rules, each read from `.github/workflows/` and the scripts it runs:
 Only the maintainer's own PRs from this repo auto-merge; a PR from a fork is reviewed and merged by
 hand.
 
+## Security
+
+Do not open a public issue for a vulnerability. Report it through GitHub's private vulnerability
+reporting, from the repository's Security tab. `SECURITY.md` lists what is in scope and what the
+report should contain.
+
 ## License
 
 Geode is licensed under Apache-2.0 (`LICENSE`).

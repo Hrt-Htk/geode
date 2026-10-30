@@ -138,6 +138,16 @@ files (the CJS libsodium entry, see the comment in `deno.json`), inlines the lib
 module (`plugin/_generated/`), and copies the manifest, `versions.json` and `styles.css` into
 `plugin-dist/`. `--watch` rebuilds on change. It does not talk to a running Obsidian.
 
+Why the WASM is inlined and patched: libsodium's Emscripten loader fetches its `.wasm` file at init,
+and that request never resolves in Obsidian's Electron window, so the plugin would hang on unlock. The
+build therefore pulls the WebAssembly module out of the JS the sumo build already embeds
+(`extractEmbeddedWasm`), writes it as base64 (`plugin/_generated/libsodium-wasm-base64.ts`), and
+annotates the libsodium source at `var Module = exports;` with an `instantiateWasm` hook that builds
+the instance synchronously from those bytes. `plugin/main.ts` decodes the base64 into
+`globalThis.__GEODE_LIBSODIUM_WASM__` before libsodium loads. libsodium is more than half of the
+resulting `main.js` (about 3.5 MB), which is why the bundle is that size; it is also why the plugin
+fetches nothing from the network at runtime.
+
 ### 3.6 `.gitignore` and `LICENSE`
 
 Ignored: runtime data (`data/`, `*.db`, `blobs/`), secrets (`.env*`, `.admin-token`), build output
