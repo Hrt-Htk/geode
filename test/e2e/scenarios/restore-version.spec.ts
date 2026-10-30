@@ -61,7 +61,7 @@ async function openHistory(o: ObsidianPair["A"], filePath: string): Promise<void
     const file = app.vault.getFileByPath(${JSON.stringify(filePath)});
     if (!file) throw new Error("expected " + ${JSON.stringify(filePath)} + " in the vault");
     await app.workspace.getLeaf(true).openFile(file);
-    app.commands.executeCommandById("geode:geode-show-file-history");
+    app.commands.executeCommandById("geode:show-file-history");
     return true;
   `);
   await expect(o.win.locator(MODAL)).toBeVisible({ timeout: 10_000 });
@@ -338,7 +338,7 @@ test("restore: a deleted file's version comes back from trash History", async ()
     await expect(pair.A.win.locator(".geode-activity-modal")).toHaveCount(0, { timeout: 10_000 });
 
     /* ---- Trash row → History → the same file, capped at its newest live version ---- */
-    await pair.A.eval(`app.commands.executeCommandById("geode:geode-open-trash"); return true;`);
+    await pair.A.eval(`app.commands.executeCommandById("geode:open-trash"); return true;`);
     const trash = pair.A.win.locator(".geode-trash-modal");
     await expect(trash).toBeVisible({ timeout: 10_000 });
     await expect(trash.locator('[data-testid="geode-trash-history"]')).toBeVisible({
@@ -373,7 +373,7 @@ test("restore: a deleted file's version comes back from trash History", async ()
     await expect(pair.A.win.locator(MODAL)).toHaveCount(0);
     await pair.A.win.keyboard.press("Escape");
     await expect(pair.A.win.locator(".geode-trash-modal")).toHaveCount(0, { timeout: 10_000 });
-    await pair.A.eval(`app.commands.executeCommandById("geode:geode-open-trash"); return true;`);
+    await pair.A.eval(`app.commands.executeCommandById("geode:open-trash"); return true;`);
     await expect(pair.A.win.locator(".geode-trash-modal")).toBeVisible({ timeout: 10_000 });
     await expect(pair.A.win.locator('[data-testid="geode-trash-empty"]')).toBeVisible({
       timeout: 15_000,

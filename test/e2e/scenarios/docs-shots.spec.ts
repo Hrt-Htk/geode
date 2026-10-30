@@ -147,7 +147,7 @@ test("demo vault: settings, sync scope, devices, passphrase, history, activity, 
       const file = app.vault.getFileByPath(${JSON.stringify(NOTE)});
       if (!file) throw new Error("expected the demo note to exist");
       await app.workspace.getLeaf(true).openFile(file);
-      app.commands.executeCommandById("geode:geode-show-file-history");
+      app.commands.executeCommandById("geode:show-file-history");
       return true;
     `);
     await expect(o.win.locator(".geode-history-modal")).toBeVisible({ timeout: 15_000 });
@@ -216,7 +216,7 @@ Frost on Thursday night. Bring the fig in and cover the trough with the old shee
     await expect(o.win.locator(".geode-activity-modal")).toHaveCount(0, { timeout: 10_000 });
 
     /* ---- Deleted files ---- */
-    await o.eval(`app.commands.executeCommandById("geode:geode-open-trash"); return true;`);
+    await o.eval(`app.commands.executeCommandById("geode:open-trash"); return true;`);
     await expect(o.win.locator(".geode-trash-modal")).toBeVisible({ timeout: 20_000 });
     await expect(o.win.locator('[data-testid="geode-trash-restore"]').first()).toBeVisible({
       timeout: 20_000,

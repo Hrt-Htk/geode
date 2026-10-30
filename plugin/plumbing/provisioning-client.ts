@@ -1,4 +1,5 @@
 import { httpBase } from "./scheme.ts";
+import { windowGlobal } from "./window.ts";
 export { httpBase };
 import { retryBusy } from "./retry.ts";
 import { type ServerAddressCheck, serverCheckStatusToKind } from "./server-address.ts";
@@ -15,11 +16,12 @@ export type HttpReq = {
 export type HttpResp = { status: number; text: string };
 export type HttpFn = (req: HttpReq) => Promise<HttpResp>;
 
-// Default implementation: browser/Deno fetch (used by tests and as a fallback).
+// Default implementation: the renderer's fetch (used by tests and as a fallback;
+// the plugin replaces it with wirePlatformHttp at load).
 let httpImpl: HttpFn = async ({ url, method, headers, body }) => {
   // slice() copies to an exactly-sized buffer; body.buffer would send the
   // whole backing store of a view.
-  const res = await fetch(url, {
+  const res = await windowGlobal.fetch(url, {
     method,
     headers,
     body: body instanceof Uint8Array ? body.slice().buffer : body,

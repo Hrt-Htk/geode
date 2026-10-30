@@ -286,7 +286,7 @@ test("rekey modal surfaces + real change-passphrase run", async () => {
     await expect.poll(async () => await readGeodeStatusBar(o.win), { timeout: 15_000 }).toBe(
       "Geode: locked",
     );
-    await o.eval(`app.commands.executeCommandById("geode:geode-unlock"); return true;`);
+    await o.eval(`app.commands.executeCommandById("geode:unlock"); return true;`);
     const unlockModal = o.win.locator('.modal:has([data-testid="geode-passphrase-input"])');
     await expect(unlockModal).toBeVisible({ timeout: 10_000 });
     const passInput = unlockModal.locator('[data-testid="geode-passphrase-input"]');

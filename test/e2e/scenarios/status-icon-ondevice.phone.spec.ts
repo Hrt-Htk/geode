@@ -123,7 +123,7 @@ test("mobile status icon screenshot loop", async () => {
     await dismissModals(obsidian);
 
     // Open passphrase modal and unlock
-    await obsidian.eval<void>(`app.commands.executeCommandById("geode:geode-unlock")`);
+    await obsidian.eval<void>(`app.commands.executeCommandById("geode:unlock")`);
     const passphraseModal = obsidian.win.locator(
       '.modal:has([data-testid="geode-passphrase-input"])',
     ).last();

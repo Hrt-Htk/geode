@@ -56,7 +56,7 @@ async function openHistory(obsidian: PhoneInstance, vaultPath: string): Promise<
     const file = app.vault.getFileByPath(${JSON.stringify(vaultPath)});
     if (!file) throw new Error("expected " + ${JSON.stringify(vaultPath)} + " in the vault");
     await app.workspace.getLeaf(true).openFile(file);
-    app.commands.executeCommandById("geode:geode-show-file-history");
+    app.commands.executeCommandById("geode:show-file-history");
     return true;
   `);
   await expect(obsidian.win.locator(MODAL)).toBeVisible({ timeout: 10_000 });

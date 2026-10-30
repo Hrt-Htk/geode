@@ -94,6 +94,7 @@ Deno.test("reconciler calls adapter.list bound (mobile crash regression)", async
     makeIsSyncable(false),
     false,
     massDeleteGuard(),
+    ".obsidian",
   );
 
   // Before the fix this throws:

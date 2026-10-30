@@ -16,6 +16,7 @@ import {
   type CommitResult,
 } from "./commit-channel.ts";
 import { HttpClient } from "./http-client.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 export type { CommitRequest, CommitResult };
 
@@ -40,10 +41,10 @@ export class Transport extends EventTarget {
   private deviceToken = "";
   private lastSeenSeq = 0;
   private cursorSink: ((seq: number) => void) | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: number | null = null;
   private reconnectDelay = INITIAL_RECONNECT_DELAY;
   private liveTargetSeq = 0;
-  private liveTimer: ReturnType<typeof setTimeout> | null = null;
+  private liveTimer: number | null = null;
   private http!: HttpClient;
   private reconnectEnabled = false;
   private _commitTimeoutMs = COMMIT_TIMEOUT;
@@ -338,7 +339,7 @@ export class Transport extends EventTarget {
 
   private armLiveTimeout(): void {
     this.cancelLiveTimeout();
-    this.liveTimer = setTimeout(() => {
+    this.liveTimer = windowGlobal.setTimeout(() => {
       log.info("replay drain timeout; going live", {
         lastSeenSeq: this.lastSeenSeq,
         target: this.liveTargetSeq,
@@ -354,7 +355,7 @@ export class Transport extends EventTarget {
 
   private cancelLiveTimeout(): void {
     if (this.liveTimer) {
-      clearTimeout(this.liveTimer);
+      windowGlobal.clearTimeout(this.liveTimer);
       this.liveTimer = null;
     }
   }
@@ -366,14 +367,14 @@ export class Transport extends EventTarget {
   private scheduleReconnect(): void {
     this.cancelReconnect();
     this.setState("disconnected");
-    this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay);
+    this.reconnectTimer = windowGlobal.setTimeout(() => this.connect(), this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY);
     this.dispatchEvent(new CustomEvent("reconnect", { detail: this.reconnectDelay / 2 }));
   }
 
   private cancelReconnect(): void {
     if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
+      windowGlobal.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
   }

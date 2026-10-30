@@ -98,7 +98,7 @@ test("demo vault (phone): status menu and file history", async () => {
     await obsidian.eval(`
       const file = app.vault.getFileByPath(${JSON.stringify(NOTE)});
       await app.workspace.getLeaf(true).openFile(file);
-      app.commands.executeCommandById("geode:geode-show-file-history");
+      app.commands.executeCommandById("geode:show-file-history");
       return true;
     `);
     await expect(obsidian.win.locator(".geode-history-modal")).toBeVisible({ timeout: 20_000 });

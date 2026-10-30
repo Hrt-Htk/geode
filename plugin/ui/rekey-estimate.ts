@@ -1,5 +1,6 @@
 import { log } from "../plumbing/log.ts";
 import { formatBytes } from "./trash-format.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 // Measured rekey crypto rates, bytes/sec (#457): chunk encrypt+decrypt at
 // FastCDC sizes, desktop i5-8500 vs Galaxy A33.
@@ -82,14 +83,14 @@ export function probeSample(versions: { chunk_hashes: string[] }[], allChunks: s
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("probe timeout")), ms);
+    const timer = windowGlobal.setTimeout(() => reject(new Error("probe timeout")), ms);
     promise.then(
       (value) => {
-        clearTimeout(timer);
+        windowGlobal.clearTimeout(timer);
         resolve(value);
       },
       (err) => {
-        clearTimeout(timer);
+        windowGlobal.clearTimeout(timer);
         reject(err instanceof Error ? err : new Error(String(err)));
       },
     );

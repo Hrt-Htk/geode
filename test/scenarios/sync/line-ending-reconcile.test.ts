@@ -55,6 +55,7 @@ Deno.test({
       () => true,
       false,
       massDeleteGuard(),
+      ".obsidian",
     );
 
     // start() sets isRunning=true and triggers initial reconcile
@@ -122,6 +123,9 @@ Deno.test({
         captured.push(...ops);
       },
       () => true,
+      false,
+      undefined,
+      ".obsidian",
     );
 
     reconciler.start();

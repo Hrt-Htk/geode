@@ -98,7 +98,7 @@ export class SettingsStatusSection {
     row.settingEl.dataset.testid = "geode-settings-storage";
     this.storageRowEl = row.settingEl;
     this.storageTextEl = row.descEl.createSpan();
-    this.storageMeterEl = row.controlEl.createEl("div", { cls: "geode-storage-meter" });
+    this.storageMeterEl = row.controlEl.createDiv({ cls: "geode-storage-meter" });
     this.storageMeterEl.createSpan({ cls: "geode-storage-meter-vault" });
     this.storageMeterEl.createSpan({ cls: "geode-storage-meter-other" });
     this.updateStorageRow();

@@ -10,6 +10,7 @@ import { reassemble } from "../../core/reassemble.ts";
 import { hashPathHex } from "../../core/hash.ts";
 import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { log } from "../plumbing/log.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 import type { ActivityRecord } from "./activity-log.ts";
 import {
   diskPlaintextHash,
@@ -330,7 +331,7 @@ async function openedByNote(path: string, deps: ApplyDeps): Promise<boolean> {
       return false; // an unreadable head falls back to closing the old name
     }
     if (head) return head.deleted === 0;
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+    if (attempt < 2) await new Promise((resolve) => windowGlobal.setTimeout(resolve, 100));
   }
   return false;
 }

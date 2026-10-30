@@ -95,7 +95,7 @@ test("rekey elsewhere: desktop re-keys, phone locks, phone unlocks, both converg
     await B.screenshot("560-phone-passphrase-changed-elsewhere.png");
 
     // 5. Unlock the phone with the new passphrase through the real UI.
-    await B.eval(`app.commands.executeCommandById("geode:geode-unlock"); return true;`);
+    await B.eval(`app.commands.executeCommandById("geode:unlock"); return true;`);
     await expect
       .poll(
         () => B.eval<boolean>(`!!document.querySelector('[data-testid="geode-passphrase-input"]')`),

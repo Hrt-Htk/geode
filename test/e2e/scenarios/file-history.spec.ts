@@ -36,7 +36,7 @@ async function openHistoryViaCommand(o: ObsidianPair["A"], path: string): Promis
     const file = app.vault.getFileByPath(${JSON.stringify(path)});
     if (!file) throw new Error("expected " + ${JSON.stringify(path)} + " in the vault");
     await app.workspace.getLeaf(true).openFile(file);
-    app.commands.executeCommandById("geode:geode-show-file-history");
+    app.commands.executeCommandById("geode:show-file-history");
     return true;
   `);
   await expect(o.win.locator(MODAL)).toBeVisible({ timeout: 10_000 });
@@ -76,7 +76,7 @@ async function deleteVaultFile(o: ObsidianPair["A"], path: string): Promise<void
 
 /** The trash row's Restore: the server appends the restored head version (#687). */
 async function restoreFromTrash(o: ObsidianPair["A"]): Promise<void> {
-  await o.eval(`app.commands.executeCommandById("geode:geode-open-trash"); return true;`);
+  await o.eval(`app.commands.executeCommandById("geode:open-trash"); return true;`);
   const row = o.win.locator('.geode-trash-modal [data-testid="geode-trash-restore"]');
   await expect(row).toHaveCount(1, { timeout: 15_000 });
   await row.click();
@@ -226,7 +226,7 @@ test("file history: periods, preview, Changes diff, image, empty state", async (
       .locator(`.nav-file-title[data-path="${IMAGE}"]`)
       .click({ button: "right" });
     await pair.A.win
-      .locator(".menu .menu-item", { hasText: "Geode: Show file history" })
+      .locator(".menu .menu-item", { hasText: "Show file history" })
       .click();
     await expect(pair.A.win.locator(MODAL)).toBeVisible({ timeout: 10_000 });
     await expect(pair.A.win.locator(`${MODAL} .modal-title`)).toHaveText(
@@ -308,7 +308,7 @@ test("file history: periods, preview, Changes diff, image, empty state", async (
       .screenshot({ path: shotPath("464-07-deletion-row-above-live-save.png") });
 
     /* ---- A lock closes the modal: history cannot decrypt without keys ---- */
-    await pair.A.eval(`app.commands.executeCommandById("geode:geode-lock"); return true;`);
+    await pair.A.eval(`app.commands.executeCommandById("geode:lock"); return true;`);
     await expect(pair.A.win.locator(MODAL)).toHaveCount(0, { timeout: 10_000 });
     await pair.A.win.keyboard.press("Escape");
     await expect(pair.A.win.locator(".geode-activity-modal")).toHaveCount(0, { timeout: 10_000 });

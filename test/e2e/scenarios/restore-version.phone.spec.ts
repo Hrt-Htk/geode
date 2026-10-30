@@ -58,7 +58,7 @@ test("restore (phone): confirm, restore, and the restored head appears", async (
       const file = app.vault.getFileByPath(${JSON.stringify(NOTE)});
       if (!file) throw new Error("expected " + ${JSON.stringify(NOTE)} + " in the vault");
       await app.workspace.getLeaf(true).openFile(file);
-      app.commands.executeCommandById("geode:geode-show-file-history");
+      app.commands.executeCommandById("geode:show-file-history");
       return true;
     `);
     await expect(obsidian.win.locator(MODAL)).toBeVisible({ timeout: 15_000 });

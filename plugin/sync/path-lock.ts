@@ -1,4 +1,5 @@
 import type { StateDB } from "../plumbing/state.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 const locks = new WeakMap<StateDB, Map<string, Promise<void>>>();
 
@@ -31,7 +32,7 @@ export async function acquirePathLock(
 
   const won = await Promise.race([
     prior.then(() => true),
-    new Promise<boolean>((r) => setTimeout(() => r(false), timeoutMs)),
+    new Promise<boolean>((r) => windowGlobal.setTimeout(() => r(false), timeoutMs)),
   ]);
   if (!won) {
     // Withdraw, but leave `turn` in the queue: a later writer must still wait for the

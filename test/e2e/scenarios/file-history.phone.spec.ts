@@ -19,7 +19,7 @@ async function openHistory(obsidian: PhoneInstance): Promise<void> {
     const file = app.vault.getFileByPath(${JSON.stringify(NOTE)});
     if (!file) throw new Error("expected " + ${JSON.stringify(NOTE)} + " in the vault");
     await app.workspace.getLeaf(true).openFile(file);
-    app.commands.executeCommandById("geode:geode-show-file-history");
+    app.commands.executeCommandById("geode:show-file-history");
     return true;
   `);
   await expect(obsidian.win.locator(MODAL)).toBeVisible({ timeout: 10_000 });
@@ -114,7 +114,7 @@ async function deleteNote(obsidian: PhoneInstance): Promise<void> {
 
 /** The trash row's Restore: the server appends the restored head version (#687). */
 async function restoreFromTrash(obsidian: PhoneInstance, content: string): Promise<void> {
-  await obsidian.eval(`app.commands.executeCommandById("geode:geode-open-trash"); return true;`);
+  await obsidian.eval(`app.commands.executeCommandById("geode:open-trash"); return true;`);
   await expect(obsidian.win.locator('.geode-trash-modal [data-testid="geode-trash-restore"]'))
     .toHaveCount(1, { timeout: 15_000 });
   await evalClick(obsidian, '[data-testid="geode-trash-restore"]');

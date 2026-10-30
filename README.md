@@ -374,7 +374,7 @@ sudo systemctl reload caddy
 | Can't reach the server | Check the service with `sudo systemctl status geode` and its logs with `journalctl -u geode -f`. Then query the server: `curl -v https://geode.example.com/version` (home server: `curl -v http://192.168.1.20:8080/version`). It should answer with JSON that includes the server version. If it does, check that an admin request works: `curl -s -H "Authorization: Bearer $(sudo cat /opt/geode/.admin-token)" http://127.0.0.1:8080/vaults` answers `[]` or your vaults. |
 | "That admin token isn't valid" | Print the token again with `deploy/print-admin-token.sh` and paste it exactly. |
 | Wrong passphrase when joining | Geode rejects it right away. Passphrases are case sensitive. |
-| Notes don't appear after joining | Give the first sync a moment. If nothing arrives, run **Geode: Resync from scratch** from the command palette. |
+| Notes don't appear after joining | Give the first sync a moment. If nothing arrives, run **Resync from scratch** from the command palette. |
 | Replay loops or repeated conflicts after copying a vault | Two devices share one identity. See [Add another device](#add-another-device). |
 | "Update required" or "Server update required" | See [Update](#update). |
 

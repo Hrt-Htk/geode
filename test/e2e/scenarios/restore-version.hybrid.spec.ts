@@ -20,7 +20,7 @@ async function restoreVersionOn(device: SyncDevice, note: string, version: numbe
     const file = app.vault.getFileByPath(${JSON.stringify(note)});
     if (!file) throw new Error("expected " + ${JSON.stringify(note)} + " in the vault");
     await app.workspace.getLeaf(true).openFile(file);
-    app.commands.executeCommandById("geode:geode-show-file-history");
+    app.commands.executeCommandById("geode:show-file-history");
     return true;
   `);
   await expect

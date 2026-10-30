@@ -72,7 +72,7 @@ test("phone UI: Logs section + mobile Notices", async () => {
 
     /* ---- Mobile status icon: lock the vault → icon reflects locked state ---- */
     await clearNotices(obsidian);
-    await runCommand(obsidian.win, "Geode: Lock vault");
+    await runCommand(obsidian.win, "Lock vault");
     await new Promise((r) => setTimeout(r, 800));
     await obsidian.win.locator('[data-testid="geode-mobile-status"]')
       .waitFor({ state: "visible", timeout: 5_000 });

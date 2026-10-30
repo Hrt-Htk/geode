@@ -41,7 +41,7 @@ export class SettingsScopeSection {
   constructor(private fields: HTMLElement, private host: ScopeSectionHost) {
     this.renderFoldersRow();
     this.renderConfigToggle();
-    this.listWrap = this.fields.createEl("div");
+    this.listWrap = this.fields.createDiv();
     this.renderConfigRow();
   }
 
@@ -139,8 +139,8 @@ export class SettingsScopeSection {
   private renderConfigToggle(): void {
     const syncConfigSetting = new Setting(this.fields).setName("Sync config folder");
     syncConfigSetting.setDesc("");
-    syncConfigSetting.descEl.appendText("Include the vault's config folder (default ");
-    syncConfigSetting.descEl.createEl("code", { text: ".obsidian/" });
+    syncConfigSetting.descEl.appendText("Include the vault's config folder (");
+    syncConfigSetting.descEl.createEl("code", { text: `${this.host.configDir}/` });
     syncConfigSetting.descEl.appendText(") in sync.");
     syncConfigSetting.addToggle((t) => {
       t.toggleEl.dataset.testid = "geode-settings-toggle-sync-obsidian";

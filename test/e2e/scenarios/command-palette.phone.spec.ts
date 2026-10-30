@@ -10,12 +10,12 @@ import { dismissModals, evalClick, evalSetValue } from "../helpers/mobile-ui";
 const PASSPHRASE = "palette-passphrase";
 
 const GEODE_COMMANDS = [
-  "Geode: Push now",
-  "Geode: Reconcile now",
-  "Geode: Unlock vault",
-  "Geode: Lock vault",
-  "Geode: Resync from scratch",
-  "Geode: Export decrypted vault to folder...",
+  "Push now",
+  "Reconcile now",
+  "Unlock vault",
+  "Lock vault",
+  "Resync from scratch",
+  "Export decrypted vault to folder...",
 ];
 
 test("command palette: all Geode commands visible and functional", async () => {
@@ -67,7 +67,7 @@ test("command palette: all Geode commands visible and functional", async () => {
       { timeout: 10_000 },
     ).toBeGreaterThanOrEqual(GEODE_COMMANDS.length);
 
-    /* Suggestion text includes a plugin-name chip prefix (e.g. "GeodeGeode: Push now"),
+    /* Suggestion text includes a plugin-name chip prefix (e.g. "GeodePush now"),
        so check substring containment rather than exact match. */
     const visibleCommands = await suggestionItems.allTextContents();
     for (const cmd of GEODE_COMMANDS) {
@@ -82,7 +82,7 @@ test("command palette: all Geode commands visible and functional", async () => {
     await new Promise((r) => setTimeout(r, 300));
 
     /* ---- Step 2: Lock vault via palette ---- */
-    await runCommand(obsidian.win, "Geode: Lock vault");
+    await runCommand(obsidian.win, "Lock vault");
 
     await expect.poll(
       async () => await readGeodeStatusBar(obsidian.win),
@@ -91,7 +91,7 @@ test("command palette: all Geode commands visible and functional", async () => {
 
     /* ---- Step 3: Unlock vault via palette → passphrase modal → type + Enter ---- */
     await dismissModals(obsidian);
-    await runCommand(obsidian.win, "Geode: Unlock vault");
+    await runCommand(obsidian.win, "Unlock vault");
 
     /* Assert passphrase modal opens with password input visible. */
     const passphraseModal = obsidian.win.locator(
@@ -118,7 +118,7 @@ test("command palette: all Geode commands visible and functional", async () => {
     await dismissModals(obsidian);
 
     /* ---- Step 4: Push now and Reconcile now: no error notices ---- */
-    await runCommand(obsidian.win, "Geode: Push now");
+    await runCommand(obsidian.win, "Push now");
     await new Promise((r) => setTimeout(r, 3_000));
 
     /* Assert no error notice appeared. */
@@ -127,7 +127,7 @@ test("command palette: all Geode commands visible and functional", async () => {
     ).count();
     expect(pushErrorNotices).toBe(0);
 
-    await runCommand(obsidian.win, "Geode: Reconcile now");
+    await runCommand(obsidian.win, "Reconcile now");
     await new Promise((r) => setTimeout(r, 3_000));
 
     const reconcileErrorNotices = await obsidian.win.locator(
@@ -138,7 +138,7 @@ test("command palette: all Geode commands visible and functional", async () => {
     /* ---- Step 5: Resync from scratch: SKIPPED (destructive/slow) ---- */
 
     /* ---- Step 7: Export decrypted vault to folder...: modal appears, Escape closes it ---- */
-    await runCommand(obsidian.win, "Geode: Export decrypted vault to folder...");
+    await runCommand(obsidian.win, "Export decrypted vault to folder...");
 
     /* Assert the export modal opens with its input and button visible. */
     const exportInput = obsidian.win.locator('[data-testid="geode-export-folder-input"]');

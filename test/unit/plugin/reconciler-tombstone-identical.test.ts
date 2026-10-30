@@ -24,6 +24,7 @@ async function runReconciler(
     makeIsSyncable(),
     false,
     massDeleteGuard(),
+    ".obsidian",
   );
   reconciler.start();
   await reconciler.run(true);

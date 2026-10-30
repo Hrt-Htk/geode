@@ -1,5 +1,6 @@
 import { normalizePath } from "../../core/normalize.ts";
 import { nextRenameId, type RenameLink } from "./commit.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 // Fixed pending-window: the first uncommitted edit opens a 2s window; further
 // edits within it do NOT reset the timer, so a commit lands at most 2s after the
@@ -44,9 +45,9 @@ export interface ScopeMoves {
 }
 
 export class VaultEventHandler {
-  private debouncers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private debouncers: Map<string, number> = new Map();
   private pendingOps: Map<string, PendingOp> = new Map();
-  private drainTimer: ReturnType<typeof setInterval> | null = null;
+  private drainTimer: number | null = null;
   private isRunning = false;
   private selfWritePaths = new Map<string, number>();
   /** #697: applied renames, keyed by their (old, new) pair; only the rename event reads it. */
@@ -79,16 +80,16 @@ export class VaultEventHandler {
     this.vault.on("delete", this.onDelete);
     this.vault.on("rename", this.onRename);
 
-    this.drainTimer = setInterval(() => this.flushPending(), 5_000);
+    this.drainTimer = windowGlobal.setInterval(() => this.flushPending(), 5_000);
   }
 
   stop(): void {
     this.isRunning = false;
     if (this.drainTimer) {
-      clearInterval(this.drainTimer);
+      windowGlobal.clearInterval(this.drainTimer);
       this.drainTimer = null;
     }
-    for (const timer of this.debouncers.values()) clearTimeout(timer);
+    for (const timer of this.debouncers.values()) windowGlobal.clearTimeout(timer);
     this.debouncers.clear();
     this.vault.off("create", this.onCreate);
     this.vault.off("modify", this.onModify);
@@ -97,7 +98,7 @@ export class VaultEventHandler {
   }
 
   flushNow(): void {
-    for (const timer of this.debouncers.values()) clearTimeout(timer);
+    for (const timer of this.debouncers.values()) windowGlobal.clearTimeout(timer);
     this.debouncers.clear();
     this.flushPending();
   }
@@ -173,7 +174,7 @@ export class VaultEventHandler {
     if (this.pendingOps.has(trashPath)) return;
 
     this.trashCheckInFlight.add(trashPath);
-    setTimeout(() => {
+    windowGlobal.setTimeout(() => {
       void (async () => {
         this.trashCheckInFlight.delete(trashPath);
         try {
@@ -242,7 +243,7 @@ export class VaultEventHandler {
       this.pendingOps.delete(op.path);
       const timer = this.debouncers.get(op.path);
       if (timer) {
-        clearTimeout(timer);
+        windowGlobal.clearTimeout(timer);
         this.debouncers.delete(op.path);
       }
     }
@@ -259,7 +260,7 @@ export class VaultEventHandler {
     if (isNewPath) this.onPendingCount?.(this.pendingOps.size);
 
     if (this.debouncers.has(op.path)) return;
-    const timer = setTimeout(() => {
+    const timer = windowGlobal.setTimeout(() => {
       this.debouncers.delete(op.path);
       this.flushPending();
     }, PENDING_WINDOW_MS);
@@ -297,7 +298,7 @@ export class VaultEventHandler {
     this.pendingOps.delete(path);
     const timer = this.debouncers.get(path);
     if (timer) {
-      clearTimeout(timer);
+      windowGlobal.clearTimeout(timer);
       this.debouncers.delete(path);
     }
     this.onPendingCount?.(this.pendingOps.size);

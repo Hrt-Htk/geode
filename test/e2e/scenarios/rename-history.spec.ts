@@ -61,7 +61,7 @@ async function openHistory(
     const file = app.vault.getFileByPath(${JSON.stringify(vaultPath)});
     if (!file) throw new Error("expected " + ${JSON.stringify(vaultPath)} + " in the vault");
     await app.workspace.getLeaf(true).openFile(file);
-    app.commands.executeCommandById("geode:geode-show-file-history");
+    app.commands.executeCommandById("geode:show-file-history");
     return true;
   `);
   await expect(o.win.locator(MODAL)).toBeVisible({ timeout: 10_000 });
@@ -208,7 +208,7 @@ test("rename history: marker rows across two renames, trash History capped", asy
     await expect(o.win.locator(TRASH)).toHaveCount(0, { timeout: 10_000 });
     await upsertVaultFile(o, THIRD, "# Third name\n\na later file at the reused name\n");
     await commitPath(o, THIRD);
-    await o.eval(`app.commands.executeCommandById("geode:geode-open-trash"); return true;`);
+    await o.eval(`app.commands.executeCommandById("geode:open-trash"); return true;`);
     await expect(o.win.locator(TRASH)).toBeVisible({ timeout: 10_000 });
     await expect(o.win.locator(`${TRASH} [data-testid="geode-trash-empty"]`)).toBeVisible({
       timeout: 15_000,

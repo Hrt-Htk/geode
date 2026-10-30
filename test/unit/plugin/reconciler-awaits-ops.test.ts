@@ -38,6 +38,7 @@ Deno.test("reconciler.run() does not resolve until onOps promise settles", async
     makeIsSyncable(),
     false,
     massDeleteGuard(),
+    ".obsidian",
   );
 
   reconciler.start();
@@ -101,6 +102,8 @@ Deno.test("reconciler.run() resolves immediately when onOps returns void (no ops
     onOps,
     makeIsSyncable(),
     false,
+    undefined,
+    ".obsidian",
   );
 
   reconciler.start();
@@ -140,6 +143,8 @@ Deno.test("reconciler.run() awaits async onOps even with empty ops array", async
     onOps,
     makeIsSyncable(),
     false,
+    undefined,
+    ".obsidian",
   );
 
   reconciler.start();

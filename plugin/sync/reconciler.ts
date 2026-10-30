@@ -8,6 +8,7 @@ import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { enumerateDisk } from "./enumerate-disk.ts";
 import { existsOnDisk, nextRenameId, type RenameLink } from "./commit.ts";
 import { type MassDeleteGuard, shouldHoldMassDelete } from "./mass-delete-hold.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 const RECONCILE_INTERVAL = 5 * 60 * 1000;
 /** Head lookups one delete pass may have in flight: each is a server round trip. */
@@ -31,7 +32,7 @@ export type ReconcileOp = RenameLink & {
 };
 
 export class Reconciler {
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: number | null = null;
   private lastRun = 0;
   private isRunning = false;
 
@@ -42,8 +43,10 @@ export class Reconciler {
     private isSyncable: (path: string) => boolean,
     private syncObsidianConfig = false,
     /** #601: the mass-delete guard: thresholds and what to do when it trips. */
-    private guard?: MassDeleteGuard,
-    private configDir = ".obsidian",
+    private guard: MassDeleteGuard | undefined,
+    /** The vault's own config dir (`Vault#configDir`): it is configurable, so it is
+     * always supplied rather than assumed. */
+    private configDir: string,
     /** #583: the server's head for a path, so a name it already closed as a rename is
      * never a delete candidate. */
     private renameHead?: (
@@ -60,7 +63,7 @@ export class Reconciler {
   start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.timer = setInterval(() => {
+    this.timer = windowGlobal.setInterval(() => {
       void this.run();
     }, RECONCILE_INTERVAL);
     void this.run();
@@ -68,7 +71,7 @@ export class Reconciler {
 
   stop(): void {
     this.isRunning = false;
-    if (this.timer) clearInterval(this.timer);
+    if (this.timer) windowGlobal.clearInterval(this.timer);
   }
 
   setSyncObsidianConfig(value: boolean): void {

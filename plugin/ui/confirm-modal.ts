@@ -23,7 +23,7 @@ export class ConfirmModal extends Modal {
     this.titleEl.setText(this.opts.title);
     const { contentEl } = this;
 
-    const container = contentEl.createEl("div", { cls: "geode-confirm-modal" });
+    const container = contentEl.createDiv({ cls: "geode-confirm-modal" });
     container.createEl("p", { text: this.opts.message });
 
     new Setting(container).addButton((btn) => {

@@ -1,3 +1,5 @@
+import { windowGlobal } from "./window.ts";
+
 export interface LocalFileRow {
   path: string;
   path_hash: string;
@@ -57,7 +59,7 @@ export class StateDB {
 
   private persist: ((json: string) => void) | null = null;
   private syncCursorPersist: ((json: string) => void) | null = null;
-  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistTimer: number | null = null;
 
   getLocalFile(path: string): LocalFileRow | null {
     return this.localFiles.get(path) ?? null;
@@ -239,7 +241,7 @@ export class StateDB {
     // cursor is NOT throttled: it persists immediately so a crash can't leave a
     // stale cursor that replays past an applied edit and overwrites it.
     if (this.persistTimer) return;
-    this.persistTimer = setTimeout(() => {
+    this.persistTimer = windowGlobal.setTimeout(() => {
       this.persistTimer = null;
       try {
         this.persist?.(this.serializeLocalFiles());
@@ -251,7 +253,7 @@ export class StateDB {
 
   close(): void {
     if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
+      windowGlobal.clearTimeout(this.persistTimer);
       this.persistTimer = null;
       try {
         this.persist?.(this.serializeLocalFiles());
