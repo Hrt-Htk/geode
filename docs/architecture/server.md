@@ -176,9 +176,12 @@ request.
    and the bytes it replaced are subtracted from `bytesAdded`.
 4. Creates the shard dir, writes `…/<rest>.tmp-<uuid8>`, fsyncs, then places it with `Deno.link`. Link
    is an exclusive create, so of two concurrent uploads of one new chunk exactly one wins and the other
-   gets `AlreadyExists`, which `putBlob` reports as a dedup hit (`bytesAdded: 0`) and removes its temp
-   file. `overwrite` (re-key replace) renames instead, since it must replace the file; a failed rename
-   removes its temp file. This needs hard link support on the data dir, which plain ext4 or xfs as
+   gets `AlreadyExists`, which `putBlob` reports as a dedup hit (`bytesAdded: 0`). `overwrite` (re-key
+   replace) renames instead, since it must replace the file. One `try/finally` spans the whole temp
+   lifecycle, so a failure in the write, the fsync, the link or the rename removes the temp file. A
+   crash mid-write runs no `finally`, so the next startup removes every `.tmp-*` left behind
+   (`removeStrandedTempFiles`, called from `main.ts` before the listener accepts anything; nothing is
+   in flight at that point). This needs hard link support on the data dir, which plain ext4 or xfs as
    `deploy/` creates it has; a data dir on FAT/exFAT or an SMB/CIFS mount does not.
 
 **`putBlob` does not verify `blake3(body) == hash`.** The stored body is ciphertext and the URL hash is
@@ -186,9 +189,10 @@ the plaintext chunk hash; the client verifies integrity during reassembly.
 
 ### Garbage collection
 
-`gcUnreferencedBlobs` walks the vault's shard dirs and deletes every file whose hash is not in
+`gcUnreferencedBlobs` walks the vault's shard dirs and deletes every blob whose hash is not in
 `retained` and whose mtime is older than `graceMs` (24 h, so an in-flight upload is never collected),
-returning how many it deleted. `server/compaction.ts` builds `retained` from every surviving
+returning how many it deleted. `.tmp-*` files are skipped here: startup owns them (above), and only a
+crash can leave one behind. `server/compaction.ts` builds `retained` from every surviving
 `chunk_hashes` row plus the trashed heads, purges expired trash first, then re-measures the vault's
 storage counter (the pass both dropped rows and freed blobs), and skips the pass while a re-key
 session is open. It is armed off the commit path: at most once an hour per vault, and only when a

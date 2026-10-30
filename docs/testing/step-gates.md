@@ -31,11 +31,9 @@ Each gate has three parts: tests, manual checks, pass criteria.
 - `test/unit/server/blobs.test.ts`: `putBlob` writes the file and returns `{ ok: true }`, rejects a
   malformed hash and a body over `MAX_BLOB_SIZE` (4 MiB), treats a second put of the same hash as a
   dedup hit (and refreshes its mtime), keeps concurrent puts of one hash to one valid file, keeps
-  vaults isolated, returns null or false for a missing blob, cleans up its temp file when the rename
-  fails (inject the error), and leaves no `.tmp-*` file after a successful put.
-  Not yet met: `putBlob` has no try/finally around the temp write and rename,
-  `server/blobs.ts:80-86`, and the test covers only the successful put,
-  `test/unit/server/blobs.test.ts:165-183`.
+  vaults isolated, returns null or false for a missing blob, and leaves no `.tmp-*` file after a
+  successful put or a failure in the write chain. `removeStrandedTempFiles` removes a temp file a
+  crash left in any vault's shard and keeps real blobs.
 - `test/unit/server/routes-blob.test.ts`: `POST`, `HEAD` and `GET /blobs/:hash` with a device token
   return 200 (200/404 for HEAD), 401 without a token, 400 for a bad hash, 413 over 4 MiB, and 409
   during a re-key session.
@@ -66,9 +64,10 @@ token's vault. The routes live in `server/blob-routes.ts`, not `server/routes.ts
   ```
 - [ ] Verify `data/geode.db-wal` exists after the first write.
 - [ ] Kill the server mid-upload of a large blob, restart, and retry the same blob. The retry
-      succeeds and no `.tmp-*` file is left in `data/blobs/`.
-      Not yet met: a killed upload strands its `.tmp-*` file, because GC and the size accounting
-      skip those names and nothing sweeps them, `server/blobs.ts:109` and `server/blobs.ts:148`.
+      succeeds and the stranded `.tmp-*` file is gone: startup removes every temp file in the blob
+      store before the listener starts (pinned by `test/unit/server/blobs.test.ts`, "startup removes
+      every stranded .tmp-* file and keeps real blobs"). `putBlob`'s `finally` removes the temp file
+      on any in-process failure, so only a crash can leave one for the next start.
 
 ### Pass criteria
 

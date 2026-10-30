@@ -1,5 +1,5 @@
-import { blobExists, getBlob, putBlob } from "../../../server/blobs.ts";
-import { assert, assertEquals } from "@std/assert";
+import { blobExists, getBlob, putBlob, removeStrandedTempFiles } from "../../../server/blobs.ts";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { blake3 } from "@noble/hashes/blake3";
 import { makeTempDataDir, removeTempDir } from "../../helpers/temp-dir.ts";
 
@@ -209,22 +209,71 @@ Deno.test({
   },
 });
 
+function tmpFilesIn(shardDir: string): string[] {
+  return [...Deno.readDirSync(shardDir)].map((e) => e.name).filter((n) => n.includes(".tmp-"));
+}
+
 Deno.test({
-  name: "blobs - temp files cleaned up if rename fails",
+  name: "blobs - putBlob leaves no temp file after a successful put",
   async fn() {
     const dataDir = makeTempDataDir();
     try {
       const body = new TextEncoder().encode("temp cleanup test");
       const hash = hashOf(body);
-
-      // Write the blob normally first
       await putBlob(dataDir, TEST_VAULT, hash, body);
+      assertEquals(tmpFilesIn(`${dataDir}/blobs/${TEST_VAULT}/${hash.slice(0, 2)}`), []);
+    } finally {
+      removeTempDir(dataDir);
+    }
+  },
+});
 
-      // Verify no *.tmp-* files are left after a successful put.
-      const blobDir = `${dataDir}/blobs/${TEST_VAULT}/${hash.slice(0, 2)}`;
-      const entries = [...Deno.readDirSync(blobDir)].map((e) => e.name);
-      const tmpFiles = entries.filter((e) => e.includes(".tmp-"));
-      assertEquals(tmpFiles.length, 0);
+Deno.test({
+  name: "blobs - putBlob removes its temp file when the write chain fails",
+  async fn() {
+    const dataDir = makeTempDataDir();
+    // Fault injection past the point the temp file exists: `fsync` opens the file it just
+    // wrote, and a throw there (a disk error in the field) used to leave the `.tmp-*` behind.
+    const open = Deno.open;
+    Deno.open = () => {
+      throw new Deno.errors.PermissionDenied("injected open failure");
+    };
+    try {
+      const hash = "c".repeat(64);
+      const shardDir = `${dataDir}/blobs/${TEST_VAULT}/${hash.slice(0, 2)}`;
+      await assertRejects(() => putBlob(dataDir, TEST_VAULT, hash, new Uint8Array(4)));
+      assertEquals(tmpFilesIn(shardDir), [], "a failed write chain leaves no .tmp-* behind");
+    } finally {
+      Deno.open = open;
+      removeTempDir(dataDir);
+    }
+  },
+});
+
+Deno.test({
+  name: "blobs - startup removes every stranded .tmp-* file and keeps real blobs",
+  async fn() {
+    const dataDir = makeTempDataDir();
+    try {
+      // Two vaults, a temp file each (the leftovers of a crash mid-write), plus a real blob
+      // in each of them.
+      const seeded: Array<[string, string]> = [];
+      for (const vaultId of ["vaultA", "vaultB"]) {
+        const body = new TextEncoder().encode(`body of ${vaultId}`);
+        const hash = hashOf(body);
+        await putBlob(dataDir, vaultId, hash, body);
+        const shardDir = `${dataDir}/blobs/${vaultId}/${hash.slice(0, 2)}`;
+        await Deno.writeFile(`${shardDir}/${hash.slice(2)}.tmp-deadbeef`, new Uint8Array(9));
+        seeded.push([vaultId, hash]);
+      }
+
+      assertEquals(removeStrandedTempFiles(dataDir), 2);
+      for (const [vaultId, hash] of seeded) {
+        const shardDir = `${dataDir}/blobs/${vaultId}/${hash.slice(0, 2)}`;
+        assertEquals(tmpFilesIn(shardDir), [], `${vaultId} keeps no temp file`);
+        assert(await blobExists(dataDir, vaultId, hash), `${vaultId} keeps its real blob`);
+      }
+      assertEquals(removeStrandedTempFiles(dataDir), 0, "a second pass finds nothing");
     } finally {
       removeTempDir(dataDir);
     }
