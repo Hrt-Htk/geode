@@ -20,6 +20,8 @@ import { expect, test } from "@playwright/test";
 import { launchPair } from "../fixtures/pair";
 import { readVaultFile, writeVaultFile } from "../helpers/editor";
 import { upsertVaultFile, waitForUnlocked } from "../helpers/geode";
+import { serverMaxSeq } from "../helpers/interrupt";
+import { pathHashesOf, serverChain } from "../helpers/rename-links";
 import { waitForContent, waitForStatusBar } from "../helpers/waits";
 
 const PASSPHRASE = "level0-single-device-passphrase";
@@ -50,6 +52,23 @@ async function relaunch(inst: Awaited<ReturnType<typeof launchPair>>["A"]): Prom
 
 function lastSeenSeq(inst: Awaited<ReturnType<typeof launchPair>>["A"]): Promise<number> {
   return inst.eval<number>("app.plugins.plugins.geode.getLastSeenSeq()");
+}
+
+/** No fixed sleep: the instance is settled once it has acked every seq the server holds and its
+ * commit queue is empty, so no commit of its own can still land. */
+async function waitForSettled(
+  pair: Awaited<ReturnType<typeof launchPair>>,
+): Promise<void> {
+  await expect.poll(
+    async () => {
+      const [cursor, pending] = await Promise.all([
+        lastSeenSeq(pair.A),
+        pair.A.eval<number>("app.plugins.plugins.geode.getPendingCount()"),
+      ]);
+      return cursor === serverMaxSeq(pair.server.dataDir, pair.server.vaultId) && pending === 0;
+    },
+    { timeout: 60_000 },
+  ).toBe(true);
 }
 
 async function conflictPaths(inst: Awaited<ReturnType<typeof launchPair>>["A"]): Promise<string[]> {
@@ -104,6 +123,11 @@ test("level0/0b kill mid-debounce auto-save recovery", async () => {
     expect(await readVaultFile(pair.A, FILE)).toBe(LINES); // autosaved content survived
     await waitForContent(pair.A, pair.B, FILE, LINES, 60_000); // one new version propagated
     expect(await conflictPaths(pair.A)).toEqual([]);
+    // Exactly once: the seed and the recovered write are the path's only two versions. Read the
+    // chain only once the instance is settled, so a late duplicate commit cannot land behind us.
+    await waitForSettled(pair);
+    const [pathHash] = await pathHashesOf(pair.A, [FILE]);
+    expect(serverChain(pair.server, pathHash).map((row) => row.version)).toEqual([1, 2]);
   } finally {
     await pair.stop();
   }
