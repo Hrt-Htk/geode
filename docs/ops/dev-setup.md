@@ -196,7 +196,7 @@ build script does not talk to the running app. To inspect the transport from the
 (Ctrl+Shift+I), read `app.plugins.plugins.geode.transport?.getState()`.
 
 To iterate on the E2E layer instead, `test/e2e/playwright.config.ts` loads `.env.local` and the dev
-loop in `docs/testing/e2e-playwright.md` §8 is the same server plus build watch.
+loop in `docs/testing/e2e-playwright.md` §9 is the same server plus build watch.
 
 ## 6. Verification block
 

@@ -35,6 +35,7 @@
     "ci": "deno install && deno check server/main.ts core/*.ts && deno task build:plugin && deno task standards && deno task test:ci && deno task docs:drift",
     "standards": "deno fmt --check $(git ls-files '*.ts' '*.mjs' '*.json') && deno run -A scripts/standards.ts && jscpd && deno run -R scripts/check-loc.ts && deno run -R scripts/check-docs.ts && deno run -R -E --allow-run=git --env-file=.env.local scripts/check-private.ts && deno run -R --allow-run=git scripts/check-dashes.ts",
     "docs:drift": "deno run -A scripts/docs-drift.ts",
+    "docs:screenshots": "deno run -A scripts/docs-screenshots.ts",
     "health": "deno run -A scripts/repo-health.ts",
     "phone": "deno run -A --env-file=.env.local scripts/phone-cli.ts",
     "phone:cdp": "deno run -A --env-file=.env.local scripts/phone-cli.ts cdp",

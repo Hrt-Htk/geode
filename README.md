@@ -4,11 +4,88 @@ Geode syncs Obsidian vaults between your devices through a server you run yourse
 encrypts your notes before sending them, so the server stores only encrypted data and never sees
 file names or note contents. Edits usually reach your other devices within a few seconds.
 
+## Features
+
+### Sync
+
+- Edits reach your other devices within seconds.
+- Syncs desktops and Android phones.
+- Edits made offline wait and upload when the connection returns.
+- Changes made while Obsidian was closed are picked up the next time you open it.
+- Renames and moves are followed, and a note renamed on another device stays open.
+- Edits to the same note on two devices merge by themselves.
+- When they can't merge, both versions are kept for review, side by side, with **Keep original**,
+  **Keep conflict** and **Keep both**.
+- A mass delete is held instead of applied: sync pauses, and you restore the missing files or confirm
+  the delete.
+- Selective sync: leave folders out, and choose which Obsidian settings and community plugins follow
+  the vault.
+
+```mermaid
+flowchart TD
+  base["Base version<br/>the note both devices started from"]
+  base --> laptop["Laptop edit<br/>changes one line"]
+  base --> phone["Phone edit<br/>adds a new line"]
+  laptop --> merged["Merged note<br/>both edits, no conflict"]
+  phone --> merged
+  laptop --> same["Both changed the same line"]
+  phone --> same
+  same --> file["Conflict file<br/>both versions kept"]
+  file --> review["Review<br/>Keep original, Keep conflict, Keep both"]
+```
+
+![The conflict review window: two versions of one note side by side, each in its own colour, with Keep original, Keep conflict and Keep both](docs/screenshots/conflict-review.png)
+
+### Recovery
+
+- File history for every note, with a diff against the current version and a restore. It works for
+  attachments too, follows renames, and is in each file's context menu.
+- Deleted files are kept for 30 days, so you can restore one or delete it forever.
+- Export a decrypted copy of the vault to a folder (desktop).
+- Resync from scratch when a device has drifted.
+- Rejoining over an existing folder keeps the local files the server doesn't know in a
+  `Geode backup` folder inside the vault, instead of uploading them over your notes.
+
+![The file history window: editing periods on the left, the selected version diffed against the current note on the right](docs/screenshots/history-restore.png)
+
+### Seeing what is happening
+
+- A status icon for synced, syncing, offline, paused, locked, in conflict or on hold. Its menu has
+  pause and resume, sync activity, conflicts, deleted files, devices and settings.
+- Sync activity: what changed, one row per file, with the device and the time.
+- Settings shows the space the vault uses on the server, when it last backed up, and buttons to push
+  or reconcile now.
+- The devices on the vault, with revoke for a lost or stolen one.
+- Banners when something needs you: an error, a pause, or a plugin update.
+- Debug logging with **Copy logs**, for a bug report.
+
+![The status icon's menu on the phone: pause, sync activity, conflicts, deleted files, devices and settings](docs/screenshots/status-menu-phone.png)
+
+![The sync activity window listing the files that changed, each with its device and time](docs/screenshots/sync-activity.png)
+
+### Security and setup
+
+- End-to-end encryption: each device encrypts your notes, so the server never sees note contents or
+  file names.
+- A setup wizard that creates a vault or joins an existing one.
+- Lock and auto-lock: lock the vault now, or let it lock itself after a set number of idle hours.
+- Change the passphrase at any time. Geode estimates the run first, and resumes it if it is
+  interrupted.
+- Choose the encryption strength per vault, from the wizard or later in settings.
+- Rotate the admin token, rename the vault, leave the vault, or change the server address.
+- Self-hosted: a VPS or a computer at home, with Tailscale for access from outside.
+- No telemetry.
+
+![The setup wizard's create step, with a server address and an admin token field](docs/screenshots/setup-wizard.png)
+
+Every other screen, and the command that reshoots them all: [`docs/screenshots/README.md`](docs/screenshots/README.md).
+
 ## Requirements
 
 - A server running Debian or Ubuntu (x86_64 or ARM64). The smallest VPS plan is enough, and a
   computer at home works too.
-- Obsidian 1.8.7 or newer on each device, desktop or mobile.
+- Obsidian 1.8.7 or newer on each device. Geode is tested on desktop (Windows, macOS, Linux) and on
+  Android. iOS is not tested yet.
 - The admin token the server creates during install. You need it to add devices.
 
 Use one sync tool per vault. Don't sync a Geode vault with iCloud or Google Drive at the same time.
