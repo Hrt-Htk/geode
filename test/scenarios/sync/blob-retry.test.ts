@@ -81,9 +81,9 @@ Deno.test({
             }
           },
         },
-        state: openStateDBFromPlugin(A.settings.vaultId),
+        state: openStateDBFromPlugin(A.pluginSettings.vaultId),
         keys: A.keys!,
-        vaultId: A.settings.vaultId,
+        vaultId: A.pluginSettings.vaultId,
         isSyncable: () => true,
       };
 
@@ -141,9 +141,9 @@ Deno.test({
             }
           },
         },
-        state: openStateDBFromPlugin(A.settings.vaultId),
+        state: openStateDBFromPlugin(A.pluginSettings.vaultId),
         keys: A.keys!,
-        vaultId: A.settings.vaultId,
+        vaultId: A.pluginSettings.vaultId,
         isSyncable: () => true,
       };
 

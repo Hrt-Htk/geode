@@ -56,7 +56,7 @@ Deno.test({
 
       const pathHash = hashPathHex(A.keys!.mac_key, "x.md");
       // A restores its own deletion: the server credits the version to A itself.
-      await restoreTrashOne(server.url, vaultId, A.settings.deviceToken, pathHash);
+      await restoreTrashOne(server.url, vaultId, A.pluginSettings.deviceToken, pathHash);
 
       await A.waitForVersion("x.md");
       await B.waitForVersion("x.md");
@@ -65,7 +65,7 @@ Deno.test({
       const chain = versionChain(server, vaultId, pathHash);
       const head = chain.at(-1)!;
       assertEquals(head.deleted, 0, `server head is a delete: ${JSON.stringify(head)}`);
-      assertEquals(head.device_id, A.settings.deviceId, "the requester is credited");
+      assertEquals(head.device_id, A.pluginSettings.deviceId, "the requester is credited");
       assertEquals(head.restored, 1, "the head carries the restored mark");
       assertEquals(
         chain.filter((row) => row.version < head.version && row.restored === 1),

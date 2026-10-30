@@ -108,7 +108,9 @@ test("settings sections: order, live rows, no full re-render, last-backup persis
 
     /* Known toggle state before the settings tab renders: plugin list OFF (so the
        on/off toggle test below starts from a deterministic state). */
-    await o.eval(`app.plugins.plugins.geode.settings.syncObsidianConfig = false; return true;`);
+    await o.eval(
+      `app.plugins.plugins.geode.pluginSettings.syncObsidianConfig = false; return true;`,
+    );
 
     /* Open the settings tab and keep it open for every screenshot (never close it). */
     await o.eval(`

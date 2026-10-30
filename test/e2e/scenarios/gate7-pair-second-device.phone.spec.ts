@@ -30,7 +30,7 @@ test("gate7 phone createVaultFlow provisions, unlocks, and syncs a note to the s
     await waitForUnlocked(obsidian);
 
     const creds = await obsidian.eval<{ vaultId: string; token: string }>(
-      `(() => { const s = app.plugins.plugins.geode.settings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
+      `(() => { const s = app.plugins.plugins.geode.pluginSettings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
     );
     expect(creds.vaultId).toBeTruthy();
     expect(creds.token).toBeTruthy();
@@ -94,8 +94,10 @@ test("gate7 phone joins existing vault as second device and converges pre-existi
 
     await waitForUnlocked(phone1);
 
-    const vaultId = await phone1.eval<string>("app.plugins.plugins.geode.settings.vaultId");
-    const phase1Token = await phone1.eval<string>("app.plugins.plugins.geode.settings.deviceToken");
+    const vaultId = await phone1.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
+    const phase1Token = await phone1.eval<string>(
+      "app.plugins.plugins.geode.pluginSettings.deviceToken",
+    );
 
     await phone1.eval(`
       const path = ${JSON.stringify(FILE_PATH)};
@@ -142,7 +144,9 @@ test("gate7 phone joins existing vault as second device and converges pre-existi
 
     await waitForUnlocked(phone2);
 
-    const joinedVaultId = await phone2.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+    const joinedVaultId = await phone2.eval<string>(
+      "app.plugins.plugins.geode.pluginSettings.vaultId",
+    );
     expect(joinedVaultId).toBe(vaultId);
 
     await phone2.eval(`(() => { app.plugins.plugins.geode.reconcileNow(); return true; })()`);

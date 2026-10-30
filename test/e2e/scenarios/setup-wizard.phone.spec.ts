@@ -53,13 +53,13 @@ test("phone create wizard walks the redesigned steps and screenshots each", asyn
     await obsidian.screenshot(SHOT("phone-459-wizard-done.png"));
 
     const creds = await obsidian.eval<{ vaultId: string; token: string }>(
-      `(() => { const s = app.plugins.plugins.geode.settings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
+      `(() => { const s = app.plugins.plugins.geode.pluginSettings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
     );
     expect(creds.vaultId).toBeTruthy();
     expect(creds.token).toBeTruthy();
 
     // Default level on the phone walk is Standard, stored on device and server (#457).
-    expect(await obsidian.eval(`app.plugins.plugins.geode.settings.argon2Params`)).toEqual(
+    expect(await obsidian.eval(`app.plugins.plugins.geode.pluginSettings.argon2Params`)).toEqual(
       STANDARD,
     );
     const info = await (await fetch(`${server.url}/vaults/${creds.vaultId}/info`, {

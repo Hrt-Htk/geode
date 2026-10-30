@@ -32,8 +32,8 @@ const LOCAL_LOSER = "line 1\nB edited line 2\nline 3\n";
 async function makeConflict(A: PairedVaults["A"], B: PairedVaults["B"]): Promise<string> {
   // Name the devices so the conflict file embeds the creator's name, as a real
   // user's device would (pair() registers the DB names but leaves settings blank).
-  A.settings.deviceName = "device-A";
-  B.settings.deviceName = "device-B";
+  A.pluginSettings.deviceName = "device-A";
+  B.pluginSettings.deviceName = "device-B";
   A.fakeVault.write(PATH, BASE);
   await A.flushPending();
   await B.waitForVersion(PATH, 1);
@@ -69,7 +69,12 @@ async function resolve(
 ): Promise<void> {
   // Assert the attribution the list model derives, then resolve with it.
   assertEquals(
-    conflictFileIsMine(conflictPath, plugin.settings.deviceName, null, plugin.settings.deviceId),
+    conflictFileIsMine(
+      conflictPath,
+      plugin.pluginSettings.deviceName,
+      null,
+      plugin.pluginSettings.deviceId,
+    ),
     mine,
   );
   const plan = planResolution({ path, conflictPath, conflictFileIsMine: mine }, action);

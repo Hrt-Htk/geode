@@ -374,7 +374,7 @@ test("trash modal: empty, expired + purge count, error + retry", async () => {
     // Retention 0 counts trashed_at < now (strict); a file trashed in this same
     // second would read as not yet expired. Wait out the second boundary.
     await new Promise((r) => setTimeout(r, 1500));
-    await o.eval(`app.plugins.plugins.geode.settings.trashRetentionDays = 0; return true;`);
+    await o.eval(`app.plugins.plugins.geode.pluginSettings.trashRetentionDays = 0; return true;`);
 
     await openTrashFromMenu(o);
     await expect(modal).toBeVisible({ timeout: 15_000 });
@@ -466,7 +466,7 @@ test("trash modal: retention below the server floor shows the server's 30 days (
       .toBe(1);
 
     // The user's "keep deleted files" setting is below the server floor.
-    await o.eval(`app.plugins.plugins.geode.settings.trashRetentionDays = 7; return true;`);
+    await o.eval(`app.plugins.plugins.geode.pluginSettings.trashRetentionDays = 7; return true;`);
 
     await openTrashFromMenu(o);
     const modal = o.win.locator(".geode-trash-modal");

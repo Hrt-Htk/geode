@@ -19,7 +19,7 @@ import { rejoinFailedNotice, rejoinResultText } from "../ui/setup-wizard-logic.t
 import type { RejoinBackup } from "./rejoin.ts";
 
 type FlowHost = {
-  settings: PluginSettings;
+  pluginSettings: PluginSettings;
   keys: VaultKeys | null;
   isUnlocked: boolean;
   saveSettings(): Promise<void>;
@@ -59,7 +59,7 @@ export async function createVaultFlow(
   // #675: the first (NULL) verifier write is admin-gated, so the wizard's admin
   // token goes along with the new device token.
   await _putVerifier(normalized, vaultId, token, verifierB64, argon2Params, adminToken);
-  host.settings = withVaultIdentity(host.settings, {
+  host.pluginSettings = withVaultIdentity(host.pluginSettings, {
     argon2Params,
     serverUrl: normalized,
     vaultId,
@@ -74,7 +74,7 @@ export async function createVaultFlow(
   host.isUnlocked = true;
   // #675: a vault's first auth_hash registration needs the admin token, which
   // this flow holds.
-  registerAuthTofu(host.settings, keys, adminToken);
+  registerAuthTofu(host.pluginSettings, keys, adminToken);
   await host.restartUnlockedSession();
   new Notice("Geode: vault created");
 }
@@ -107,7 +107,7 @@ export async function joinWithAdminFlow(
         vaultId,
         deviceName,
         passphrase,
-        argon2Params: host.settings.argon2Params,
+        argon2Params: host.pluginSettings.argon2Params,
       },
     );
   } catch (e) {
@@ -118,7 +118,7 @@ export async function joinWithAdminFlow(
     throw e;
   }
 
-  host.settings = withVaultIdentity(host.settings, {
+  host.pluginSettings = withVaultIdentity(host.pluginSettings, {
     serverUrl: normalized,
     vaultId,
     deviceId: result.deviceId,
@@ -133,7 +133,7 @@ export async function joinWithAdminFlow(
   host.isUnlocked = true;
   // #675: same admin-token requirement as create: a join may be the first
   // registration of the vault's auth_hash.
-  registerAuthTofu(host.settings, result.keys, adminToken);
+  registerAuthTofu(host.pluginSettings, result.keys, adminToken);
   // #701: a rejoin rebuilds before this session syncs anything: the old rows and cursor
   // would read the stale folder as local edits and upload it back over the server's
   // deletes. Anything else starts the session as before.

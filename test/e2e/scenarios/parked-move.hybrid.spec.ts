@@ -62,7 +62,7 @@ test("a note parked in an excluded folder and moved back keeps one history", asy
     // The phone switches Archive/ off, moves the note in, and edits it there.
     await phone.eval(`
       const plugin = app.plugins.plugins.geode;
-      plugin.settings.excludedFolders = ["Archive/"];
+      plugin.pluginSettings.excludedFolders = ["Archive/"];
       await plugin.saveSettings();
       if (!(await app.vault.adapter.exists("Archive"))) await app.vault.createFolder("Archive");
       const file = app.vault.getAbstractFileByPath(${q(OLD_PATH)});
@@ -118,14 +118,14 @@ test("a note parked in an excluded folder and moved back keeps one history", asy
 
     // The parked move is consumed, so nothing re-resolves it on the next start.
     expect(
-      await phone.eval<number>("app.plugins.plugins.geode.settings.pendingMoveOuts.length"),
+      await phone.eval<number>("app.plugins.plugins.geode.pluginSettings.pendingMoveOuts.length"),
     ).toBe(0);
 
     expect(await phone.consoleErrors()).toEqual([]);
   } finally {
     await phone.eval(`
       const plugin = app.plugins.plugins.geode;
-      plugin.settings.excludedFolders = [];
+      plugin.pluginSettings.excludedFolders = [];
       await plugin.saveSettings();
       return true;
     `).catch(() => undefined);

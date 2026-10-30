@@ -395,7 +395,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("x.md", 1);
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       A.fakeVault.rename("x.md", "Archive/x.md");
       await A.flushPending();
       await new Promise((resolve) => setTimeout(resolve, 1_000));

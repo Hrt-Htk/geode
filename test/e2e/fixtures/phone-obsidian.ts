@@ -252,7 +252,7 @@ export async function connectPhone(opts: PhoneObsidianOptions = {}): Promise<Pho
     }
     await evaluate(
       `(async () => {
-        const s = app.plugins.plugins.geode.settings;
+        const s = app.plugins.plugins.geode.pluginSettings;
         Object.assign(s, ${
         JSON.stringify({
           verifier: "",

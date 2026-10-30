@@ -194,8 +194,8 @@ Deno.test({
   async fn() {
     const { A, B, server, vaultId, stop } = await pair();
     try {
-      A.settings.syncObsidianConfig = true;
-      B.settings.syncObsidianConfig = true;
+      A.pluginSettings.syncObsidianConfig = true;
+      B.pluginSettings.syncObsidianConfig = true;
       const path = ".obsidian/app.json";
       A.fakeVault.write(path, '{"seed":1}');
       await A.flushPending();
@@ -247,8 +247,8 @@ Deno.test({
   async fn() {
     const { A, B, server, vaultId, stop } = await pair();
     try {
-      A.settings.syncObsidianConfig = true;
-      B.settings.syncObsidianConfig = true;
+      A.pluginSettings.syncObsidianConfig = true;
+      B.pluginSettings.syncObsidianConfig = true;
       const path = ".obsidian/app.json";
       A.fakeVault.write(path, '{"seed":1}');
       await A.flushPending();

@@ -55,7 +55,7 @@ test("rekey elsewhere: desktop re-keys, phone locks, phone unlocks, both converg
     // device would.
     const verifier = await computeVerifier(PASSPHRASE, pair.server.salt, TEST_ARGON2_PARAMS);
     await B.eval(`
-      app.plugins.plugins.geode.settings.verifier = ${JSON.stringify(verifier)};
+      app.plugins.plugins.geode.pluginSettings.verifier = ${JSON.stringify(verifier)};
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);

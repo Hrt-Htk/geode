@@ -95,7 +95,7 @@ test("issue493: kill mid wizard create → relaunch → wizard re-opens, finishi
     try {
       /* Honest state: either the wizard re-opens (settings unsaved) or the plugin is
          configured and offers to unlock (settings saved): never a silent half-configuration. */
-      const configured = await a2.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+      const configured = await a2.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
       if (configured === "") {
         await focusSetupWizard(a2);
         await a2.win.screenshot({
@@ -145,7 +145,7 @@ test("issue493: kill mid wizard join → relaunch → wizard re-opens, finishing
     await focusSetupWizard(a);
     await runCreateWizard(a.win, server.url, "interrupt-join-vault", "interrupt-join-pass");
     await waitForUnlocked(a);
-    vaultId = await a.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+    vaultId = await a.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
     /* Commit a real file (commitPath waits for the commit to land: the .obsidian config
        files commit first, so a bare version-count wait would return before this file). */
     await upsertVaultFile(a, "from-a.md", "written by A before the join");
@@ -177,7 +177,7 @@ test("issue493: kill mid wizard join → relaunch → wizard re-opens, finishing
     try {
       /* Honest state: either the wizard re-opens (settings unsaved) or the plugin is
          configured and offers to unlock (settings saved): never a silent half-configuration. */
-      const configured = await b2.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+      const configured = await b2.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
       if (configured === "") {
         await focusSetupWizard(b2);
         await b2.win.screenshot({

@@ -86,20 +86,21 @@ Deno.test("plugin log - console sink gated off when debugLogging is false", () =
 });
 
 Deno.test("plugin log - console sink fires when debugLogging is true", () => {
-  const origInfo = console.info;
+  const origDebug = console.debug;
   const calls: unknown[][] = [];
 
-  console.info = (...args: unknown[]) => calls.push(args);
+  console.debug = (...args: unknown[]) => calls.push(args);
 
   try {
     setDebugLogging(true);
     log.info("console-enabled-test");
 
-    assertEquals(calls.length, 1, "console.info called once");
+    // info goes to console.debug: the default console stays for errors only.
+    assertEquals(calls.length, 1, "console.debug called once");
     assertEquals(typeof calls[0][0], "string");
     assertEquals((calls[0][0] as string).includes("console-enabled-test"), true);
   } finally {
-    console.info = origInfo;
+    console.debug = origDebug;
     setDebugLogging(false);
   }
 });

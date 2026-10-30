@@ -153,10 +153,10 @@ export async function reconnectSync(instance: Evaluatable): Promise<void> {
     }
     const cursor = geode.syncManager.state?.getSyncCursor?.() ?? geode.getLastSeenSeq();
     geode.transport.start(
-      geode.settings.serverUrl,
-      geode.settings.vaultId,
-      geode.settings.deviceId,
-      geode.settings.deviceToken,
+      geode.pluginSettings.serverUrl,
+      geode.pluginSettings.vaultId,
+      geode.pluginSettings.deviceId,
+      geode.pluginSettings.deviceToken,
       cursor,
       geode.manifest.version,
     );

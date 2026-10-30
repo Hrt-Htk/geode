@@ -133,7 +133,7 @@ export async function waitForHold(
     .poll(
       () =>
         instance.eval<number | null>(
-          "app.plugins.plugins.geode.settings.massDeleteHold?.files.length ?? null",
+          "app.plugins.plugins.geode.pluginSettings.massDeleteHold?.files.length ?? null",
         ),
       { timeout: timeoutMs },
     )

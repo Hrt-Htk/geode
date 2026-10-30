@@ -114,13 +114,13 @@ test("create: inline errors, Enter, Back, Higher params stored server-side", asy
     await waitForUnlocked(obs);
 
     const creds = await obs.eval<{ vaultId: string; token: string }>(
-      `(() => { const s = app.plugins.plugins.geode.settings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
+      `(() => { const s = app.plugins.plugins.geode.pluginSettings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
     );
     expect(creds.vaultId).toBeTruthy();
     expect(creds.token).toBeTruthy();
 
     // #459: the chosen level's params flow into settings and are stored on the server.
-    expect(await obs.eval(`app.plugins.plugins.geode.settings.argon2Params`)).toEqual(HIGHER);
+    expect(await obs.eval(`app.plugins.plugins.geode.pluginSettings.argon2Params`)).toEqual(HIGHER);
     const info = await (await fetch(`${server.url}/vaults/${creds.vaultId}/info`, {
       headers: { Authorization: "Bearer e2e" },
     })).json() as { argon2_ops: number; argon2_mem: number };
@@ -157,7 +157,7 @@ test("join: wrong passphrase shows the inline error, correct passphrase joins", 
     await win.locator('[data-testid="geode-create-confirm"]').fill(PASSPHRASE);
     await win.locator('[data-testid="geode-create-submit"]').click();
     await waitForUnlocked(A);
-    vaultId = await A.eval<string>(`app.plugins.plugins.geode.settings.vaultId`);
+    vaultId = await A.eval<string>(`app.plugins.plugins.geode.pluginSettings.vaultId`);
     await win.locator('[data-testid="geode-done-submit"]').click();
   } finally {
     await A.close();
@@ -197,7 +197,7 @@ test("join: wrong passphrase shows the inline error, correct passphrase joins", 
     await win.locator('[data-testid="geode-join-passphrase"]').fill(PASSPHRASE);
     await win.locator('[data-testid="geode-join-submit"]').click();
     await waitForUnlocked(B);
-    expect(await B.eval<string>(`app.plugins.plugins.geode.settings.vaultId`)).toBe(vaultId);
+    expect(await B.eval<string>(`app.plugins.plugins.geode.pluginSettings.vaultId`)).toBe(vaultId);
     await win.locator('[data-testid="geode-done-submit"]').click();
   } finally {
     await B.close();

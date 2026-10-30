@@ -49,7 +49,7 @@ test("gate7 phone create-vault wizard provisions, unlocks, and syncs a note to t
     `);
 
     const creds = await obsidian.eval<{ vaultId: string; token: string }>(
-      `(() => { const s = app.plugins.plugins.geode.settings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
+      `(() => { const s = app.plugins.plugins.geode.pluginSettings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
     );
     expect(creds.vaultId).toBeTruthy();
     expect(creds.token).toBeTruthy();
@@ -110,7 +110,7 @@ test("gate7 phone createVaultFlow eval provisions, unlocks, and syncs a note to 
     `);
 
     const creds = await obsidian.eval<{ vaultId: string; token: string }>(
-      `(() => { const s = app.plugins.plugins.geode.settings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
+      `(() => { const s = app.plugins.plugins.geode.pluginSettings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
     );
     expect(creds.vaultId).toBeTruthy();
     expect(creds.token).toBeTruthy();

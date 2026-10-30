@@ -29,7 +29,7 @@ Deno.test({
       await B.waitForVersion("Projects/b.md");
 
       // B excludes Projects/ (per-device setting; reconciler/apply read it live).
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
 
       // A edits and deletes inside the excluded folder.
       A.fakeVault.write("Projects/a.md", "alpha v2");
@@ -69,7 +69,7 @@ Deno.test({
       await B.waitForVersion("Projects/a.md");
       await B.waitForVersion("Projects/b.md");
 
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       A.fakeVault.write("Projects/a.md", "alpha v2");
       A.fakeVault.delete("Projects/b.md");
       await A.flushPending();
@@ -77,7 +77,7 @@ Deno.test({
       assertEquals(content(B, "Projects/a.md"), "alpha v1");
 
       // B switches the folder back on and catches up to the server heads.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await B.syncManager.catchUpFolders(["Projects/"]);
       await B.waitForVersion("Projects/a.md", 2);
 
@@ -101,7 +101,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("Projects/c.md");
 
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       B.fakeVault.delete("Projects/c.md");
       await B.reconcileNow();
       await A.waitForIdle();
@@ -128,7 +128,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("Projects/d.md");
 
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       // Both sides edit while B is out of scope (non-overlapping: remote prepends,
       // local appends, so the 3-way merge is clean).
       A.fakeVault.write("Projects/d.md", "A line (remote)\nshared line\nA line\n");
@@ -141,7 +141,7 @@ Deno.test({
         "shared line\nA line\nB line (local)\n",
       );
 
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await B.syncManager.catchUpFolders(["Projects/"]);
       // The catch-up promotes the divergent disk edit to a tracked local edit;
       // the reconciler commits it (stale parent → server conflict → 3-way merge).
@@ -176,7 +176,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/e.md");
 
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       // B moves the file into its excluded folder.
       B.fakeVault.rename("notes/e.md", "Projects/e.md");
       await B.flushPending();
@@ -214,7 +214,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/f.md");
 
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       // A moves the file into the folder B has excluded.
       A.fakeVault.rename("notes/f.md", "Projects/f.md");
       await A.flushPending();
@@ -225,7 +225,7 @@ Deno.test({
       assert(!B.fakeVault.fileExists("Projects/f.md"));
 
       // Re-include: the server head for the new path is applied.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await B.syncManager.catchUpFolders(["Projects/"]);
       await B.waitForVersion("Projects/f.md");
       assertEquals(content(B, "Projects/f.md"), "zeta v1");
@@ -248,7 +248,7 @@ Deno.test({
       await B.waitForVersion("Projects/a.md");
 
       // B excludes Projects/ and deletes its local copy (free-space use case).
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       B.fakeVault.delete("Projects/a.md");
       await B.reconcileNow();
       await A.waitForIdle();
@@ -258,10 +258,10 @@ Deno.test({
 
       // Re-include with a failing catch-up: the folder stays pending, and the
       // reconciler must NOT turn the still-missing file into a server delete.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       const restore = failNextGetHeads(B);
       await catchUpOrDefer(sinkFor(B), ["Projects/"], () => {});
-      assert(B.settings.pendingCatchUpFolders.includes("Projects/"));
+      assert(B.pluginSettings.pendingCatchUpFolders.includes("Projects/"));
       await B.reconcileNow();
       await A.waitForIdle();
       assert(A.fakeVault.fileExists("Projects/a.md"), "no delete propagated while pending");
@@ -270,7 +270,7 @@ Deno.test({
       // The retry succeeds: the file is restored from the server head, pending clears.
       restore();
       await retryPendingCatchUp(sinkFor(B));
-      assertEquals(B.settings.pendingCatchUpFolders, []);
+      assertEquals(B.pluginSettings.pendingCatchUpFolders, []);
       await B.waitForVersion("Projects/a.md");
       assertEquals(content(B, "Projects/a.md"), "alpha v1");
       assert(A.fakeVault.fileExists("Projects/a.md"));
@@ -294,7 +294,7 @@ Deno.test({
       await B.waitForVersion("notes/e.md");
 
       // B excludes Projects/ and moves a synced file into it.
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       B.fakeVault.rename("notes/e.md", "Projects/e.md");
       await B.flushPending();
       await A.waitForIdle();
@@ -303,21 +303,21 @@ Deno.test({
       assertEquals(serverHead(server, A.keys, "notes/e.md")?.deleted, false);
       // The move-out was recorded with its destination (#584: the exact path too, so
       // the move resolves as the rename it was instead of splitting the history).
-      assertEquals(B.settings.pendingMoveOuts, [
+      assertEquals(B.pluginSettings.pendingMoveOuts, [
         { oldPath: "notes/e.md", destPath: "Projects/e.md", destFolder: "Projects/" },
       ]);
 
       // Re-include Projects/: catch-up completes the move (the old name closes with a
       // rename marker naming the new one, #584; the new path uploads) instead of
       // leaving a duplicate.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await catchUpOrDefer(sinkFor(B), ["Projects/"], () => {});
       await B.reconcileNow();
       await B.waitForIdle();
       await A.waitForIdle();
 
       // No duplicate and no loss: only Projects/e.md exists everywhere.
-      assertEquals(B.settings.pendingMoveOuts, [], "move-out consumed");
+      assertEquals(B.pluginSettings.pendingMoveOuts, [], "move-out consumed");
       assert(B.fakeVault.fileExists("Projects/e.md"));
       assertEquals(content(B, "Projects/e.md"), "epsilon v1");
       await A.waitForDeleted("notes/e.md");
@@ -347,21 +347,21 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("Projects/a.md");
 
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       A.fakeVault.write("Projects/a.md", "alpha v2");
       await A.flushPending();
       await B.waitForCaughtUp(await serverSeq(server, A.keys, "Projects/a.md"));
       assertEquals(content(B, "Projects/a.md"), "alpha v1");
 
       // Re-include; the first catch-up attempt fails.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       const restore = failNextGetHeads(B);
       let notice = "";
       await catchUpOrDefer(sinkFor(B), ["Projects/"], (m) => {
         notice = m;
       });
       // Pending persisted, the user was told (no dashes in the copy).
-      assert(B.settings.pendingCatchUpFolders.includes("Projects/"));
+      assert(B.pluginSettings.pendingCatchUpFolders.includes("Projects/"));
       assert(notice.includes("retry"), "notice copy mentions the retry");
       assert(!notice.includes("-"), "notice copy has no dashes");
       assertEquals(content(B, "Projects/a.md"), "alpha v1");
@@ -369,7 +369,7 @@ Deno.test({
       // The next reconnect retry succeeds and clears the pending list.
       restore();
       await retryPendingCatchUp(sinkFor(B));
-      assertEquals(B.settings.pendingCatchUpFolders, []);
+      assertEquals(B.pluginSettings.pendingCatchUpFolders, []);
       await B.waitForVersion("Projects/a.md", 2);
       assertEquals(content(B, "Projects/a.md"), "alpha v2");
     } finally {
@@ -388,7 +388,7 @@ Deno.test({
     const { A, B, server } = p;
     try {
       // B excludes Projects/ before A creates x.md there.
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       A.fakeVault.write("Projects/x.md", "alpha v1");
       await A.flushPending();
       A.fakeVault.write("Projects/x.md", "alpha v2");
@@ -401,7 +401,7 @@ Deno.test({
       await A.waitForIdle();
 
       // Re-include: the divergent untracked file must survive via conflict/merge.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await B.syncManager.catchUpFolders(["Projects/"]);
       await B.waitForVersion("Projects/x.md", 2);
 
@@ -433,7 +433,7 @@ Deno.test({
       await B.waitForVersion("Projects/b.md");
 
       // B excludes the folder and deletes b.md locally (restore-on-re-include case).
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       B.fakeVault.delete("Projects/b.md");
       await B.reconcileNow();
       await A.waitForIdle();
@@ -448,10 +448,10 @@ Deno.test({
       Deno.removeSync(`${server.dataDir}/blobs/${p.vaultId}/${hash.slice(0, 2)}/${hash.slice(2)}`);
 
       // Re-include: b.md converges, a.md fails per-file; the folder is not held pending.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await catchUpOrDefer(sinkFor(B), ["Projects/"], () => {});
       assertEquals(
-        B.settings.pendingCatchUpFolders,
+        B.pluginSettings.pendingCatchUpFolders,
         [],
         "folder clears once other files converged",
       );
@@ -478,14 +478,14 @@ Deno.test({
       await A.waitForVersion("Projects/b.md");
 
       // B excludes the folder and deletes its local copy.
-      B.settings.excludedFolders = ["Projects/"];
+      B.pluginSettings.excludedFolders = ["Projects/"];
       B.fakeVault.delete("Projects/b.md");
       await B.reconcileNow();
       await A.waitForIdle();
       assert(A.fakeVault.fileExists("Projects/b.md"), "delete never propagates while excluded");
 
       // Re-include: the force bypass of the own-version branch restores B's own head.
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await B.syncManager.catchUpFolders(["Projects/"]);
       await B.waitForVersion("Projects/b.md");
       assertEquals(content(B, "Projects/b.md"), "beta v1");
@@ -509,7 +509,7 @@ function sinkFor(
   plugin: PairedVaults["A"],
 ): Parameters<typeof catchUpOrDefer>[0] {
   return {
-    settings: plugin.settings,
+    settings: plugin.pluginSettings,
     saveSettings: async () => {},
     catchUpFolders: (folders) => plugin.syncManager.catchUpFolders(folders),
   };

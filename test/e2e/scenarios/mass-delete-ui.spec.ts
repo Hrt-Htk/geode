@@ -17,7 +17,7 @@ import path from "node:path";
 
 const PASSPHRASE = "mass-delete-ui-pass";
 const REVIEW = ".geode-missing-modal";
-const HOLD = "app.plugins.plugins.geode.settings.massDeleteHold";
+const HOLD = "app.plugins.plugins.geode.pluginSettings.massDeleteHold";
 
 type SeedSettings =
   & Partial<GeodeSettings>
@@ -292,7 +292,9 @@ test("601 UI shots: the large set (1,850 of 2,400) across notice, status icon, m
     });
     await o.win.locator('[data-testid="geode-confirm-cancel"]').click();
     await expect(o.win.locator(REVIEW)).toBeVisible();
-    expect(await o.eval<number>("app.plugins.plugins.geode.settings.massDeleteHold.files.length"))
+    expect(
+      await o.eval<number>("app.plugins.plugins.geode.pluginSettings.massDeleteHold.files.length"),
+    )
       .toBe(1850);
     await o.win.keyboard.press("Escape");
     expect(await o.eval<number>(`${HOLD}?.files.length ?? 0`)).toBe(1850);

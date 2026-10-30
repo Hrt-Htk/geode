@@ -100,7 +100,7 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
     const markerPresent = (): Promise<boolean> =>
       o.eval<boolean>(`!!document.querySelector('.geode-section[data-e2e-marker="no-rerender"]')`);
 
-    const oldServerUrl = await o.eval<string>("app.plugins.plugins.geode.settings.serverUrl");
+    const oldServerUrl = await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl");
 
     /* ---- 1. Edit → unreachable host → inline error, old address kept ---- */
     let modal = await openModal(o);
@@ -114,7 +114,9 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
       .toBe("Couldn't reach http://127.0.0.1:1. Your previous address is kept.");
     await expect(modal.locator(SAVE_BTN)).toBeEnabled();
     await expect(modal).toBeVisible();
-    expect(await o.eval<string>("app.plugins.plugins.geode.settings.serverUrl")).toBe(oldServerUrl);
+    expect(await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl")).toBe(
+      oldServerUrl,
+    );
     await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
     await modal.screenshot({ path: shotPath("424-02-modal-error.png") });
     await modal.locator("button:has-text('Cancel')").click();
@@ -128,7 +130,9 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
     await expect
       .poll(async () => await modal.locator(".geode-error").textContent(), { timeout: 30_000 })
       .toBe(`No Geode vault at ${noVaultUrl}. Your previous address is kept.`);
-    expect(await o.eval<string>("app.plugins.plugins.geode.settings.serverUrl")).toBe(oldServerUrl);
+    expect(await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl")).toBe(
+      oldServerUrl,
+    );
     await modal.locator("button:has-text('Cancel')").click();
     await expect(modal).not.toBeVisible({ timeout: 10_000 });
 
@@ -148,7 +152,7 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
     await expect
       .poll(async () => await o.win.locator(ADV_SERVER).textContent(), { timeout: 15_000 })
       .toBe("http://localhost:" + port);
-    expect(await o.eval<string>("app.plugins.plugins.geode.settings.serverUrl"))
+    expect(await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl"))
       .toBe(`http://localhost:${port}`);
 
     /* The transport reconnected live: status row back to "Up to date". */
@@ -183,10 +187,12 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
       { method: "DELETE", headers: { authorization: `Bearer ${stale.token}` } },
     );
     expect(revoke.status).toBe(200);
-    const liveToken = await o.eval<string>("app.plugins.plugins.geode.settings.deviceToken");
+    const liveToken = await o.eval<string>("app.plugins.plugins.geode.pluginSettings.deviceToken");
     const setDeviceToken = (token: string): Promise<unknown> =>
       o.eval(
-        `app.plugins.plugins.geode.settings.deviceToken = ${JSON.stringify(token)}; return true;`,
+        `app.plugins.plugins.geode.pluginSettings.deviceToken = ${
+          JSON.stringify(token)
+        }; return true;`,
       );
     await setDeviceToken(stale.token);
     modal = await openModal(o);
@@ -199,7 +205,7 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
     await modal.locator("button:has-text('Cancel')").click();
     await expect(modal).not.toBeVisible({ timeout: 10_000 });
     await setDeviceToken(liveToken);
-    expect(await o.eval<string>("app.plugins.plugins.geode.settings.serverUrl")).toBe(altUrl);
+    expect(await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl")).toBe(altUrl);
 
     /* The tab was not re-rendered at any point. */
     expect(await markerPresent(), "Advanced section marker must survive the live apply").toBe(true);

@@ -68,7 +68,7 @@ test("issue493: kill mid leave → relaunch → honest offline state, finishing 
 
     const a2 = await relaunchDesktop(a);
     try {
-      const configured = await a2.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+      const configured = await a2.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
       if (configured !== "") {
         /* Mixed state: settings point at a now-revoked device. Honest = "Geode: offline"
            (the token is dead server-side), never "synced" and never silent. */
@@ -104,7 +104,7 @@ test("issue493: kill mid leave → relaunch → honest offline state, finishing 
       }
 
       /* Fully left in both cases: settings cleared, state files gone. */
-      expect(await a2.eval<string>("app.plugins.plugins.geode.settings.vaultId")).toBe("");
+      expect(await a2.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId")).toBe("");
       const stateFileGone = await a2.eval<boolean>(
         `!(await app.vault.adapter.exists(
           app.plugins.plugins.geode.pluginDataPath("local-files.json")))`,

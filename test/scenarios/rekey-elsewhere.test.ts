@@ -50,7 +50,7 @@ Deno.test("rekey elsewhere: B is stopped, never commits old-key data, unlocks, c
 
     // The vault has a verifier and both devices store it (their hello_ack
     // hash matches, so a plain reconnect is "ok").
-    const salt = b64decode(A.settings.salt);
+    const salt = b64decode(A.pluginSettings.salt);
     const oldKeys = A.keys;
     const verifierB64 = b64encode(await makeVerifier(oldKeys));
     server.db.run(
@@ -60,16 +60,22 @@ Deno.test("rekey elsewhere: B is stopped, never commits old-key data, unlocks, c
       FAST.mem,
       vaultId,
     );
-    A.settings = { ...A.settings, verifier: verifierB64 };
-    B.settings = { ...B.settings, verifier: verifierB64 };
+    A.pluginSettings = { ...A.pluginSettings, verifier: verifierB64 };
+    B.pluginSettings = { ...B.pluginSettings, verifier: verifierB64 };
 
     const rowsBeforeRekey = versionRowCount(server.db, vaultId);
 
     // A re-keys (replace mode) while B stays connected.
     const authKeyHex = toHex(deriveAuthKey(oldKeys));
-    await putVaultAuth(server.url, vaultId, A.settings.deviceToken, authKeyHex, server.adminToken);
+    await putVaultAuth(
+      server.url,
+      vaultId,
+      A.pluginSettings.deviceToken,
+      authKeyHex,
+      server.adminToken,
+    );
     const newKeys = await deriveKeys("newpass", salt, { opsLimit: FAST.ops, memLimit: FAST.mem });
-    const client = makeRekeyClient(server.url, vaultId, A.settings.deviceToken, authKeyHex);
+    const client = makeRekeyClient(server.url, vaultId, A.pluginSettings.deviceToken, authKeyHex);
     await runRekey({
       oldKeys,
       newKeys,
@@ -141,7 +147,7 @@ async function rekeyedPair() {
   await B.waitForVersion("note1.md", 2);
   await B.waitForVersion("note2.md", 1);
 
-  const salt = b64decode(A.settings.salt);
+  const salt = b64decode(A.pluginSettings.salt);
   const oldKeys = A.keys!;
   const verifierB64 = b64encode(await makeVerifier(oldKeys));
   server.db.run(
@@ -151,13 +157,19 @@ async function rekeyedPair() {
     FAST.mem,
     vaultId,
   );
-  A.settings = { ...A.settings, verifier: verifierB64 };
-  B.settings = { ...B.settings, verifier: verifierB64 };
+  A.pluginSettings = { ...A.pluginSettings, verifier: verifierB64 };
+  B.pluginSettings = { ...B.pluginSettings, verifier: verifierB64 };
 
   const authKeyHex = toHex(deriveAuthKey(oldKeys));
-  await putVaultAuth(server.url, vaultId, A.settings.deviceToken, authKeyHex, server.adminToken);
+  await putVaultAuth(
+    server.url,
+    vaultId,
+    A.pluginSettings.deviceToken,
+    authKeyHex,
+    server.adminToken,
+  );
   const newKeys = await deriveKeys("newpass", salt, { opsLimit: FAST.ops, memLimit: FAST.mem });
-  const client = makeRekeyClient(server.url, vaultId, A.settings.deviceToken, authKeyHex);
+  const client = makeRekeyClient(server.url, vaultId, A.pluginSettings.deviceToken, authKeyHex);
   await runRekey({
     oldKeys,
     newKeys,
@@ -219,8 +231,14 @@ Deno.test("rekey elsewhere: a cancelled re-key resumes paused devices on reconne
     // A starts a copy re-key session and cancels it (no switch): the vault
     // stays on the old keys, but both devices paused for the session.
     const authKeyHex = toHex(deriveAuthKey(A.keys!));
-    await putVaultAuth(server.url, vaultId, A.settings.deviceToken, authKeyHex, server.adminToken);
-    const client = makeRekeyClient(server.url, vaultId, A.settings.deviceToken, authKeyHex);
+    await putVaultAuth(
+      server.url,
+      vaultId,
+      A.pluginSettings.deviceToken,
+      authKeyHex,
+      server.adminToken,
+    );
+    const client = makeRekeyClient(server.url, vaultId, A.pluginSettings.deviceToken, authKeyHex);
     await client.startSession("copy");
 
     await waitFor(() => B.rekeyInProgress, "B to pause for the re-key");

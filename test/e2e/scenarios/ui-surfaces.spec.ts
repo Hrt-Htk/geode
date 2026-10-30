@@ -81,7 +81,7 @@ test("UI surfaces unchanged by #387 type/promise edits", async () => {
     await o.eval(`
       app.plugins.manifests['dataview'] = { id:'dataview', name:'Dataview', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'d' };
       app.plugins.manifests['templater-obsidian'] = { id:'templater-obsidian', name:'Templater', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'t' };
-      const s = app.plugins.plugins.geode.settings;
+      const s = app.plugins.plugins.geode.pluginSettings;
       s.syncObsidianConfig = true;
       s.syncedPlugins = ['dataview'];
       return true;

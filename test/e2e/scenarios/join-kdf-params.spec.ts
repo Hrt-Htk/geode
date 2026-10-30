@@ -47,7 +47,7 @@ test("joined device stores the vault's KDF params and unlocks after lock", async
       } })`,
     );
     await waitForUnlocked(A);
-    const aVaultId = await A.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+    const aVaultId = await A.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
 
     // Confirm the server advertises the Standard params for this vault.
     const info = await (await fetch(`${server.url}/vaults/${aVaultId}/info`, {
@@ -91,7 +91,7 @@ test("joined device stores the vault's KDF params and unlocks after lock", async
     // vault's Standard params, not its local default (ops=1/mem=8192 in tests).
     expect(
       await B.eval<{ ops: number; mem: number }>(
-        "app.plugins.plugins.geode.settings.argon2Params",
+        "app.plugins.plugins.geode.pluginSettings.argon2Params",
       ),
     ).toEqual(STANDARD_PARAMS);
 

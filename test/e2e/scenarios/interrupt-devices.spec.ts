@@ -40,7 +40,7 @@ test("issue493: kill mid devices rename → relaunch → Devices view shows the 
     await waitForUnlocked(pair.A);
     await waitForStatusBar(pair.A.win, "Geode: synced", 60_000);
 
-    const deviceId = await pair.A.eval<string>("app.plugins.plugins.geode.settings.deviceId");
+    const deviceId = await pair.A.eval<string>("app.plugins.plugins.geode.pluginSettings.deviceId");
 
     /* Rename this device from the real Devices view. */
     await openDevicesView(pair.A);

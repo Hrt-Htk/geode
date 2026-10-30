@@ -59,9 +59,9 @@ async function deleteForever(
     pathHash,
   );
   await purgeTrashOne(
-    dev.settings.serverUrl,
-    dev.settings.vaultId,
-    dev.settings.deviceToken,
+    dev.pluginSettings.serverUrl,
+    dev.pluginSettings.vaultId,
+    dev.pluginSettings.deviceToken,
     pathHash,
     chain,
   );

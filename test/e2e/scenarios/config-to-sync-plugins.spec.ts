@@ -58,7 +58,7 @@ test("config-to-sync modal lists and toggles plugins", async () => {
     await obsidian.eval(`
       app.plugins.manifests['dataview'] = { id:'dataview', name:'Dataview', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'d' };
       app.plugins.manifests['templater-obsidian'] = { id:'templater-obsidian', name:'Templater', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'t' };
-      const s = app.plugins.plugins.geode.settings;
+      const s = app.plugins.plugins.geode.pluginSettings;
       s.syncObsidianConfig = false;
       s.syncedPlugins = ['dataview'];
       return true;
@@ -117,7 +117,7 @@ test("config-to-sync modal lists and toggles plugins", async () => {
     /* ---- Toggling a row persists to syncedPlugins ---- */
     await obsidian.win.locator('[data-testid="geode-config-plugin-templater-obsidian"]').click();
     const synced = await obsidian.eval<string>(
-      `return JSON.stringify(app.plugins.plugins.geode.settings.syncedPlugins);`,
+      `return JSON.stringify(app.plugins.plugins.geode.pluginSettings.syncedPlugins);`,
     );
     console.log("syncedPlugins after toggling templater on: " + synced);
     expect(synced).toContain("templater-obsidian");
@@ -126,7 +126,7 @@ test("config-to-sync modal lists and toggles plugins", async () => {
     /* ---- Toggling a category off persists to configCategories ---- */
     await obsidian.win.locator('[data-testid="geode-config-category-hotkeys"]').click();
     const cats = await obsidian.eval<string>(
-      `return JSON.stringify(app.plugins.plugins.geode.settings.configCategories);`,
+      `return JSON.stringify(app.plugins.plugins.geode.pluginSettings.configCategories);`,
     );
     console.log("configCategories after toggling hotkeys off: " + cats);
     expect(cats).not.toContain("hotkeys");

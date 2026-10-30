@@ -12,7 +12,7 @@ const OLD_STAMP_RE = /\.conflict-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/;
 const NEW_NAME_RE = /\(conflict .+? \d{4}-\d{2}-\d{2} \d{4,6}( \d+)?\)/;
 const OLD_DETECT = /\.conflict-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(\.[^.]+)?$/;
 const NEW_DETECT = /\(conflict .+? \d{4}-\d{2}-\d{2} \d{4,6}( \d+)?\)(\.[^.]+)?$/;
-const FORBIDDEN_CHARS = /[\/\\:*?"<>|]/g;
+const FORBIDDEN_CHARS = /[/\\:*?"<>|]/g;
 /** Device names embeddable in a file name; long names are truncated. */
 const MAX_DEVICE_NAME_LEN = 40;
 

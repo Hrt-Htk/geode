@@ -86,7 +86,7 @@ import { b64decode } from "../core/protocol.ts";
 }
 
 export default class GeodePlugin extends Plugin {
-  settings: PluginSettings = DEFAULT_SETTINGS;
+  pluginSettings: PluginSettings = DEFAULT_SETTINGS;
   transport: Transport | null = null;
   syncManager: SyncManager | null = null;
   state: StateDB | null = null;
@@ -107,7 +107,7 @@ export default class GeodePlugin extends Plugin {
   rekeyInProgress = false;
   // #559: an open re-key cursor reopens the modal paused (row shows Resume).
   rekeyCursor: RekeyCursor | null = null;
-  trash: TrashApi = makeTrashApi(() => this.settings, () => this.keys);
+  trash: TrashApi = makeTrashApi(() => this.pluginSettings, () => this.keys);
   versionStatus: VersionStatus = { kind: "ok" };
   // #433: in-memory admin token from the Devices view's privileged-action
   // prompt; never persisted (asked again next time Obsidian starts).
@@ -130,8 +130,8 @@ export default class GeodePlugin extends Plugin {
     );
     this.activity = new ActivityRecorder({
       now: () => Date.now(),
-      deviceName: () => this.settings.deviceName,
-      myDeviceId: () => this.settings.deviceId,
+      deviceName: () => this.pluginSettings.deviceName,
+      myDeviceId: () => this.pluginSettings.deviceId,
       persist: (json) => writeActivityFile(this, json),
     });
     this.activity.load(await readActivityFile(this));
@@ -141,7 +141,7 @@ export default class GeodePlugin extends Plugin {
       (path) => this.app.vault.adapter.readBinary(path),
       this.pluginDataPath("sync-cursor.json"),
     );
-    setDebugLogging(this.settings.debugLogging);
+    setDebugLogging(this.pluginSettings.debugLogging);
     // #534: the key cache moved out of the vault folder; delete the legacy in-vault copy.
     removeLegacyKeyCacheFile(
       (path) => this.app.vault.adapter.exists(this.pluginDataPath(path)),
@@ -152,10 +152,10 @@ export default class GeodePlugin extends Plugin {
     wirePlatformHttp();
     registerCommands(this);
     this.statusBar = new StatusBar(this);
-    this.statusBar.setPausedAt(this.settings.pauseAt);
+    this.statusBar.setPausedAt(this.pluginSettings.pauseAt);
     wireConflictCount(this);
     this.registerInterval(window.setInterval(() => this.statusBar?.tick(), 1000));
-    this.settingTab = new GeodeSettingTab(this.app, this, this.statusBar!);
+    this.settingTab = new GeodeSettingTab(this.app, this, this.statusBar);
     this.addSettingTab(this.settingTab);
     this.registerFileMenu();
     this.showStartupModal();
@@ -223,30 +223,30 @@ export default class GeodePlugin extends Plugin {
     await this.syncManager?.reconcileNow();
   }
   isPaused(): boolean {
-    return this.settings.pauseAt > 0;
+    return this.pluginSettings.pauseAt > 0;
   }
   getPausedAt(): number {
-    return this.settings.pauseAt;
+    return this.pluginSettings.pauseAt;
   }
   async pauseSync(): Promise<void> {
     if (this.isPaused() || !this.isUnlocked) return;
-    this.settings.pauseAt = Date.now();
+    this.pluginSettings.pauseAt = Date.now();
     await this.saveSettings();
     pauseSessionSync(this);
-    this.statusBar?.setPausedAt(this.settings.pauseAt);
+    this.statusBar?.setPausedAt(this.pluginSettings.pauseAt);
   }
   async resumeSync(): Promise<void> {
     if (!this.isPaused()) return;
-    this.settings.pauseAt = 0;
+    this.pluginSettings.pauseAt = 0;
     await this.saveSettings();
-    if (rejoinAction(this.settings) === "rejoin") return this.finishIncompleteRejoin();
+    if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
     resumeSessionSync(this);
     this.statusBar?.setPausedAt(0);
   }
 
   async resyncFromScratch(): Promise<void> {
     // #701: a failed rejoin left the rows armed; only the rejoin rebuild may run on them.
-    if (rejoinAction(this.settings) === "rejoin") return this.finishIncompleteRejoin();
+    if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
     if (!this.transport) throw new Error("vault must be unlocked before resync");
     new Notice("Geode: resyncing from scratch…");
     try {
@@ -266,11 +266,11 @@ export default class GeodePlugin extends Plugin {
     try {
       const backup = (await rebuildVault(this, transport, true)).backup;
       // Not an unconditional zero: a pause the user chose survives a rejoin.
-      this.statusBar?.setPausedAt(this.settings.pauseAt);
+      this.statusBar?.setPausedAt(this.pluginSettings.pauseAt);
       return backup;
     } catch (error) {
       // #701: show the stop at once: the bar would otherwise keep saying disconnected.
-      this.statusBar?.setPausedAt(this.settings.pauseAt);
+      this.statusBar?.setPausedAt(this.pluginSettings.pauseAt);
       throw error;
     } finally {
       transport.stop();
@@ -384,14 +384,14 @@ export default class GeodePlugin extends Plugin {
     openSettingsTab(this);
   }
   isConfigured(): boolean {
-    return isConfigured(this.settings);
+    return isConfigured(this.pluginSettings);
   }
 
   setSyncingProgress(progress: { current: number; total: number } | null): void {
     this.syncingProgress = progress;
   }
   onVaultNameResolved(name: string): void {
-    this.settings.vaultName = name;
+    this.pluginSettings.vaultName = name;
     void this.saveSettings()
       .then(() => this.settingTab?.updateVaultDesc())
       .catch((error) => {
@@ -436,11 +436,11 @@ export default class GeodePlugin extends Plugin {
   }
 
   private async loadSettings(): Promise<void> {
-    const data = await this.loadData() ?? {};
-    this.settings = { ...DEFAULT_SETTINGS, ...data };
+    const data = await this.loadData() as Partial<PluginSettings> | null;
+    this.pluginSettings = { ...DEFAULT_SETTINGS, ...data };
   }
   saveSettings(): Promise<void> {
-    return this.saveData(this.settings as unknown as Record<string, unknown>);
+    return this.saveData(this.pluginSettings);
   }
   createVaultFlow(
     opts: {
@@ -484,7 +484,7 @@ export default class GeodePlugin extends Plugin {
     new RekeyModal(
       this.app,
       {
-        settings: () => this.settings,
+        settings: () => this.pluginSettings,
         keys: () => this.keys,
         isMobile: this.isMobile,
         cursor: () => store,
@@ -520,7 +520,7 @@ export default class GeodePlugin extends Plugin {
     // #701: a failed rejoin left the old rows armed: finish the rejoin, never start a
     // session that would replay them. A successful rejoin clears the marker first, so the
     // restart inside the rebuild takes this branch once, not in a loop.
-    if (rejoinAction(this.settings) === "rejoin") return this.finishIncompleteRejoin();
+    if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
     return restartUnlockedSession(this, existingState);
   }
   // #424: save the new server address and apply it live: restart the unlocked
@@ -531,7 +531,7 @@ export default class GeodePlugin extends Plugin {
   private serverAddressChain: Promise<void> = Promise.resolve();
   applyServerAddress(url: string): Promise<void> {
     const apply = async (): Promise<void> => {
-      this.settings.serverUrl = url;
+      this.pluginSettings.serverUrl = url;
       await this.saveSettings();
       if (!this.isUnlocked) return;
       await this.restartUnlockedSession();
@@ -542,7 +542,7 @@ export default class GeodePlugin extends Plugin {
     return run;
   }
   private showStartupModal(): void {
-    if (!isConfigured(this.settings)) {
+    if (!isConfigured(this.pluginSettings)) {
       startSetupWizard(this);
       return;
     }

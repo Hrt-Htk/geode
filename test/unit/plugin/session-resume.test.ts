@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
 
 function host(calls: string[], held: boolean): SyncSessionHost {
   return {
-    settings: {
+    pluginSettings: {
       ...DEFAULT_SETTINGS,
       serverUrl: "http://127.0.0.1:1",
       vaultId: "v",

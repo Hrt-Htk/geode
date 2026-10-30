@@ -61,7 +61,12 @@ function makeHost(files: Map<string, Uint8Array>): Host {
     state: null,
     eventHandler: null,
     deferredStartCleanup: null,
-    settings: { ...DEFAULT_SETTINGS, vaultId: "vault-1", deviceToken: "tok", deviceId: "dev" },
+    pluginSettings: {
+      ...DEFAULT_SETTINGS,
+      vaultId: "vault-1",
+      deviceToken: "tok",
+      deviceId: "dev",
+    },
     manifest: { version: "0.0.0" },
     app: {
       vault: { adapter: makeAdapter(files), configDir: ".obsidian" },

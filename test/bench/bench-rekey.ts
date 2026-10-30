@@ -44,7 +44,7 @@ console.log(
 
 const paired = await pair();
 const { A, B, server, vaultId } = paired;
-const salt = b64decode(A.settings.salt);
+const salt = b64decode(A.pluginSettings.salt);
 const failures: string[] = [];
 
 function memoryCursor(): RekeyCursorStore {
@@ -143,7 +143,7 @@ try {
     await putVaultAuth(
       server.url,
       vaultId,
-      A.settings.deviceToken,
+      A.pluginSettings.deviceToken,
       toHex(deriveAuthKey(oldKeys)),
       server.adminToken,
     );
@@ -151,7 +151,7 @@ try {
     const client = makeRekeyClient(
       server.url,
       vaultId,
-      A.settings.deviceToken,
+      A.pluginSettings.deviceToken,
       toHex(deriveAuthKey(oldKeys)),
     );
     const t0 = Date.now();
@@ -195,7 +195,7 @@ try {
     const newClient = makeRekeyClient(
       server.url,
       vaultId,
-      A.settings.deviceToken,
+      A.pluginSettings.deviceToken,
       toHex(deriveAuthKey(newKeys)),
     );
     const chain = await newClient.versionChain(h);
@@ -222,7 +222,7 @@ try {
     const client = makeRekeyClient(
       server.url,
       vaultId,
-      A.settings.deviceToken,
+      A.pluginSettings.deviceToken,
       toHex(deriveAuthKey(oldKeys)),
     );
     const t0 = Date.now();

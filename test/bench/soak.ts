@@ -142,8 +142,8 @@ let roundTraceStart = 0;
 
 /** .obsidian is per-device scope; a restart resets the toggle, so re-apply it. */
 function applyConfigScope(dev: TestPlugin): void {
-  dev.settings.syncObsidianConfig = true;
-  dev.settings.syncedPlugins = SYNCED_PLUGINS;
+  dev.pluginSettings.syncObsidianConfig = true;
+  dev.pluginSettings.syncedPlugins = SYNCED_PLUGINS;
   dev.syncManager?.setSyncObsidianConfig(true);
 }
 
@@ -614,7 +614,7 @@ async function seed(): Promise<Config> {
   // straight into the map, so only the reconciler's scan can find them.
   for (const dev of devices) applyConfigScope(dev);
   for (const f of configFiles) {
-    if (isSyncable(f.path, ".obsidian", devices[0].settings)) {
+    if (isSyncable(f.path, ".obsidian", devices[0].pluginSettings)) {
       devices[0].fakeVault.files.set(f.path, new Uint8Array(f.data));
     }
   }

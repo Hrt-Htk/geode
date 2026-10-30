@@ -19,7 +19,7 @@ export function formatUserError(error: unknown): string {
   const failure = httpFailure(error);
   if (!failure) return formatError(error);
   try {
-    const parsed = JSON.parse(failure.body);
+    const parsed = JSON.parse(failure.body) as { error?: unknown } | null;
     if (parsed?.error && typeof parsed.error === "string") {
       return `Server error (${failure.status}): ${parsed.error}`;
     }

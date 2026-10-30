@@ -37,7 +37,7 @@ type HistoryOpen = { path: string; pathHash?: string; ceiling?: number };
 type ModalsHost = {
   app: App;
   manifest: { id: string };
-  settings: PluginSettings;
+  pluginSettings: PluginSettings;
   keys: VaultKeys | null;
   isUnlocked: boolean;
   transport: Transport | null;
@@ -96,7 +96,11 @@ export function openTrashModal(host: ModalsHost): void {
     trash: host.trash,
     retentionDays: () => host.trash.retentionDays(),
     deviceNames: () =>
-      deviceNameMap(host.settings.serverUrl, host.settings.vaultId, host.settings.deviceToken),
+      deviceNameMap(
+        host.pluginSettings.serverUrl,
+        host.pluginSettings.vaultId,
+        host.pluginSettings.deviceToken,
+      ),
     // #583: decision 6: the row's History is capped at the version it was deleted at,
     // so a name reused by another file never shows that file's saves.
     openHistory: (entry) => {
@@ -120,7 +124,7 @@ export function openTrashModal(host: ModalsHost): void {
     // for the same way the Devices view's Revoke does.
     adminHost: {
       app: host.app,
-      serverUrl: host.settings.serverUrl,
+      serverUrl: host.pluginSettings.serverUrl,
       getAdminToken: () => host.adminToken,
       setAdminToken: (token) => {
         host.adminToken = token;
@@ -147,16 +151,16 @@ export function openMassDeleteReview(host: ModalsHost): void {
 export function openDevicesView(host: ModalsHost): void {
   openDevicesViewModal({
     app: host.app,
-    serverUrl: host.settings.serverUrl,
-    vaultId: host.settings.vaultId,
-    currentDeviceId: host.settings.deviceId,
-    deviceToken: host.settings.deviceToken,
+    serverUrl: host.pluginSettings.serverUrl,
+    vaultId: host.pluginSettings.vaultId,
+    currentDeviceId: host.pluginSettings.deviceId,
+    deviceToken: host.pluginSettings.deviceToken,
     adminToken: host.adminToken,
     setAdminToken: (token) => {
       host.adminToken = token;
     },
     onRename: (name) => {
-      host.settings.deviceName = name;
+      host.pluginSettings.deviceName = name;
       void host.saveSettings();
     },
     relativeTime,
@@ -176,7 +180,12 @@ export function openActivityModal(host: ModalsHost): void {
     host.app,
     host.activity!,
     (path) => openHistoryModal(host, { path }),
-    () => deviceNameMap(host.settings.serverUrl, host.settings.vaultId, host.settings.deviceToken),
+    () =>
+      deviceNameMap(
+        host.pluginSettings.serverUrl,
+        host.pluginSettings.vaultId,
+        host.pluginSettings.deviceToken,
+      ),
     {
       getStatusInput: () => host.getStatusInput(),
       subscribe: (cb) => host.statusBar!.subscribe(cb),
@@ -198,9 +207,13 @@ export function openHistoryModal(host: ModalsHost, open: HistoryOpen): void {
     ceiling: open.ceiling,
     keys: host.keys,
     source: host.transport,
-    localDevice: { id: host.settings.deviceId, name: host.settings.deviceName },
+    localDevice: { id: host.pluginSettings.deviceId, name: host.pluginSettings.deviceName },
     remoteNames: () =>
-      deviceNameMap(host.settings.serverUrl, host.settings.vaultId, host.settings.deviceToken),
+      deviceNameMap(
+        host.pluginSettings.serverUrl,
+        host.pluginSettings.vaultId,
+        host.pluginSettings.deviceToken,
+      ),
     // #465: restored at the name the file has NOW, even when the version predates a
     // rename; a trash row's path is the last name, so the file comes back there.
     restore: (record) => syncManager.restoreVersion(record, open.path),

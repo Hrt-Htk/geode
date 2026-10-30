@@ -168,7 +168,7 @@ test("issue561 rekey: history and trash readable after the switch", async () => 
     // real verifier so B detects the passphrase change, as a joined device would.
     const verifier = await computeVerifier(PASSPHRASE, pair.server.salt, TEST_ARGON2_PARAMS);
     await pair.B.eval(`
-      app.plugins.plugins.geode.settings.verifier = ${JSON.stringify(verifier)};
+      app.plugins.plugins.geode.pluginSettings.verifier = ${JSON.stringify(verifier)};
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);

@@ -47,7 +47,7 @@ test("diagnose full unlock path in the real Obsidian renderer", async () => {
     globalThis.WebSocket.prototype = OrigWS.prototype;
 
     const g = app.plugins.plugins.geode;
-    g.settings.verifier = "";
+    g.pluginSettings.verifier = "";
 
     let outcome;
     const startedAt = Date.now();

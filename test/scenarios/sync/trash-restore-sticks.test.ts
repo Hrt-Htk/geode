@@ -65,7 +65,7 @@ Deno.test({
       await B.waitForDeleted("x.md");
 
       const pathHash = hashPathHex(A.keys.mac_key, "x.md");
-      await restoreTrashOne(server.url, vaultId, B.settings.deviceToken, pathHash);
+      await restoreTrashOne(server.url, vaultId, B.pluginSettings.deviceToken, pathHash);
 
       await A.waitForConvergence(B, "x.md");
       await A.waitForVersion("x.md");
@@ -100,7 +100,7 @@ Deno.test({
       await B.waitForDeleted("x.md");
 
       const pathHash = hashPathHex(A.keys.mac_key, "x.md");
-      await restoreTrashOne(server.url, vaultId, B.settings.deviceToken, pathHash);
+      await restoreTrashOne(server.url, vaultId, B.pluginSettings.deviceToken, pathHash);
       await A.waitForConvergence(B, "x.md");
       await A.waitForVersion("x.md");
       await B.waitForVersion("x.md");

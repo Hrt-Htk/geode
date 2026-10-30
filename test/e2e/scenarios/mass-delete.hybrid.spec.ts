@@ -22,7 +22,7 @@ import path from "node:path";
 // (delete all) on the small set so the on-device verdict stays fast.
 
 const PASSPHRASE = "mass-delete-phone-pass";
-const HOLD = "app.plugins.plugins.geode.settings.massDeleteHold";
+const HOLD = "app.plugins.plugins.geode.pluginSettings.massDeleteHold";
 
 test.describe.configure({ timeout: 45 * 60_000 });
 

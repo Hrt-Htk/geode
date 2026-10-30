@@ -22,7 +22,7 @@ export async function acquirePathLock(
   timeoutMs = PATH_LOCK_TIMEOUT_MS,
 ): Promise<(() => void) | null> {
   let queue = locks.get(state);
-  if (!queue) locks.set(state, queue = new Map());
+  if (!queue) locks.set(state, queue = new Map<string, Promise<void>>());
   const prior = queue.get(path) ?? Promise.resolve();
   let release = () => {};
   const held = new Promise<void>((r) => (release = r));

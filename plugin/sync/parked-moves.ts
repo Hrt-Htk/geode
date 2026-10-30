@@ -16,7 +16,7 @@ import { existsOnDisk, nextRenameId } from "./commit.ts";
 import type { PendingOp } from "./commit-queue.ts";
 
 export interface ParkedMovesDeps {
-  vault: { adapter: { stat: (path: string) => Promise<unknown | null> } };
+  vault: { adapter: { stat: (path: string) => Promise<unknown> } };
   settings: PluginSettings;
   getState: () => StateDB | null;
   /** Persist the per-device settings (pendingMoveOuts lives there). */

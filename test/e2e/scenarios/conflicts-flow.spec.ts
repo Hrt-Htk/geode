@@ -122,10 +122,10 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
     await waitForUnlocked(A);
     await waitForUnlocked(B);
     await A.eval(
-      `app.plugins.plugins.geode.settings.deviceName = "Laptop A"; await app.plugins.plugins.geode.saveSettings(); return true;`,
+      `app.plugins.plugins.geode.pluginSettings.deviceName = "Laptop A"; await app.plugins.plugins.geode.saveSettings(); return true;`,
     );
     await B.eval(
-      `app.plugins.plugins.geode.settings.deviceName = "Laptop B"; await app.plugins.plugins.geode.saveSettings(); return true;`,
+      `app.plugins.plugins.geode.pluginSettings.deviceName = "Laptop B"; await app.plugins.plugins.geode.saveSettings(); return true;`,
     );
     await waitForStatusBar(A.win, "Geode: synced", 60_000);
     await waitForStatusBar(B.win, "Geode: synced", 60_000);

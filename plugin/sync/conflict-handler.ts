@@ -25,7 +25,7 @@ const MAX_RETRIES = 5;
 /** Positive absence only: a throwing adapter (#505, mobile) is NOT absence. */
 async function isGoneFromDisk(
   path: string,
-  adapter: { stat: (path: string) => Promise<unknown | null> },
+  adapter: { stat: (path: string) => Promise<unknown> },
 ): Promise<boolean> {
   try {
     return (await adapter.stat(path)) === null;

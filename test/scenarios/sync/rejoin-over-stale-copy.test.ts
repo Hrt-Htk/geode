@@ -113,7 +113,7 @@ function rejoinDevice(B: TestPlugin, server: TestServer, vaultId: string): strin
   );
   // The wizard's join writes the identity through `withVaultIdentity` (flows.ts), then runs
   // the rebuild, so the marker is already dropped when the rebuild starts.
-  B.settings = withVaultIdentity(B.settings, { vaultId, deviceId, deviceToken: token });
+  B.pluginSettings = withVaultIdentity(B.pluginSettings, { vaultId, deviceId, deviceToken: token });
   return deviceId;
 }
 
@@ -342,8 +342,8 @@ Deno.test({
 
       // The settings already carry the new device: only a persisted stop keeps the next
       // session from replaying the months old rows over the server.
-      assert(B.settings.pauseAt > 0, "a failed rejoin must leave sync paused");
-      assert(B.settings.rejoinIncomplete, "and mark the rejoin incomplete");
+      assert(B.pluginSettings.pauseAt > 0, "a failed rejoin must leave sync paused");
+      assert(B.pluginSettings.rejoinIncomplete, "and mark the rejoin incomplete");
 
       // The next session start finishes the rejoin instead of replaying those rows.
       await B.restartUnlockedSession();
@@ -396,7 +396,7 @@ async function failedRejoin(
   } finally {
     setTransportHttp(passThroughHttp);
   }
-  assert(B.settings.pauseAt > 0, "a failed rejoin must leave sync paused");
+  assert(B.pluginSettings.pauseAt > 0, "a failed rejoin must leave sync paused");
   return deviceId;
 }
 
@@ -415,13 +415,13 @@ Deno.test({
       // (as the wizard's flow does) and only then rebuilds. A paused session never goes
       // live, so this is bounded rather than awaited straight.
       const secondDevice = rejoinDevice(B, server, vaultId);
-      assertEquals(B.settings.rejoinIncomplete, false, "the identity write drops the marker");
+      assertEquals(B.pluginSettings.rejoinIncomplete, false, "the identity write drops the marker");
       const second = await Promise.race([
         B.rejoinOverOldCopy().then(() => "joined"),
         new Promise((resolve) => setTimeout(() => resolve("never went live"), 20_000)),
       ]);
       assertEquals(second, "joined", "the second join never went live");
-      assertEquals(B.settings.pauseAt, 0, "a finished rejoin must lift the pause it set");
+      assertEquals(B.pluginSettings.pauseAt, 0, "a finished rejoin must lift the pause it set");
       assertEquals(B.isLive(), true, "a finished rejoin must be live");
       assert(
         B.fakeVault.fileExists("Geode backup") === false ||
@@ -461,7 +461,7 @@ Deno.test({
 
       // What the Resume button does: clear the pause and start again. Without the marker
       // routing this never comes back up (the failed rebuild disposed the session).
-      B.settings.pauseAt = 0;
+      B.pluginSettings.pauseAt = 0;
       await Promise.race([
         B.resume(),
         new Promise((resolve) => setTimeout(resolve, 20_000)),
@@ -478,7 +478,7 @@ Deno.test({
         versionsAfterFail,
         "the stale state was replayed",
       );
-      assertEquals(B.settings.rejoinIncomplete, false, "a finished rejoin clears the marker");
+      assertEquals(B.pluginSettings.rejoinIncomplete, false, "a finished rejoin clears the marker");
     } finally {
       await stop();
     }
@@ -540,7 +540,7 @@ Deno.test({
     const { B, server, stop } = p;
     try {
       await failedRejoin(p);
-      assertEquals(B.settings.rejoinIncomplete, true);
+      assertEquals(B.pluginSettings.rejoinIncomplete, true);
       // The failed attempt itself may have written a partial backup before it died.
       const backupsBefore = [...B.fakeVault.files.keys()].filter((k) =>
         k.startsWith("Geode backup/")
@@ -566,7 +566,7 @@ Deno.test({
         "device-B-other",
         token,
       );
-      B.settings = withVaultIdentity(B.settings, {
+      B.pluginSettings = withVaultIdentity(B.pluginSettings, {
         vaultId: otherVault,
         deviceId: otherDevice,
         deviceToken: token,
@@ -579,7 +579,7 @@ Deno.test({
         backupsBefore.sort(),
         "a plain join of another vault must not copy anything out",
       );
-      assertEquals(B.settings.rejoinIncomplete, false, "a new identity drops the marker");
+      assertEquals(B.pluginSettings.rejoinIncomplete, false, "a new identity drops the marker");
     } finally {
       await stop();
     }
@@ -600,14 +600,14 @@ Deno.test({
       await A.pushNow();
 
       // A pause the user set, with no failed rejoin behind it.
-      B.settings.pauseAt = Date.now();
+      B.pluginSettings.pauseAt = Date.now();
       await B.restartUnlockedSession();
       assertEquals(B.isLive(), false, "a paused device does not go live");
 
       await B.rejoinOverOldCopy();
       assertEquals(B.isLive(), false, "a rejoin must not unpause a device by itself");
-      assert(B.settings.pauseAt > 0, "the user pause survives the rejoin");
-      assertEquals(B.settings.rejoinIncomplete, false);
+      assert(B.pluginSettings.pauseAt > 0, "the user pause survives the rejoin");
+      assertEquals(B.pluginSettings.rejoinIncomplete, false);
     } finally {
       await stop();
     }

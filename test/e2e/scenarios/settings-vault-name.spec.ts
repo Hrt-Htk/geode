@@ -57,7 +57,7 @@ test("settings tab shows the vault name after a fresh join", async () => {
       // vaultName is backfilled from the server_hello_ack handshake after the transport
       // connects post-unlock, so poll rather than reading once (would race the ack).
       await expect.poll(
-        async () => await B.eval<string>("app.plugins.plugins.geode.settings.vaultName"),
+        async () => await B.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultName"),
         { timeout: 10_000 },
       ).toBe("e2e-vault");
 

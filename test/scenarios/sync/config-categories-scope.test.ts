@@ -24,8 +24,8 @@ Deno.test({
     p = await pair();
     const { A, B, server } = p;
     try {
-      A.settings.syncObsidianConfig = true;
-      B.settings.syncObsidianConfig = true;
+      A.pluginSettings.syncObsidianConfig = true;
+      B.pluginSettings.syncObsidianConfig = true;
 
       // Seed: hotkeys.json + a snippet converge on both devices.
       A.fakeVault.write(".obsidian/hotkeys.json", '{"seed":1}');
@@ -37,7 +37,7 @@ Deno.test({
       assertEquals(content(B, ".obsidian/snippets/base.css"), "body{}");
 
       // B switches Hotkeys and CSS snippets off.
-      B.settings.configCategories = B.settings.configCategories.filter(
+      B.pluginSettings.configCategories = B.pluginSettings.configCategories.filter(
         (c) => c !== "hotkeys" && c !== "snippets",
       );
 
@@ -53,7 +53,7 @@ Deno.test({
       assertEquals(serverHead(server, A.keys, ".obsidian/hotkeys.json")?.version, 2);
 
       // B switches the categories back on: catch-up brings A's edits.
-      B.settings.configCategories = [...ALL_CONFIG_CATEGORIES];
+      B.pluginSettings.configCategories = [...ALL_CONFIG_CATEGORIES];
       await catchUpOrDefer(
         sinkFor(B),
         configCategoryScopePrefixes("hotkeys", ".obsidian"),
@@ -82,15 +82,17 @@ Deno.test({
     p = await pair();
     const { A, B, server } = p;
     try {
-      A.settings.syncObsidianConfig = true;
-      B.settings.syncObsidianConfig = true;
+      A.pluginSettings.syncObsidianConfig = true;
+      B.pluginSettings.syncObsidianConfig = true;
 
       A.fakeVault.write(".obsidian/hotkeys.json", '{"seed":1}');
       await A.flushPending();
       await B.waitForVersion(".obsidian/hotkeys.json");
 
       // B turns Hotkeys off and deletes its local copy.
-      B.settings.configCategories = B.settings.configCategories.filter((c) => c !== "hotkeys");
+      B.pluginSettings.configCategories = B.pluginSettings.configCategories.filter((c) =>
+        c !== "hotkeys"
+      );
       B.fakeVault.delete(".obsidian/hotkeys.json");
       await B.reconcileNow();
       await A.waitForIdle();
@@ -100,7 +102,7 @@ Deno.test({
       assertEquals(serverHead(server, A.keys, ".obsidian/hotkeys.json")?.deleted, false);
 
       // Re-enable: the file is restored from the server head.
-      B.settings.configCategories = [...ALL_CONFIG_CATEGORIES];
+      B.pluginSettings.configCategories = [...ALL_CONFIG_CATEGORIES];
       await catchUpOrDefer(
         sinkFor(B),
         configCategoryScopePrefixes("hotkeys", ".obsidian"),
@@ -122,11 +124,13 @@ Deno.test({
     p = await pair();
     const { A, B, server } = p;
     try {
-      A.settings.syncObsidianConfig = true;
-      B.settings.syncObsidianConfig = true;
+      A.pluginSettings.syncObsidianConfig = true;
+      B.pluginSettings.syncObsidianConfig = true;
 
       // B turns Core plugin settings off before A creates daily-notes.json.
-      B.settings.configCategories = B.settings.configCategories.filter((c) => c !== "corePlugins");
+      B.pluginSettings.configCategories = B.pluginSettings.configCategories.filter((c) =>
+        c !== "corePlugins"
+      );
       A.fakeVault.write(".obsidian/daily-notes.json", '{"folder":"Daily"}');
       await A.flushPending();
       await B.waitForCaughtUp(await serverSeq(server, A.keys, ".obsidian/daily-notes.json"));
@@ -136,7 +140,7 @@ Deno.test({
       assertEquals(serverHead(server, A.keys, ".obsidian/daily-notes.json")?.version, 1);
 
       // Re-enable: the static core-plugin prefix list covers daily-notes.json.
-      B.settings.configCategories = [...ALL_CONFIG_CATEGORIES];
+      B.pluginSettings.configCategories = [...ALL_CONFIG_CATEGORIES];
       await catchUpOrDefer(
         sinkFor(B),
         configCategoryScopePrefixes("corePlugins", ".obsidian"),
@@ -159,11 +163,13 @@ Deno.test({
     p = await pair();
     const { A, B, server } = p;
     try {
-      A.settings.syncObsidianConfig = true;
-      B.settings.syncObsidianConfig = true;
+      A.pluginSettings.syncObsidianConfig = true;
+      B.pluginSettings.syncObsidianConfig = true;
 
       // B turns Other settings off before A creates an unknown config-root file.
-      B.settings.configCategories = B.settings.configCategories.filter((c) => c !== "other");
+      B.pluginSettings.configCategories = B.pluginSettings.configCategories.filter((c) =>
+        c !== "other"
+      );
       A.fakeVault.write(".obsidian/someplugin-token.json", '{"token":"abc"}');
       await A.flushPending();
       await B.waitForCaughtUp(await serverSeq(server, A.keys, ".obsidian/someplugin-token.json"));
@@ -174,7 +180,7 @@ Deno.test({
 
       // Re-enable: the classifier-matched `other` scope covers the unknown file,
       // not just app.json (the pre-fix prefix list missed it).
-      B.settings.configCategories = [...ALL_CONFIG_CATEGORIES];
+      B.pluginSettings.configCategories = [...ALL_CONFIG_CATEGORIES];
       await catchUpOrDefer(
         sinkFor(B),
         configCategoryScopePrefixes("other", ".obsidian"),
@@ -196,8 +202,8 @@ Deno.test({
     p = await pair();
     const { A, B, server } = p;
     try {
-      A.settings.syncObsidianConfig = true;
-      B.settings.syncObsidianConfig = true;
+      A.pluginSettings.syncObsidianConfig = true;
+      B.pluginSettings.syncObsidianConfig = true;
 
       A.fakeVault.write(".obsidian/graph.json", '{"never":1}');
       await A.flushPending();
@@ -225,7 +231,7 @@ function content(vault: PairedVaults["A"], path: string): string | undefined {
 /** Build a coordinator sink backed by a real test plugin. */
 function sinkFor(plugin: PairedVaults["A"]): Parameters<typeof catchUpOrDefer>[0] {
   return {
-    settings: plugin.settings,
+    settings: plugin.pluginSettings,
     saveSettings: async () => {},
     catchUpFolders: (folders) => plugin.syncManager.catchUpFolders(folders),
   };

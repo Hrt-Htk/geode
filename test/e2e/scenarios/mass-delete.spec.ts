@@ -15,7 +15,7 @@ import path from "node:path";
 const PASSPHRASE = "mass-delete-decide-pass";
 const FOLDER = Array.from({ length: 20 }, (_, i) => `n/f${String(i).padStart(2, "0")}.md`);
 const OTHERS = Array.from({ length: 10 }, (_, i) => `other/g${i}.md`);
-const HOLD = "app.plugins.plugins.geode.settings.massDeleteHold";
+const HOLD = "app.plugins.plugins.geode.pluginSettings.massDeleteHold";
 
 const content = (file: string) => `# ${file}\n`;
 

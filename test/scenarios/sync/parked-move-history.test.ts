@@ -68,7 +68,7 @@ function conflicts(plugin: PairedVaults["A"]): string[] {
 
 function sinkFor(plugin: PairedVaults["A"]): Parameters<typeof catchUpOrDefer>[0] {
   return {
-    settings: plugin.settings,
+    settings: plugin.pluginSettings,
     saveSettings: async () => {},
     catchUpFolders: (folders) => plugin.syncManager!.catchUpFolders(folders),
   };
@@ -121,12 +121,12 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
       // Nothing left the device while the file sat in the excluded folder.
       assertEquals(head(server, vaultId, "notes/a.md", A.keys!)?.deleted, 0);
-      assertEquals(B.settings.pendingMoveOuts.length, 1, "the move is parked");
+      assertEquals(B.pluginSettings.pendingMoveOuts.length, 1, "the move is parked");
 
       // (d) an edit made inside the excluded folder must survive the move back out.
       B.fakeVault.write("Archive/a.md", "one\ntwo edited in archive\n");
@@ -144,7 +144,7 @@ Deno.test({
       assertEquals(trashCount(server, vaultId), 0, "a marker is never a trash entry");
 
       // The window runs from the new name back to the original saves.
-      assertEquals(B.settings.pendingMoveOuts, [], "the parked move is consumed");
+      assertEquals(B.pluginSettings.pendingMoveOuts, [], "the parked move is consumed");
       const walk = await window(A, "notes/b.md");
       assertEquals(walk.segments.map((s) => s.from), ["notes/a.md", null]);
       assertEquals(walk.rows().length, 2, "the note and the original save");
@@ -172,12 +172,12 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
       B.fakeVault.rename("Archive/a.md", "Archive/deep/a.md");
       await B.flushPending();
-      assertEquals(B.settings.pendingMoveOuts.map((m) => m.destPath), ["Archive/deep/a.md"]);
+      assertEquals(B.pluginSettings.pendingMoveOuts.map((m) => m.destPath), ["Archive/deep/a.md"]);
 
       B.fakeVault.rename("Archive/deep/a.md", "notes/b.md");
       await B.flushPending();
@@ -203,7 +203,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
       B.fakeVault.write("Archive/a.md", "one\ntwo\n");
@@ -217,7 +217,7 @@ Deno.test({
       ], "no marker and no note for a file that never left its name");
       await A.waitForVersion("notes/a.md", 2);
       assertEquals(content(A, "notes/a.md"), "one\ntwo\n");
-      assertEquals(B.settings.pendingMoveOuts, []);
+      assertEquals(B.pluginSettings.pendingMoveOuts, []);
       const walk = await window(A, "notes/a.md");
       assertEquals(walk.segments.length, 1);
       assertEquals(walk.rows().length, 2);
@@ -238,13 +238,13 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
       B.fakeVault.write("Archive/a.md", "one\ntwo\n");
       await B.flushPending();
 
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await catchUpOrDefer(sinkFor(B), ["Archive/"], () => {});
       await B.waitForIdle();
       await B.reconcileNow();
@@ -266,7 +266,7 @@ Deno.test({
       await A.waitForVersion("Archive/a.md");
       await A.waitForDeleted("notes/a.md");
       assertEquals(content(A, "Archive/a.md"), "one\ntwo\n");
-      assertEquals(B.settings.pendingMoveOuts, []);
+      assertEquals(B.pluginSettings.pendingMoveOuts, []);
 
       const walk = await window(A, "Archive/a.md");
       assertEquals(walk.segments.map((s) => s.from), ["notes/a.md", null]);
@@ -288,7 +288,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
       B.fakeVault.delete("Archive/a.md");
@@ -297,7 +297,7 @@ Deno.test({
       const gone = head(server, vaultId, "notes/a.md", A.keys!)!;
       assertEquals([gone.deleted, gone.rename_mark], [1, 0], "a plain tombstone, not a marker");
       assertEquals(trashCount(server, vaultId), 1, "the original is in the trash with its history");
-      assertEquals(B.settings.pendingMoveOuts, []);
+      assertEquals(B.pluginSettings.pendingMoveOuts, []);
 
       await A.waitForDeleted("notes/a.md");
       assertEquals(paths(A), []);
@@ -318,7 +318,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
       B.stop();
@@ -326,7 +326,7 @@ Deno.test({
 
       await B.start();
       await B.waitForIdle();
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       await catchUpOrDefer(sinkFor(B), ["Archive/"], () => {});
       await B.reconcileNow();
       await B.waitForIdle();
@@ -358,7 +358,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
 
@@ -405,7 +405,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
 
@@ -447,7 +447,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
 
@@ -476,7 +476,7 @@ Deno.test({
       assertEquals(content(B, "notes/a.md"), "peer edit of the new file\n");
       assertEquals(content(B, "notes/b.md"), "one\n");
       assertEquals(paths(B), ["notes/a.md", "notes/b.md"]);
-      assertEquals(B.settings.pendingMoveOuts, []);
+      assertEquals(B.pluginSettings.pendingMoveOuts, []);
     } finally {
       await stop();
     }
@@ -497,7 +497,7 @@ Deno.test({
       await B.waitForVersion("notes/a.md");
       await B.waitForVersion("notes/z.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
 
@@ -509,10 +509,10 @@ Deno.test({
         await gate;
         return await stat(path);
       };
-      B.settings.excludedFolders = [];
+      B.pluginSettings.excludedFolders = [];
       const catchingUp = catchUpOrDefer(sinkFor(B), ["Archive/"], () => {});
       await new Promise((r) => setTimeout(r, 50));
-      B.settings.excludedFolders = ["Other/"];
+      B.pluginSettings.excludedFolders = ["Other/"];
       B.fakeVault.rename("notes/z.md", "Other/z.md");
       await new Promise((r) => setTimeout(r, 50));
       release();
@@ -520,7 +520,7 @@ Deno.test({
       await B.waitForIdle();
 
       assertEquals(
-        B.settings.pendingMoveOuts.map((m) => [m.oldPath, m.destPath]),
+        B.pluginSettings.pendingMoveOuts.map((m) => [m.oldPath, m.destPath]),
         [["notes/z.md", "Other/z.md"]],
         "the park that landed during the pass is not overwritten by a stale snapshot",
       );
@@ -543,14 +543,18 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
 
       await B.resyncFromScratch();
 
       assert(!B.fakeVault.fileExists("notes/a.md"), "the parked name is never rewritten");
-      assertEquals(B.settings.pendingMoveOuts.length, 1, "the parked move survives the rebuild");
+      assertEquals(
+        B.pluginSettings.pendingMoveOuts.length,
+        1,
+        "the parked move survives the rebuild",
+      );
 
       B.fakeVault.rename("Archive/a.md", "notes/b.md");
       await B.flushPending();
@@ -575,7 +579,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
 
@@ -584,7 +588,7 @@ Deno.test({
       B.syncManager!.pause();
       B.fakeVault.rename("Archive/a.md", "notes/b.md");
       await new Promise((r) => setTimeout(r, 200));
-      assertEquals(B.settings.pendingMoveOuts, []);
+      assertEquals(B.pluginSettings.pendingMoveOuts, []);
       assertEquals(B.state?.getLocalFile("notes/a.md")?.deleted, false, "the name is releasable");
 
       // Restart: the queued ops are gone. The old name is still open on the server, so
@@ -619,14 +623,14 @@ Deno.test({
       await B.waitForVersion("notes/x.md");
       await B.waitForVersion("notes/y.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/x.md", "Archive/x.md");
       await B.flushPending();
       // y is moved onto the same parked name (an overwrite): y is the file there now.
       B.fakeVault.rename("notes/y.md", "Archive/x.md");
       await B.flushPending();
       assertEquals(
-        B.settings.pendingMoveOuts.map((m) => [m.oldPath, m.destPath]),
+        B.pluginSettings.pendingMoveOuts.map((m) => [m.oldPath, m.destPath]),
         [["notes/y.md", "Archive/x.md"]],
         "one park per destination, the file that is actually there",
       );
@@ -666,7 +670,7 @@ Deno.test({
       await A.flushPending();
       await B.waitForVersion("notes/a.md");
 
-      B.settings.excludedFolders = ["Archive/"];
+      B.pluginSettings.excludedFolders = ["Archive/"];
       B.fakeVault.rename("notes/a.md", "Archive/a.md");
       await B.flushPending();
 

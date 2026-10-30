@@ -59,7 +59,10 @@ async function restartWithDeleted(
       A.fakeVault.mtimes.delete(path);
     }
   });
-  await waitFor(() => fresh.settings.massDeleteHold !== null, "the mass-delete guard to hold");
+  await waitFor(
+    () => fresh.pluginSettings.massDeleteHold !== null,
+    "the mass-delete guard to hold",
+  );
   await waitFor(() => !fresh.isLive(), "the hold to close the transport");
   return fresh;
 }
@@ -86,7 +89,7 @@ Deno.test({
       await seed(A, B);
 
       const held = await restartWithDeleted(A, server, FOLDER);
-      const hold = held.settings.massDeleteHold!;
+      const hold = held.pluginSettings.massDeleteHold!;
       assertEquals(
         hold.files.map((f) => f.path).sort(),
         [...FOLDER].sort(),
@@ -110,7 +113,7 @@ Deno.test({
       assert(B.fakeVault.fileExists("other/g0.md"), "the live delete did not reach B");
 
       await held.syncManager!.resolveMassDeleteHold([]);
-      assertEquals(held.settings.massDeleteHold, null, "the hold is cleared");
+      assertEquals(held.pluginSettings.massDeleteHold, null, "the hold is cleared");
       assertEquals(
         tree(held),
         [...FOLDER, ...OTHERS.filter((p) => p !== "other/g0.md"), "during-hold.md"].sort(),
@@ -130,7 +133,7 @@ Deno.test({
       const versions = versionCount(server, vaultId);
       await held.reconcileNow();
       assertEquals(
-        held.settings.massDeleteHold,
+        held.pluginSettings.massDeleteHold,
         null,
         "the reconciler does not re-trip on the restored set",
       );
@@ -157,20 +160,20 @@ Deno.test({
       const held = await restartWithDeleted(A, server, FOLDER);
 
       const again = await restartPlugin(held, server, {
-        settings: { massDeleteHold: held.settings.massDeleteHold },
+        settings: { massDeleteHold: held.pluginSettings.massDeleteHold },
       });
       await sleep(300);
       assertEquals(again.transport!.getState(), "disconnected", "a held device never connects");
       assertEquals(again.isLive(), false);
       assertEquals(
-        again.settings.massDeleteHold!.files.length,
+        again.pluginSettings.massDeleteHold!.files.length,
         20,
         "the hold survived the restart",
       );
       assertEquals(tree(again), [...OTHERS].sort(), "still nothing restored on startup");
 
       await again.syncManager!.resolveMassDeleteHold(FOLDER);
-      assertEquals(again.settings.massDeleteHold, null, "the hold is cleared");
+      assertEquals(again.pluginSettings.massDeleteHold, null, "the hold is cleared");
       assertEquals(tree(again), [...OTHERS].sort(), "the confirmed deletes stay gone");
       await B.waitForDeleted(FOLDER[0]);
       await B.waitForDeleted(FOLDER[FOLDER.length - 1]);
@@ -257,7 +260,11 @@ Deno.test({
         failPath,
       );
 
-      assertEquals(held.settings.massDeleteHold!.files.length, 20, "the hold is still in force");
+      assertEquals(
+        held.pluginSettings.massDeleteHold!.files.length,
+        20,
+        "the hold is still in force",
+      );
       assertEquals(held.fakeVault.fileExists(failPath), false, "the failed path is still missing");
       assertEquals(tree(held).length, OTHERS.length + FOLDER.length - 1, "the rest was restored");
       assertEquals(trashCount(server, vaultId), 0, "nothing was deleted");
@@ -274,7 +281,7 @@ Deno.test({
       // Retrying converges: the restored files are skipped, only the failed one is retried.
       held.fakeVault.writeBinary = write;
       await held.syncManager!.resolveMassDeleteHold([]);
-      assertEquals(held.settings.massDeleteHold, null, "the retry cleared the hold");
+      assertEquals(held.pluginSettings.massDeleteHold, null, "the retry cleared the hold");
       assertEquals(held.fakeVault.fileExists(failPath), true, "the missing file came back");
       await held.waitForIdle();
       await B.waitForVersion("gate.md");
@@ -298,7 +305,7 @@ Deno.test({
 
       const stats = await held.resyncFromScratch();
 
-      assertEquals(held.settings.massDeleteHold, null, "the rebuild resolved the hold");
+      assertEquals(held.pluginSettings.massDeleteHold, null, "the rebuild resolved the hold");
       assertEquals(tree(held), [...FOLDER, ...OTHERS].sort(), "every held path came back");
       assert(stats.appliedFiles >= FOLDER.length, `applied ${stats.appliedFiles} files`);
       assertEquals(trashCount(server, vaultId), 0, "a rebuild never deletes");
@@ -330,7 +337,7 @@ Deno.test({
       // The rebuild is the decision: until it has RETURNED the hold stays in force, so a
       // half-finished rebuild can never let the remaining paths sync as deletes.
       assertEquals(
-        held.settings.massDeleteHold?.files.length,
+        held.pluginSettings.massDeleteHold?.files.length,
         20,
         "the hold survived the failed rebuild",
       );
@@ -338,10 +345,14 @@ Deno.test({
 
       // The failed rebuild leaves no session: restart, then retry the rebuild.
       const again = await restartPlugin(held, server, {
-        settings: { massDeleteHold: held.settings.massDeleteHold },
+        settings: { massDeleteHold: held.pluginSettings.massDeleteHold },
       });
       const stats = await again.resyncFromScratch();
-      assertEquals(again.settings.massDeleteHold, null, "the finished rebuild resolved the hold");
+      assertEquals(
+        again.pluginSettings.massDeleteHold,
+        null,
+        "the finished rebuild resolved the hold",
+      );
       assertEquals(tree(again), [...FOLDER, ...OTHERS].sort(), "every held path is back");
       assert(stats.appliedFiles >= FOLDER.length, `applied ${stats.appliedFiles} files`);
       assertEquals(trashCount(server, vaultId), 0, "a rebuild never deletes");
@@ -366,14 +377,14 @@ Deno.test({
       await seed(A, B);
       const held = await restartWithDeleted(A, server, FOLDER);
       held.pause();
-      held.settings.pauseAt = Date.now();
+      held.pluginSettings.pauseAt = Date.now();
 
       await assertRejects(
         () => held.resyncFromScratch(),
         Error,
         "Resume sync first",
       );
-      assertEquals(held.settings.massDeleteHold!.files.length, 20, "the hold is untouched");
+      assertEquals(held.pluginSettings.massDeleteHold!.files.length, 20, "the hold is untouched");
     } finally {
       await stop();
     }
@@ -397,7 +408,7 @@ Deno.test({
         "already in progress",
       );
       await first;
-      assertEquals(held.settings.massDeleteHold, null, "the first decision settled");
+      assertEquals(held.pluginSettings.massDeleteHold, null, "the first decision settled");
       assertEquals(tree(held), [...FOLDER, ...OTHERS].sort());
     } finally {
       await stop();
@@ -416,7 +427,7 @@ Deno.test({
       const held = await restartWithDeleted(A, server, FOLDER);
       // The user excludes the folder while the review window is open: those paths are no
       // longer synced, so a decision must not keep failing to restore them.
-      held.settings.excludedFolders = ["n/"];
+      held.pluginSettings.excludedFolders = ["n/"];
 
       await held.syncManager!.resolveMassDeleteHold(FOLDER);
 
@@ -428,7 +439,7 @@ Deno.test({
         [],
         "no out-of-scope path is queued for deletion",
       );
-      assertEquals(held.settings.massDeleteHold, null, "the decision went through");
+      assertEquals(held.pluginSettings.massDeleteHold, null, "the decision went through");
       assertEquals(tree(held), [...OTHERS].sort(), "nothing restored, nothing deleted");
       assertEquals(tree(B), [...FOLDER, ...OTHERS].sort(), "B keeps its copies");
       assertEquals(trashCount(server, vaultId), 0, "no tombstones for out-of-scope paths");
@@ -455,7 +466,7 @@ Deno.test({
         "Resume sync first",
       );
 
-      assertEquals(held.settings.massDeleteHold!.files.length, 20, "the hold is untouched");
+      assertEquals(held.pluginSettings.massDeleteHold!.files.length, 20, "the hold is untouched");
       assertEquals(tree(held), [...OTHERS].sort(), "nothing was restored");
     } finally {
       await stop();

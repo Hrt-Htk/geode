@@ -96,8 +96,8 @@ try {
     console.log("[2] .obsidian discovery with syncObsidianConfig ON");
     // Scope is per device: both devices need the toggle for B to pull .obsidian.
     for (const dev of [A, B]) {
-      dev.settings.syncObsidianConfig = true;
-      dev.settings.syncedPlugins = SYNCED_PLUGINS;
+      dev.pluginSettings.syncObsidianConfig = true;
+      dev.pluginSettings.syncedPlugins = SYNCED_PLUGINS;
       dev.syncManager.setSyncObsidianConfig(true);
     }
     const before2 = versionCount(server.db, vaultId);
@@ -113,7 +113,7 @@ try {
     await settle([A, B], server.db, vaultId);
     const after2 = versionCount(server.db, vaultId);
     const expected2 = obsidianFiles.filter((f) =>
-      isSyncable(f.path, ".obsidian", A.settings)
+      isSyncable(f.path, ".obsidian", A.pluginSettings)
     ).length;
     const noStorm2 = await settle([A, B], server.db, vaultId); // true = extra settle added no versions
     const stable2 = versionCount(server.db, vaultId);

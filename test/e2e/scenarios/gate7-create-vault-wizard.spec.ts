@@ -40,14 +40,16 @@ test("gate7 create-vault wizard provisions, unlocks, and syncs a note to the ser
     `);
 
     const creds = await obs.eval<{ vaultId: string; token: string }>(
-      `(() => { const s = app.plugins.plugins.geode.settings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
+      `(() => { const s = app.plugins.plugins.geode.pluginSettings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
     );
     expect(creds.vaultId).toBeTruthy();
     expect(creds.token).toBeTruthy();
 
     // #457: a new vault derives at the Standard level, stored on the device and the server.
     const STANDARD = { ops: 3, mem: 256 * 1024 * 1024 };
-    expect(await obs.eval(`app.plugins.plugins.geode.settings.argon2Params`)).toEqual(STANDARD);
+    expect(await obs.eval(`app.plugins.plugins.geode.pluginSettings.argon2Params`)).toEqual(
+      STANDARD,
+    );
     const info = await (await fetch(`${server.url}/vaults/${creds.vaultId}/info`, {
       headers: { Authorization: "Bearer e2e" },
     })).json() as { argon2_ops: number; argon2_mem: number };

@@ -23,7 +23,7 @@ test("gate7 second device joins via admin-token wizard and converges", async () 
       } })`,
     );
     await waitForUnlocked(A);
-    const aVaultId = await A.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+    const aVaultId = await A.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
 
     await waitForPluginLoaded(B);
     await focusSetupWizard(B);
@@ -62,7 +62,7 @@ test("gate7 second device joins via admin-token wizard and converges", async () 
     `);
 
     await waitForUnlocked(B);
-    const bVaultId = await B.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+    const bVaultId = await B.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
     expect(bVaultId).toBe(aVaultId);
 
     await A.eval(`
@@ -101,7 +101,7 @@ test("gate7 join with a wrong passphrase is rejected", async () => {
       } })`,
     );
     await waitForUnlocked(A);
-    const aVaultId = await A.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+    const aVaultId = await A.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
 
     await waitForPluginLoaded(B);
     await focusSetupWizard(B);
