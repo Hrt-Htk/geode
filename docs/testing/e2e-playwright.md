@@ -1,6 +1,6 @@
 ---
 covers: [test/e2e/playwright.config.ts, test/e2e/global-setup.ts, test/e2e/env.ts, test/e2e/vault-interlock.ts, test/e2e/seed-guard.ts]
-watches: [test/e2e/*.ts, test/e2e/fixtures/*, test/e2e/helpers/*, test/unit/e2e/**, test/e2e/scenarios/**]
+watches: [test/e2e/*.ts, test/e2e/fixtures/*, test/e2e/helpers/*, test/unit/e2e/**, test/e2e/scenarios/**, scripts/docs-screenshots.ts]
 ---
 
 # End-to-end testing with real Obsidian (Playwright)
@@ -15,8 +15,9 @@ scenarios cannot: vault event firing, file-watcher behaviour, plugin lifecycle h
 save paths, command-palette wiring, status-bar DOM, conflict files in the real file explorer, and
 `.obsidian/plugins/geode/` loading.
 
-Three Playwright projects share one harness: `default` (desktop Electron), `phone` (a real Android
-device over ADB and CDP) and `hybrid` (a desktop and the device in one run).
+Four Playwright projects share one harness: `default` (desktop Electron), `phone` (a real Android
+device over ADB and CDP), `hybrid` (a desktop and the device in one run) and `docs` (the committed
+product images; see §7).
 
 ---
 
@@ -39,7 +40,7 @@ server come from `PATH` (`OBSIDIAN_BIN`, `DENO_BIN`); nothing is downloaded.
 
 ```
 test/e2e/
-├── playwright.config.ts        # projects default/phone/hybrid, workers: 1
+├── playwright.config.ts        # projects default/phone/hybrid/docs, workers: 1
 ├── global-setup.ts             # phone lock + seed/vault guards, frees the fixed port
 ├── env.ts                      # requireEnv / phoneTestVault (no baked-in defaults)
 ├── phone-cdp.ts                # eval-on-device over adb + CDP
@@ -57,7 +58,8 @@ test/e2e/
 │   ├── fresh.ts                # unconfigured instance, for the setup wizard
 │   ├── hybrid-pair.ts          # one server, desktop + phone
 │   ├── phone-obsidian.ts       # attach to the device's Obsidian, force-stop, relaunch
-│   └── phone-server.ts         # adb reverse / throwaway server for device runs
+│   ├── phone-server.ts         # adb reverse / throwaway server for device runs
+│   └── demo-vault/             # invented notes the docs images are shot on; demo-vault.ts
 ├── helpers/                    # waits, geode, editor, palette, logs, shots, console-noise,
 │                               # device-abstraction, interrupt, rekey, mass-delete seed,
 │                               # rename links, fit, verifier, mobile-ui
@@ -106,6 +108,9 @@ Per launch it creates a fresh vault plus a fresh user-data dir, then:
    locked keyring otherwise stalls `requestUrl` for about 25 s) and its own `--user-data-dir`;
 5. waits for the DevTools socket, attaches over CDP, waits for `.workspace-leaf`, and dismisses the
    startup modal and trust prompt.
+
+`copyVaultFrom: <dir>` copies a whole vault in before launch (every file, attachments and templates
+included, `.obsidian` skipped, mtimes kept): that is `fixtures/demo-vault/` for the docs images.
 
 `seedFiles: { sourceDir, count }` copies the first N `.md` files (sorted, `.obsidian` skipped,
 mtimes preserved) from a real vault before launch. That is how a cold sync gets a real apply
@@ -173,6 +178,9 @@ GEODE_PHONE=1 ADB_PATH=adb ANDROID_SERIAL=<serial> \
 
 - `playwright.config.ts` runs `workers: 1`, `fullyParallel: false`, 120 s per test, and loads
   `.env.local` when it exists (via `process.loadEnvFile`).
+- The `docs-shots*` specs are ignored by `default` and matched only by the `docs` project, so a
+  normal run never reshoots a committed image. They also skip unless `GEODE_DOCS_SHOTS=1` (or, on
+  the phone, `GEODE_PHONE=1`), which only `deno task docs:screenshots` sets.
 - `globalSetup` does nothing for a desktop-only run. With `GEODE_PHONE=1` it takes the shared
   test-phone flock for the whole run, frees the fixed phone-server port, checks the seed vault, and,
   when `GEODE_PHONE_RESET=1`, refuses to wipe a vault that is not `GEODE_PHONE_VAULT`.
@@ -250,7 +258,27 @@ pairs where the device matters. `test/README.md` lists them.
 
 ---
 
-## 7. Relationship to `step-gates.md`
+## 7. The `docs` project: the committed product images
+
+`README.md` and `docs/screenshots/README.md` show images of the real plugin, and those PNGs are
+committed. What they show, in what state, is [`../screenshots/README.md`](../screenshots/README.md);
+this section is the harness side.
+
+- **Project:** `docs` matches `docs-shots*.spec.ts` only, and `default` ignores that suffix, so no
+  other run reshoots a tracked image. Both files skip unless `GEODE_DOCS_SHOTS=1`.
+- **Output:** `helpers/docs-shots.ts` → `docsShot(name)`, so the images land in `docs/screenshots/`,
+  not the gitignored `test/e2e/screenshots/`.
+- **Vault and address:** `fixtures/demo-vault/` and `fixtures/demo-vault.ts`. The specs sync to one
+  fixed host and port (`geode.example.com`, resolved to loopback with `--host-resolver-rules`), so
+  the address in the settings image does not change between runs.
+- **One command:** `deno task docs:screenshots` builds the plugin, runs this project under the
+  shared phone lock (falling back to `xvfb-run` when the shell has no display), and stamps the built
+  plugin's version into every caption in `../../README.md` and `../screenshots/README.md`. A failed
+  run exits non-zero without stamping, and says how to restore the images.
+
+---
+
+## 8. Relationship to `step-gates.md`
 
 Each gate has an **E2E (Playwright)** subsection naming the specs that are its evidence, and its
 pass criteria include those specs green in a local run. `test/README.md` fixes the naming rule:
@@ -258,7 +286,7 @@ pass criteria include those specs green in a local run. `test/README.md` fixes t
 
 ---
 
-## 8. Dev loop
+## 9. Dev loop
 
 1. `deno task dev`: server in watch mode.
 2. `deno task build:plugin --watch`: esbuild rebuilds `plugin-dist/` on change.
@@ -270,7 +298,7 @@ pass criteria include those specs green in a local run. `test/README.md` fixes t
 
 ---
 
-## 9. Gotchas
+## 10. Gotchas
 
 - **Plugin trust prompts.** Restricted mode blocks a community plugin. The fixture writes
   `community-plugins.json` and `app.json` (`trustedAuthors` from the built manifest) before launch;
@@ -296,7 +324,7 @@ pass criteria include those specs green in a local run. `test/README.md` fixes t
 
 ---
 
-## 10. What this layer does NOT cover
+## 11. What this layer does NOT cover
 
 - **iOS.** The `phone` project drives Android only.
 - **Real-world network conditions.** Everything runs on localhost or through `adb reverse`.
@@ -308,7 +336,7 @@ pass criteria include those specs green in a local run. `test/README.md` fixes t
 
 ---
 
-## 11. Acceptance for this layer
+## 12. Acceptance for this layer
 
 - [ ] Every gate that names an E2E spec has it green in a local run.
 - [ ] The `phone` project is green on a real device; `hybrid` is green with a real desktop peer.

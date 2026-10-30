@@ -278,7 +278,7 @@ the local state files. Optional.
    `app.plugins.plugins.geode.transport.getState()`.
 6. Iterate.
 
-`e2e-playwright.md` §8 covers the same loop for the Playwright suite.
+`e2e-playwright.md` §9 covers the same loop for the Playwright suite.
 
 ### Mobile debugging (Gate 8)
 

@@ -35,7 +35,9 @@ export default defineConfig({
     {
       name: "default",
       testMatch: /\.spec\.ts$/,
-      testIgnore: /\.(phone|hybrid)\.spec\.ts$/,
+      // `docs` (deno task docs:screenshots) drives the real UI to write committed images into
+      // docs/screenshots: never part of a normal run (#8).
+      testIgnore: [/\.(phone|hybrid)\.spec\.ts$/, /\/docs-shots(-phone)?\.spec\.ts$/],
     },
     {
       name: "phone",
@@ -44,6 +46,10 @@ export default defineConfig({
     {
       name: "hybrid",
       testMatch: /\.hybrid\.spec\.ts$/,
+    },
+    {
+      name: "docs",
+      testMatch: /\/docs-shots(-phone)?\.spec\.ts$/,
     },
   ],
 });

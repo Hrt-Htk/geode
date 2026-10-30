@@ -56,6 +56,12 @@ process.
 | [`e2e-playwright.md`](testing/e2e-playwright.md) | Real-Obsidian E2E: Playwright over CDP, desktop plus phone and hybrid projects | contributor |
 | [`e2e-campaign.md`](testing/e2e-campaign.md) | E2E realism ladder: level 0, standing invariants, fuzz oracle | contributor |
 
+## screenshots/
+
+| Document | Covers | Audience |
+| --- | --- | --- |
+| [`screenshots/README.md`](screenshots/README.md) | The committed product images, the demo vault they are shot on, and `deno task docs:screenshots` | contributor |
+
 ## ops/
 
 | Document | Covers | Audience |

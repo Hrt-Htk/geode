@@ -12,10 +12,10 @@ One line per directory; the naming convention at the bottom is the rule, not a s
 | `bench/` | Non-test scripts run by hand (`bench-real`, `bench-rekey`, `soak`, `crypto-bench-entry`, `build-bundle`); `bench-real-readonly.test.ts` is the one Deno test here, guarding them in CI. |
 | `fuzz/` | Oracle fuzz engine (`engine.ts`), its committed suite (`engine.test.ts`), and the sweep CLI (`sweep.ts`). `test/fuzz` is excluded from `test:ci`. |
 | `e2e/` | Playwright harness: `playwright.config.ts`, `global-setup.ts`, the phone lock/queue, seed and vault guards. |
-| `e2e/fixtures/` | Launching real Obsidian (desktop, phone), the throwaway server, pairs and hybrid pairs. |
+| `e2e/fixtures/` | Launching real Obsidian (desktop, phone), the throwaway server, pairs and hybrid pairs, and the demo vault the docs images are shot on. |
 | `e2e/helpers/` | Spec-level helpers: waits, shots, mobile UI, interrupt/relaunch, rekey runs. `*.deno.ts` are scripts spawned, never imported. |
-| `e2e/scenarios/` | The Playwright specs (projects `default`, `phone`, `hybrid`), flat. |
-| `e2e/screenshots/` | Screenshot output, gitignored: `<spec>/<project>/`. |
+| `e2e/scenarios/` | The Playwright specs (projects `default`, `phone`, `hybrid`, `docs`), flat. |
+| `e2e/screenshots/` | Screenshot output, gitignored: `<spec>/<project>/`. The committed product images are `docs/screenshots/`, written by the `docs` project (`deno task docs:screenshots`). |
 | `helpers/` | Shared Deno-test helpers: byte equality + the mass-delete guard (`bytes.ts`), `serveOnPortZero`, `makeTempDataDir`. |
 | `two-vault-driver.ts` | The scenario harness every `scenarios/` and many `unit/plugin/` tests import. |
 
@@ -23,7 +23,7 @@ One line per directory; the naming convention at the bottom is the rule, not a s
 
 - **kebab-case everywhere.** One behavior family per file; no `_`, no camelCase.
 - **`.test.ts`**: a Deno test (`deno test` finds it). Test names read `module - behavior` (`scenario: outcome` in `scenarios/`).
-- **`.spec.ts`**: a Playwright spec, `test/e2e/scenarios/` only. Project suffix: `.phone.spec.ts` (Android device), `.hybrid.spec.ts` (desktop + phone in one run). Playwright's `testMatch`/`testIgnore` are suffix regexes: a new suffix silently leaves the project, so check `--list` when you add one.
+- **`.spec.ts`**: a Playwright spec, `test/e2e/scenarios/` only. Project suffix: `.phone.spec.ts` (Android device), `.hybrid.spec.ts` (desktop + phone in one run), `docs-shots*.spec.ts` (the committed docs images, `deno task docs:screenshots`; `default` ignores it). Playwright's `testMatch`/`testIgnore` are suffix regexes: a new suffix silently leaves the project, so check `--list` when you add one.
 - **`.deno.ts`**: a script a spec or helper spawns as a subprocess (not imported, not collected).
 - **`gateN-`**: step-gate evidence only: keep the prefix **only when `docs/testing/step-gates.md`
   cites the spec (or its family) as gate N's evidence**, N = 1-11. Any other number in a spec name is

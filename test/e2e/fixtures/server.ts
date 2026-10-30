@@ -48,6 +48,8 @@ export async function startServer(opts?: {
   env?: Record<string, string>;
   /** Use an existing data dir (e.g. a small tmpfs mount) instead of a fresh mkdtemp; not removed on stop. */
   dataDir?: string;
+  /** The created vault's name (default `e2e-vault`; the docs screenshots show a demo name). */
+  vaultName?: string;
 }): Promise<E2EServer> {
   const denoBin = opts?.denoBin ?? DEFAULT_DENO_BIN;
   const adminToken = opts?.adminToken ?? DEFAULT_ADMIN_TOKEN;
@@ -61,7 +63,7 @@ export async function startServer(opts?: {
 
   try {
     await waitForHttpReady(url, timeoutMs, child, port);
-    const vault = await createVault(url, adminToken);
+    const vault = await createVault(url, adminToken, opts?.vaultName);
     let stopped = false;
 
     return {
@@ -203,6 +205,7 @@ async function waitForHttpReady(
 async function createVault(
   url: string,
   adminToken: string,
+  name = "e2e-vault",
 ): Promise<{ vaultId: string; salt: string }> {
   const response = await fetch(`${url}/vaults`, {
     method: "POST",
@@ -210,7 +213,7 @@ async function createVault(
       authorization: `Bearer ${adminToken}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ name: "e2e-vault" }),
+    body: JSON.stringify({ name }),
   });
   if (!response.ok) {
     throw new Error(`create vault failed: ${response.status} ${await response.text()}`);

@@ -62,6 +62,10 @@ nul
 
 # Dev debris: temporary debugging artifacts
 *.png
+# ... except the product images the docs show (deno task docs:screenshots writes them) and the logo
+!docs/screenshots/*.png
+!docs/assets/*.png
+!test/e2e/fixtures/demo-vault/**/*.png
 
 # Scratch / temporary work
 tmp/

@@ -36,6 +36,8 @@ export type GeodeSettings = {
   unlockTimeoutHours: number;
   syncObsidianConfig: boolean;
   debugLogging: boolean;
+  /** This device's name, as the activity feed and the history window label its rows. */
+  deviceName: string;
 };
 
 export type ObsidianInstance = {
@@ -80,6 +82,12 @@ export async function launchObsidian(opts: {
    * launches, so the reconciler chunks/encrypts/uploads them on startup (#319).
    */
   seedFiles?: { sourceDir: string; count: number };
+  /**
+   * Copy EVERY file under `sourceDir` into the fresh vault before launch (attachments and
+   * templates too, `.obsidian` skipped, edit times kept). A whole vault, where `seedFiles` is a
+   * count-limited backlog of notes.
+   */
+  copyVaultFrom?: string;
   /** Reuse an existing vault directory (e.g. relaunch after an offline change). */
   vaultDir?: string;
   /** Reuse an existing user-data directory (vault localStorage survives a relaunch). */
@@ -94,6 +102,8 @@ export async function launchObsidian(opts: {
   /** Rewrite the installed plugin manifest's `version` before Obsidian loads, so the
    * real plugin reports a different version to the server handshake (#529 E2E). */
   pluginVersion?: string;
+  /** Extra Chromium switches (e.g. `--host-resolver-rules` to map a stable name to loopback). */
+  extraArgs?: string[];
 }): Promise<ObsidianInstance> {
   const obsidianBin = await resolveObsidianBinary(opts.obsidianBin ?? DEFAULT_OBSIDIAN_BIN);
   const pluginSrcDir = opts.pluginSrcDir ?? DEFAULT_PLUGIN_SRC_DIR;
@@ -108,6 +118,9 @@ export async function launchObsidian(opts: {
     if (opts.seedFiles) {
       await seedVaultFiles(vaultDir, opts.seedFiles);
     }
+    if (opts.copyVaultFrom) {
+      await copyVaultTree(vaultDir, opts.copyVaultFrom);
+    }
   }
   await writeLauncherState(userDataDir, vaultDir);
 
@@ -115,6 +128,7 @@ export async function launchObsidian(opts: {
   const child = spawn(obsidianBin, [
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${userDataDir}`,
+    ...opts.extraArgs ?? [],
     vaultDir,
   ], {
     cwd: path.dirname(obsidianBin),
@@ -303,6 +317,34 @@ async function seedVaultFiles(
   }
 }
 
+/** Every file of a whole vault, with its edit time kept: the demo-vault fixture's contents. */
+async function copyVaultTree(vaultDir: string, sourceDir: string): Promise<void> {
+  const sourceStat = await stat(sourceDir).catch(() => null);
+  if (!sourceStat?.isDirectory()) {
+    throw new Error(`copyVaultFrom: sourceDir is not a directory: "${sourceDir}"`);
+  }
+  for (const rel of await collectAllFiles(sourceDir)) {
+    const src = path.join(sourceDir, ...rel.split("/"));
+    const dest = path.join(vaultDir, ...rel.split("/"));
+    await mkdir(path.dirname(dest), { recursive: true });
+    await copyFile(src, dest);
+    const { mtime } = await stat(src);
+    await utimes(dest, mtime, mtime);
+  }
+}
+
+/** Every file of a vault tree as `a/b.md` paths: `.obsidian` skipped, attachments included. */
+export async function collectAllFiles(dir: string, prefix = ""): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name === ".obsidian") continue;
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...await collectAllFiles(path.join(dir, entry.name), rel));
+    else if (entry.isFile()) files.push(rel);
+  }
+  return files;
+}
+
 async function collectMarkdownFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
@@ -351,6 +393,7 @@ function mergeSettings(
     unlockTimeoutHours: patch.unlockTimeoutHours ?? 24,
     syncObsidianConfig: patch.syncObsidianConfig ?? true,
     debugLogging: patch.debugLogging ?? false,
+    deviceName: patch.deviceName ?? "",
   };
 }
 
