@@ -1,6 +1,8 @@
 #!/usr/bin/env -S deno run -A
 /**
- * One-command release: bumps version, commits, tags, pushes, and deploys the server.
+ * One-command release: bumps the shared version line, commits, tags, pushes, and
+ * deploys the server. The plugin release is a pre-release: BRAT users get it, the
+ * community directory does not until it is promoted (#22).
  * Plugin and server ship together atomically; there is no plugin-only mode.
  *
  * Usage: deno run -A scripts/release.ts X.Y.Z
@@ -58,48 +60,31 @@ if (status.trim()) {
 }
 
 // Version must not already be current
-const pkg = JSON.parse(await Deno.readTextFile(`${root}/package.json`)) as { version: string };
+const pkgPath = `${root}/package.json`;
+const pkg = JSON.parse(await Deno.readTextFile(pkgPath)) as { version: string };
 if (pkg.version === version) {
   console.error(`Version ${version} is already the current version.`);
   Deno.exit(1);
 }
+// The tag this release replaces, resolved before the bump below overwrites it.
+const prevVersion = pkg.version;
 
-// ── Step 1: Bump versions ──────────────────────────────────────────────
+// ── Step 1: Bump the version line ──────────────────────────────────────
 
 console.log(`[1/5] Bumping version to ${version}...`);
 
-// Read minAppVersion from manifest.json
-const manifestPath = `${root}/manifest.json`;
-const manifest = JSON.parse(await Deno.readTextFile(manifestPath)) as {
-  version: string;
-  minAppVersion: string;
-};
-const minAppVersion = manifest.minAppVersion;
-
-// Bump package.json
-const pkgPath = `${root}/package.json`;
-const pkgData = JSON.parse(await Deno.readTextFile(pkgPath));
-pkgData.version = version;
-await Deno.writeTextFile(pkgPath, JSON.stringify(pkgData, null, 2) + "\n");
-
-// Bump manifest.json
-manifest.version = version;
-await Deno.writeTextFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
-
-// Add entry to versions.json (never edit existing entries)
-const versionsPath = `${root}/versions.json`;
-const versions = JSON.parse(await Deno.readTextFile(versionsPath)) as Record<string, string>;
-versions[version] = minAppVersion;
-await Deno.writeTextFile(versionsPath, JSON.stringify(versions, null, 2) + "\n");
-
+// #22: package.json is the only version this bumps. The root manifest.json and
+// versions.json stay on the last promoted version: they are what the community
+// directory reads off main, and a beta must not advertise itself there. The build
+// stamps the released version into plugin-dist/manifest.json instead.
+pkg.version = version;
+await Deno.writeTextFile(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
 console.log(`  package.json: ${version}`);
-console.log(`  manifest.json: ${version}`);
-console.log(`  versions.json: added ${version} -> ${minAppVersion}`);
 
 // ── Step 2: Commit ─────────────────────────────────────────────────────
 
 console.log("[2/5] Committing...");
-await runGit(["add", pkgPath, manifestPath, versionsPath]);
+await runGit(["add", pkgPath]);
 await runGit(["commit", "-m", `chore(release): ${version}`]);
 
 // ── Step 3: Push ───────────────────────────────────────────────────────
@@ -110,12 +95,13 @@ await runGit(["push", "origin", "main"]);
 // ── Step 4: Tag + push ─────────────────────────────────────────────────
 
 console.log(`[4/5] Tagging and pushing ${version}...`);
-// #12: the tag is the bare manifest version: the community directory matches
-// the release tag to manifest.json, and `v`-prefixed tags don't.
+// #12/#22: the tag is the bare release version: a promoted release's
+// manifest.json carries that same version, which is what the community directory
+// matches, and `v`-prefixed tags don't.
 const tag = version;
 await runGit(["tag", tag]);
 await runGit(["push", "origin", tag]);
-console.log(`  Tag ${tag} pushed: release.yml workflow will publish BRAT release.`);
+console.log(`  Tag ${tag} pushed: release.yml workflow will publish the BRAT pre-release.`);
 
 // ── Step 5: Deploy server ──────────────────────────────────────────────
 
@@ -127,7 +113,7 @@ const tags = (await runGit(["tag", "--list"])).split("\n").filter(Boolean);
 const deployCmd = new Deno.Command("bash", {
   args: [`${root}/deploy/deploy.sh`],
   cwd: root,
-  env: { GEODE_PREV_TAG: prevReleaseTag(pkg.version, tags) ?? "" },
+  env: { GEODE_PREV_TAG: prevReleaseTag(prevVersion, tags) ?? "" },
 });
 const deployOutput = await deployCmd.output();
 console.log(new TextDecoder().decode(deployOutput.stdout));

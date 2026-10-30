@@ -42,8 +42,8 @@
     "phone:status": "deno run -A --env-file=.env.local scripts/phone-cli.ts status",
     "lint": "deno lint",
     "fmt": "deno fmt",
-    "version": "deno run -A scripts/version-bump.ts",
     "release": "deno run -A --env-file=.env.local scripts/release.ts",
+    "promote": "deno run -A scripts/promote.ts",
     "after-merge": "deno run -A --env-file=.env.local scripts/after-merge.ts"
   },
   "fmt": {

@@ -2,6 +2,7 @@ import { build, context } from "npm:esbuild";
 import { builtinModules } from "node:module";
 import path from "node:path";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
+import { stampManifest } from "./manifest-stamp.ts";
 
 const watch = Deno.args.includes("--watch");
 const rootDir = Deno.cwd();
@@ -118,7 +119,15 @@ if (watch) {
 
 async function syncAssets() {
   await Deno.mkdir(outDir, { recursive: true });
-  await Deno.copyFile(manifestSrc, manifestDest);
+  // #22: the released version from package.json, not the root manifest's: that
+  // one stays on the last promoted version until `deno task promote` moves it.
+  const pkg = JSON.parse(await Deno.readTextFile(path.join(rootDir, "package.json"))) as {
+    version: string;
+  };
+  await Deno.writeTextFile(
+    manifestDest,
+    stampManifest(await Deno.readTextFile(manifestSrc), pkg.version),
+  );
 
   const versionsSrc = path.join(rootDir, "versions.json");
   const versionsDest = path.join(outDir, "versions.json");

@@ -108,7 +108,10 @@ Deno.test("release preflight: the release and after-merge tasks load .env.local"
 // `git describe` at HEAD returns the tag it just created and the plugin/core
 // diff is empty by construction. The release must hand the deploy the tag it is
 // replacing, or the "no BRAT release needed" line is a tautology.
-Deno.test("release deploy: the deploy is told the tag being replaced", async () => {
+// #22: a release is a BRAT beta. It moves the shared version line (package.json)
+// only; the root manifest.json/versions.json stay on the last promoted version,
+// because the community directory reads them.
+Deno.test("release: bumps package.json only and tells the deploy the tag being replaced", async () => {
   const { base, repo, home } = await tempRepo();
   const git = async (args: string[]) => {
     const out = await new Deno.Command("git", {
@@ -141,6 +144,15 @@ Deno.test("release deploy: the deploy is told the tag being replaced", async () 
     assertEquals(res.code, 0, `release failed\n${res.stdout}${res.stderr}`);
     assertStringIncludes(res.stdout, "[5/5] Deploying server");
     assertStringIncludes(res.stdout, "fake deploy: GEODE_PREV_TAG=v0.0.1");
+    const pkg = JSON.parse(await Deno.readTextFile(`${repo}/package.json`));
+    assertEquals(pkg.version, "9.9.9", "the release moves the shared version line");
+    const manifest = JSON.parse(await Deno.readTextFile(`${repo}/manifest.json`));
+    assertEquals(manifest.version, "0.0.1", "a beta must not move the directory's manifest");
+    assertEquals(
+      await Deno.readTextFile(`${repo}/versions.json`),
+      "{}\n",
+      "a beta must not add a versions.json entry",
+    );
     // #12: the new tag is the bare manifest version, not `v`-prefixed.
     const tags = await new Deno.Command("git", {
       args: ["tag", "--list"],

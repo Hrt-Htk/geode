@@ -95,12 +95,14 @@ These files exist. This section says what each one is for.
 ### 3.1 `deno.json`
 
 Holds the import map (aliases for `@noble/hashes/*`, `libsodium-wrappers-sumo`, `@db/sqlite`,
-`node-diff3`, `postcss`) and 17 tasks. The ones you use:
+`node-diff3`, `postcss`) and 18 tasks. The ones you use:
 
 | Task | What it does |
 | --- | --- |
 | `deno task dev` | Server with `--watch`; `--allow-ffi` is needed by `@db/sqlite` |
-| `deno task build:plugin` | esbuild bundle, then copies manifest, `versions.json` and `styles.css` into `plugin-dist/` |
+| `deno task build:plugin` | esbuild bundle, then copies the manifest (stamped with `package.json`'s version), `versions.json` and `styles.css` into `plugin-dist/` |
+| `deno task release` | `scripts/release.ts`: bump, commit, tag, push, deploy. A pre-release (#22) |
+| `deno task promote` | `scripts/promote.ts`: move the root manifest/versions to a tested release (#22) |
 | `deno task test` | `deno test --allow-all` |
 | `deno task test:ci` | The suite CI runs, with a wall-clock cap (`scripts/test-timeout.ts`) |
 | `deno task standards` | lint, plugin `tsc`, ESLint, unused exports, jscpd, CSS syntax, LOC tripwire, docs gate, private-data gate |
@@ -119,10 +121,16 @@ Holds the dev-only toolchain (esbuild, typescript, eslint, jscpd, ts-unused-expo
 ### 3.3 `manifest.json` and `versions.json` (repo root)
 
 `manifest.json` is the plugin manifest (`id: geode`, `main: main.js`); `versions.json` maps each plugin
-version to its `minAppVersion`: append a row on every release and never edit one. Both live at the repo
-root, which is where the community directory reads them; they are the single source. `styles.css` stays
-in `plugin/manifest/`. `deno task build:plugin` copies all three into `plugin-dist/`, which is what you
-install into a vault.
+version to its `minAppVersion`. Both live at the repo root, which is where the community directory
+reads them; they are the single source for the directory. `styles.css` stays in
+`plugin/manifest/`.
+
+**They move only on promote (#22).** Every release is a GitHub pre-release, and its version lives in
+`package.json`; the root manifest keeps the last version promoted to the directory. `deno task promote
+X.Y.Z` sets the root `manifest.json` version and appends the `versions.json` row (never edit an
+existing one). `deno task build:plugin` stamps the released version from `package.json` into
+`plugin-dist/manifest.json`, so the release asset and the running plugin both report `X.Y.Z` while the
+root manifest still says the promoted version. `plugin-dist/` is what you install into a vault.
 
 ### 3.4 `tsconfig.plugin.json` and `tsconfig.lint.json`
 
@@ -137,7 +145,9 @@ esbuild with `format: "cjs"`, `platform: "browser"`, `target: "es2020"`, and Obs
 Node builtins external. It aliases the `@noble/hashes` and libsodium specifiers to their `node_modules`
 files (the CJS libsodium entry, see the comment in `deno.json`), inlines the libsodium WASM as a base64
 module (`plugin/_generated/`), and copies the manifest, `versions.json` and `styles.css` into
-`plugin-dist/`. `--watch` rebuilds on change. It does not talk to a running Obsidian.
+`plugin-dist/`. The manifest is written by `stampManifest` (`scripts/manifest-stamp.ts`) with the
+released version from `package.json`, not the root manifest's promoted one (#22). `--watch` rebuilds on
+change. It does not talk to a running Obsidian.
 
 Why the WASM is inlined and patched: libsodium's Emscripten loader fetches its `.wasm` file at init,
 and that request never resolves in Obsidian's Electron window, so the plugin would hang on unlock. The
