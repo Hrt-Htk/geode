@@ -102,6 +102,8 @@ export async function launchObsidian(opts: {
   /** Rewrite the installed plugin manifest's `version` before Obsidian loads, so the
    * real plugin reports a different version to the server handshake (#529 E2E). */
   pluginVersion?: string;
+  /** Extra Chromium switches (e.g. `--host-resolver-rules` to map a stable name to loopback). */
+  extraArgs?: string[];
 }): Promise<ObsidianInstance> {
   const obsidianBin = await resolveObsidianBinary(opts.obsidianBin ?? DEFAULT_OBSIDIAN_BIN);
   const pluginSrcDir = opts.pluginSrcDir ?? DEFAULT_PLUGIN_SRC_DIR;
@@ -126,6 +128,7 @@ export async function launchObsidian(opts: {
   const child = spawn(obsidianBin, [
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${userDataDir}`,
+    ...opts.extraArgs ?? [],
     vaultDir,
   ], {
     cwd: path.dirname(obsidianBin),
@@ -330,7 +333,8 @@ async function copyVaultTree(vaultDir: string, sourceDir: string): Promise<void>
   }
 }
 
-async function collectAllFiles(dir: string, prefix = ""): Promise<string[]> {
+/** Every file of a vault tree as `a/b.md` paths: `.obsidian` skipped, attachments included. */
+export async function collectAllFiles(dir: string, prefix = ""): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (entry.name === ".obsidian") continue;

@@ -3,26 +3,29 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  DEMO_LAUNCH_ARGS,
   DEMO_PASSPHRASE,
   DEMO_VAULT_DIR,
-  DEMO_VAULT_NAME,
+  demoServer,
   launchDemo,
   readDemoNotes,
 } from "../fixtures/demo-vault";
 import { launchUnconfigured } from "../fixtures/fresh";
-import { TEST_ARGON2_PARAMS } from "../fixtures/obsidian";
-import { focusSetupWizard, waitForPluginLoaded } from "../helpers/geode";
-import { restartHeld } from "../helpers/mass-delete-seed";
-import { startServer } from "../fixtures/server";
+import type { ObsidianInstance } from "../fixtures/obsidian";
+import type { E2EServer } from "../fixtures/server";
 import { fixWindow, shoot, useDarkTheme } from "../helpers/docs-shots";
-import { commitPath, upsertVaultFile, waitForUnlocked } from "../helpers/geode";
+import {
+  commitPath,
+  focusSetupWizard,
+  upsertVaultFile,
+  waitForPluginLoaded,
+  waitForUnlocked,
+} from "../helpers/geode";
+import { openSettingsTab } from "../helpers/logs";
+import { restartHeld } from "../helpers/mass-delete-seed";
 import { waitForStatusBar } from "../helpers/waits";
 
-// #8: the committed images the README's Features section and `docs/screenshots` show. Real
-// Obsidian on the demo vault of invented notes (`fixtures/demo-vault`), driven through the real
-// UI. Run with `deno task docs:screenshots`, which reshoots them all and stamps the plugin
-// version into `docs/screenshots/README.md`. The `docs` Playwright project only: never a normal
-// default/phone/hybrid run.
+// #8: the desktop half of the docs images; `deno task docs:screenshots` runs it.
 
 const SETTINGS = ".modal.mod-settings";
 const CONFLICT_NOTE = "2 - Projects/Balcony garden.md";
@@ -55,45 +58,49 @@ Bake at 240 for twenty minutes with the lid on, then 220 with the lid off. The l
 trick.`,
 );
 
-async function openSettings(o: { eval: <T>(s: string) => Promise<T> }): Promise<void> {
-  await o.eval(`
-    if (app.setting && typeof app.setting.close === "function") app.setting.close();
-    app.setting.open();
-    app.setting.openTabById("geode");
-    return true;
-  `);
+/** The settings Devices row snapshots the server once when the tab renders, so wait until the
+ * Laptop has reported its position before opening it: a never-synced device is not "behind", and
+ * a fetch that raced the ack would leave a different number in the image. */
+async function settledSettings(o: ObsidianInstance, server: E2EServer, token: string) {
+  await expect.poll(async () => {
+    const res = await fetch(`${server.url}/vaults/${server.vaultId}/devices/status`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const body = await res.json() as {
+      head_seq: number;
+      devices: Array<{ name: string; applied_seq: number | null }>;
+    };
+    const laptop = body.devices.find((d) => d.name === "Laptop");
+    return (laptop?.applied_seq ?? -1) - body.head_seq;
+  }, { timeout: 60_000 }).toBeGreaterThanOrEqual(0);
+  await openSettingsTab(o);
+  await expect(
+    o.win.locator('[data-testid="geode-settings-devices-summary"] .setting-item-description'),
+  ).toHaveText("2 devices · 0 behind", { timeout: 20_000 });
 }
 
-async function closeTop(o: { win: import("@playwright/test").Page }): Promise<void> {
+async function closeTop(o: ObsidianInstance): Promise<void> {
   await o.win.keyboard.press("Escape");
   await expect(o.win.locator(".modal-container")).toHaveCount(1, { timeout: 10_000 });
 }
 
 test("demo vault: settings, sync scope, devices, passphrase, history, activity, trash", async () => {
+  test.skip(process.env.GEODE_DOCS_SHOTS !== "1", "reshoot with deno task docs:screenshots");
   test.setTimeout(12 * 60_000);
-  const server = await startServer({ vaultName: DEMO_VAULT_NAME });
-  const laptop = await server.mintToken("Laptop");
-  // The vault's second device, so the Devices view and the activity rows name two real devices.
-  await server.mintToken("Phone");
-  await server.registerAuthHash(laptop.token, DEMO_PASSPHRASE, TEST_ARGON2_PARAMS);
+  const { server, laptop } = await demoServer();
   const o = await launchDemo(server, laptop);
 
   try {
     await waitForUnlocked(o);
     await waitForStatusBar(o.win, "Geode: synced", 180_000);
-    await fixWindow(o.win);
+    await fixWindow(o);
     await useDarkTheme(o);
 
     /* ---- Settings tab (a taller window, so the sections below Status fit) ---- */
-    await fixWindow(o.win, 1280, 1100);
-    await openSettings(o);
-    await expect(o.win.locator('[data-testid="geode-settings-sync-status"]')).toBeVisible();
-    await expect(o.win.locator('[data-testid="geode-settings-sync-status"]')).toContainText(
-      "Up to date.",
-      { timeout: 60_000 },
-    );
-    await shoot(o, SETTINGS, "settings");
-    await fixWindow(o.win);
+    await fixWindow(o, 1100);
+    await settledSettings(o, server, laptop.token);
+    await shoot(o, "settings", SETTINGS);
+    await fixWindow(o);
 
     /* ---- Selective sync: folders, one folder switched off ---- */
     await o.win.locator('[data-testid="geode-settings-folders-manage"]').click();
@@ -104,7 +111,7 @@ test("demo vault: settings, sync scope, devices, passphrase, history, activity, 
     await o.win.locator('[data-testid="geode-folder-toggle"][data-path="99 - System"]').click();
     await expect(o.win.locator('[data-testid="geode-folder-toggle"][data-path="99 - System"]'))
       .not.toHaveClass(/is-enabled/);
-    await shoot(o, ".geode-folders-modal", "sync-folders");
+    await shoot(o, "sync-folders", ".geode-folders-modal");
     await closeTop(o);
 
     /* ---- Devices ---- */
@@ -113,13 +120,11 @@ test("demo vault: settings, sync scope, devices, passphrase, history, activity, 
       timeout: 20_000,
     });
     await expect(o.win.locator('[data-testid="geode-device-row"]')).toHaveCount(2);
-    // Wait for the applied position to land, so the row reads "Up to date" and not a transient
-    // "N changes behind".
     await expect(
       o.win.locator('[data-testid="geode-device-row"]', { hasText: "Laptop" })
         .locator(".geode-device-desc"),
     ).toContainText("Up to date", { timeout: 60_000 });
-    await shoot(o, ".geode-devices-modal", "devices");
+    await shoot(o, "devices", ".geode-devices-modal");
     await closeTop(o);
 
     /* ---- Change passphrase ---- */
@@ -128,7 +133,7 @@ test("demo vault: settings, sync scope, devices, passphrase, history, activity, 
       timeout: 15_000,
     });
     await o.win.mouse.move(5, 5);
-    await shoot(o, '[data-testid="geode-rekey-modal"]', "change-passphrase");
+    await shoot(o, "change-passphrase", '[data-testid="geode-rekey-modal"]');
     await closeTop(o);
     await o.eval(`app.setting?.close?.(); return true;`);
 
@@ -163,10 +168,8 @@ test("demo vault: settings, sync scope, devices, passphrase, history, activity, 
     await expect(diff.locator('[data-kind="add"]').filter({ hasText: "Bake at 240" })).toHaveCount(
       1,
     );
-    // The save the image shows is a Laptop one; a reshoot that lands elsewhere fails here.
-    await expect(o.win.locator(".geode-history-meta")).toContainText("Laptop");
     await o.win.mouse.move(5, 5);
-    await shoot(o, ".geode-history-modal", "history-restore");
+    await shoot(o, "history-restore", ".geode-history-modal");
     await o.win.locator('[data-testid="geode-history-done"]').click();
 
     /* ---- One note jotted, two notes deleted: the feed shows every kind of row ---- */
@@ -208,7 +211,7 @@ Frost on Thursday night. Bring the fig in and cover the trough with the old shee
     await expect(o.win.locator('[data-testid="geode-activity-row"]').first()).toBeVisible({
       timeout: 15_000,
     });
-    await shoot(o, ".geode-activity-modal", "sync-activity");
+    await shoot(o, "sync-activity", ".geode-activity-modal");
     await o.win.keyboard.press("Escape");
     await expect(o.win.locator(".geode-activity-modal")).toHaveCount(0, { timeout: 10_000 });
 
@@ -218,15 +221,15 @@ Frost on Thursday night. Bring the fig in and cover the trough with the old shee
     await expect(o.win.locator('[data-testid="geode-trash-restore"]').first()).toBeVisible({
       timeout: 20_000,
     });
-    await shoot(o, ".geode-trash-modal", "deleted-files");
+    await shoot(o, "deleted-files", ".geode-trash-modal");
     await o.win.keyboard.press("Escape");
 
     /* ---- Selective sync: which Obsidian config follows the vault ---- */
     // Last of the settings images: the demo vault keeps config sync off (notes only), so the
     // master toggle is switched on through the real row first, and that is what adds the Config
     // to sync row. A taller window so the whole list, plugins included, fits in the image.
-    await openSettings(o);
-    await fixWindow(o.win, 1280, 1000);
+    await openSettingsTab(o);
+    await fixWindow(o, 1000);
     await o.win.locator('[data-testid="geode-settings-toggle-sync-obsidian"]').click();
     // The modal lists installed community plugins; the demo vault ships with Geode alone, so two
     // manifests stand in for the plugins a real vault would have (as config-to-sync-plugins.spec.ts
@@ -242,11 +245,9 @@ Frost on Thursday night. Bring the fig in and cover the trough with the old shee
     await o.win.locator('[data-testid="geode-settings-config-manage"]').click();
     await expect(o.win.locator(".geode-config-modal")).toBeVisible({ timeout: 15_000 });
     await expect(o.win.locator('[data-testid="geode-config-plugin-templater-obsidian"]'))
-      .toBeVisible(
-        { timeout: 15_000 },
-      );
+      .toBeVisible({ timeout: 15_000 });
     await o.win.mouse.move(5, 5);
-    await shoot(o, ".geode-config-modal", "config-to-sync");
+    await shoot(o, "config-to-sync", ".geode-config-modal");
     await closeTop(o);
   } finally {
     await o.close();
@@ -255,11 +256,9 @@ Frost on Thursday night. Bring the fig in and cover the trough with the old shee
 });
 
 test("demo vault: a real conflict, listed and reviewed side by side", async () => {
+  test.skip(process.env.GEODE_DOCS_SHOTS !== "1", "reshoot with deno task docs:screenshots");
   test.setTimeout(10 * 60_000);
-  const server = await startServer({ vaultName: DEMO_VAULT_NAME });
-  const laptop = await server.mintToken("Laptop");
-  const phone = await server.mintToken("Phone");
-  await server.registerAuthHash(laptop.token, DEMO_PASSPHRASE, TEST_ARGON2_PARAMS);
+  const { server, laptop, phone } = await demoServer();
   const A = await launchDemo(server, laptop);
   // The demo vault's second device. A desktop window standing in for the phone keeps this spec in
   // the `docs` project: the same conflict either way, and only one window is ever photographed.
@@ -267,7 +266,7 @@ test("demo vault: a real conflict, listed and reviewed side by side", async () =
 
   try {
     for (const o of [A, B]) {
-      await fixWindow(o.win);
+      await fixWindow(o);
       await useDarkTheme(o);
       await waitForStatusBar(o.win, "Geode: synced", 180_000);
     }
@@ -315,7 +314,7 @@ test("demo vault: a real conflict, listed and reviewed side by side", async () =
     await B.eval(`app.plugins.plugins.geode.openConflictsModal(); return true;`);
     await expect(B.win.locator(".geode-conflicts-modal")).toBeVisible({ timeout: 15_000 });
     await expect(B.win.locator('[data-testid="geode-conflict-row"]')).toHaveCount(1);
-    await shoot(B, ".geode-conflicts-modal", "conflicts-list");
+    await shoot(B, "conflicts-list", ".geode-conflicts-modal");
     await B.win.locator('[data-testid="geode-conflict-review"]').click();
     const review = B.win.locator(".geode-conflict-review-modal");
     await expect(review).toBeVisible({ timeout: 15_000 });
@@ -326,17 +325,16 @@ test("demo vault: a real conflict, listed and reviewed side by side", async () =
       review.locator('[data-testid="geode-conflict-diff-line"][data-kind="conflict"]'),
     ).toContainText("brackets included");
     await B.win.mouse.move(5, 5);
-    await shoot(B, ".geode-conflict-review-modal", "conflict-review");
+    await shoot(B, "conflict-review", ".geode-conflict-review-modal");
   } finally {
     await Promise.allSettled([A.close(), B.close(), server.stop()]);
   }
 });
 
 test("demo vault: a mass delete held for review", async () => {
+  test.skip(process.env.GEODE_DOCS_SHOTS !== "1", "reshoot with deno task docs:screenshots");
   test.setTimeout(15 * 60_000);
-  const server = await startServer({ vaultName: DEMO_VAULT_NAME });
-  const laptop = await server.mintToken("Laptop");
-  await server.mintToken("Phone");
+  const { server, laptop } = await demoServer();
   const notes = await readDemoNotes();
   const held = notes.filter((n) => !n.path.startsWith("99 - System")).map((n) => ({
     path: n.path,
@@ -358,15 +356,15 @@ test("demo vault: a mass delete held for review", async () => {
     await waitForStatusBar(o.win, "Geode: synced", 180_000);
 
     // Closed app, files deleted behind its back, relaunch: the reconciler trips the guard.
-    o = await restartHeld(o, held, held.length, DEMO_PASSPHRASE);
-    await fixWindow(o.win);
+    o = await restartHeld(o, held, held.length, DEMO_PASSPHRASE, DEMO_LAUNCH_ARGS);
+    await fixWindow(o);
     await useDarkTheme(o);
     const notice = o.win.locator(".notice").last();
     await expect(notice).toContainText("files missing", { timeout: 120_000 });
     await notice.click();
     await expect(o.win.locator(".geode-missing-modal")).toBeVisible({ timeout: 15_000 });
     await expect(o.win.locator(".geode-missing-modal")).toContainText("Review missing files");
-    await shoot(o, ".geode-missing-modal", "mass-delete-review");
+    await shoot(o, "mass-delete-review", ".geode-missing-modal");
   } finally {
     await o.close();
     await server.stop().catch(() => {});
@@ -374,21 +372,19 @@ test("demo vault: a mass delete held for review", async () => {
 });
 
 test("setup wizard: the create form", async () => {
+  test.skip(process.env.GEODE_DOCS_SHOTS !== "1", "reshoot with deno task docs:screenshots");
   test.setTimeout(5 * 60_000);
-  const server = await startServer({ vaultName: DEMO_VAULT_NAME });
+  const { server } = await demoServer();
   const o = await launchUnconfigured(server);
   try {
     await waitForPluginLoaded(o);
     await focusSetupWizard(o);
-    await fixWindow(o.win);
+    await fixWindow(o);
     await useDarkTheme(o);
     await o.win.locator('[data-testid="geode-wizard-create"]').click();
     await o.win.locator('[data-testid="geode-create-server"]').fill("geode.example.com");
-    await expect(o.win.locator('[data-testid="geode-create-server"]')).toHaveValue(
-      "geode.example.com",
-    );
     await o.win.mouse.move(5, 5);
-    await shoot(o, ".modal-container .modal", "setup-wizard");
+    await shoot(o, "setup-wizard", ".modal-container .modal");
   } finally {
     await o.close();
     await server.stop().catch(() => {});

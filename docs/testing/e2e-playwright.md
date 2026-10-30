@@ -178,8 +178,9 @@ GEODE_PHONE=1 ADB_PATH=adb ANDROID_SERIAL=<serial> \
 
 - `playwright.config.ts` runs `workers: 1`, `fullyParallel: false`, 120 s per test, and loads
   `.env.local` when it exists (via `process.loadEnvFile`).
-- `--project=docs` is excluded from `default` and matches only `docs-shots*.spec.ts`, so a normal
-  run never reshoots a committed image.
+- The `docs-shots*` specs are ignored by `default` and matched only by the `docs` project, so a
+  normal run never reshoots a committed image. They also skip unless `GEODE_DOCS_SHOTS=1` (or, on
+  the phone, `GEODE_PHONE=1`), which only `deno task docs:screenshots` sets.
 - `globalSetup` does nothing for a desktop-only run. With `GEODE_PHONE=1` it takes the shared
   test-phone flock for the whole run, frees the fixed phone-server port, checks the seed vault, and,
   when `GEODE_PHONE_RESET=1`, refuses to wipe a vault that is not `GEODE_PHONE_VAULT`.
@@ -259,23 +260,21 @@ pairs where the device matters. `test/README.md` lists them.
 
 ## 7. The `docs` project: the committed product images
 
-`README.md` and [`../screenshots/README.md`](../screenshots/README.md) show images of the real
-plugin, and those PNGs are committed. The `docs` project takes them:
+`README.md` and `docs/screenshots/README.md` show images of the real plugin, and those PNGs are
+committed. What they show, in what state, is [`../screenshots/README.md`](../screenshots/README.md);
+this section is the harness side.
 
-- **Specs:** `docs-shots.spec.ts` (desktop: settings, selective sync, devices, passphrase, history,
-  activity, trash, a real conflict, a held mass delete, the setup wizard) and
-  `docs-shots-phone.spec.ts` (the status menu and the file history on the device). Both write
-  through `docsShot()` into `docs/screenshots/`, not the gitignored `test/e2e/screenshots/`.
-- **Vault:** `fixtures/demo-vault/`, invented notes shaped like a real vault (numbered folders,
-  templated notes, two attachments). Never a personal vault: no note, name, path or server address
-  from one reaches an image.
-- **One command:** `deno task docs:screenshots` builds the plugin, runs this project under the phone
-  lock (falling back to `xvfb-run` when the shell has no display), and stamps the built plugin's
-  version into every caption in `../screenshots/README.md`.
-- **Never in a normal run:** `default` ignores `docs-shots*.spec.ts`, and no other project's suffix
-  matches it. `--list` is the proof.
-- **Fixed look:** Obsidian's own default theme, dark, no CSS snippet; the window is pinned by
-  `helpers/docs-shots.ts`; the devices are always named Laptop and Phone.
+- **Project:** `docs` matches `docs-shots*.spec.ts` only, and `default` ignores that suffix, so no
+  other run reshoots a tracked image. Both files skip unless `GEODE_DOCS_SHOTS=1`.
+- **Output:** `helpers/docs-shots.ts` → `docsShot(name)`, so the images land in `docs/screenshots/`,
+  not the gitignored `test/e2e/screenshots/`.
+- **Vault and address:** `fixtures/demo-vault/` and `fixtures/demo-vault.ts`. The specs sync to one
+  fixed host and port (`geode.example.com`, resolved to loopback with `--host-resolver-rules`), so
+  the address in the settings image does not change between runs.
+- **One command:** `deno task docs:screenshots` builds the plugin, runs this project under the
+  shared phone lock (falling back to `xvfb-run` when the shell has no display), and stamps the built
+  plugin's version into every caption in `../../README.md` and `../screenshots/README.md`. A failed
+  run exits non-zero without stamping, and says how to restore the images.
 
 ---
 

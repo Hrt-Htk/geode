@@ -141,12 +141,14 @@ export async function waitForHold(
 }
 
 /** Close the app, delete the held files from disk behind its back, relaunch and unlock: the
- * first reconciler pass trips the guard. Returns the relaunched instance. */
+ * first reconciler pass trips the guard. `extraArgs` carries launch switches the first instance had
+ * (e.g. a host-resolver rule). Returns the relaunched instance. */
 export async function restartHeld(
   o: ObsidianInstance,
   held: { path: string }[],
   count: number,
   passphrase: string,
+  extraArgs?: string[],
 ): Promise<ObsidianInstance> {
   const vaultDir = o.vaultDir;
   const settings: GeodeSettings = o.settings;
@@ -156,6 +158,7 @@ export async function restartHeld(
     geodeSettings: settings,
     unlockPassphrase: passphrase,
     vaultDir,
+    extraArgs,
   });
   await waitForUnlocked(again);
   await waitForHold(again, count);

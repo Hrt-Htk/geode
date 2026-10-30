@@ -1,62 +1,21 @@
 import { expect, test } from "@playwright/test";
 import { DEMO_PASSPHRASE, readDemoNotes } from "../fixtures/demo-vault";
-import { connectPhone } from "../fixtures/phone-obsidian";
+import { connectPhone, type PhoneInstance } from "../fixtures/phone-obsidian";
 import { useRemoteServer } from "../fixtures/phone-server";
+import { shoot, useDarkTheme } from "../helpers/docs-shots";
 import { commitPath, upsertVaultFile, waitForUnlocked } from "../helpers/geode";
 import { dismissModals, evalClick } from "../helpers/mobile-ui";
-import { docsShot } from "../helpers/shots";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 
-// #8: the phone half of the committed docs images, on the real Android device: the status icon
-// with its menu open, and the file history window. Run by `deno task docs:screenshots` (the
-// `docs` project only); the phone lock and the test-vault interlock come from global-setup.
+// #8: the phone half of the docs images; `deno task docs:screenshots` runs it.
 
 const NOTE = "3 - Areas/Daily notes/2026/10/2026-10-06-tuesday.md";
+type DemoNote = Awaited<ReturnType<typeof readDemoNotes>>[number];
 
-type DemoNote = { path: string; content: string };
-
-/** Writes the demo vault's notes into the device's (reset) vault, then commits them in one pass. */
-async function seedDemoVaultOnDevice(
-  obsidian: Awaited<ReturnType<typeof connectPhone>>,
-  notes: DemoNote[],
-) {
-  await obsidian.eval(`
-    (async () => {
-      const files = ${JSON.stringify(notes)};
-      const folders = new Set();
-      for (const f of files) {
-        const folder = f.path.split("/").slice(0, -1).join("/");
-        let acc = "";
-        for (const seg of folder.split("/")) {
-          if (!seg) continue;
-          acc = acc ? acc + "/" + seg : seg;
-          folders.add(acc);
-        }
-      }
-      for (const folder of [...folders].sort((a, b) => a.split("/").length - b.split("/").length)) {
-        if (!(await app.vault.adapter.exists(folder))) await app.vault.createFolder(folder);
-      }
-      for (const f of files) await app.vault.create(f.path, f.content);
-      return files.length;
-    })()
-  `);
-  await obsidian.eval(`
-    await app.plugins.plugins.geode.syncManager.handlePendingOps(
-      ${JSON.stringify(notes.map((n) => n.path))}.map((path) => ({ path, kind: "commit" })),
-    );
-    return true;
-  `);
-}
-
-async function darkTheme(obsidian: Awaited<ReturnType<typeof connectPhone>>): Promise<void> {
-  await obsidian.eval(`
-    app.changeTheme("obsidian");
-    await new Promise((r) => setTimeout(r, 500));
-    return document.body.className;
-  `);
-  await expect
-    .poll(async () => await obsidian.eval<string>("document.body.className"))
-    .toContain("theme-dark");
+/** Writes the demo vault's notes into the device's (reset) vault, then commits them. */
+async function seedDemoVaultOnDevice(obsidian: PhoneInstance, notes: DemoNote[]): Promise<void> {
+  for (const note of notes) await upsertVaultFile(obsidian, note.path, note.content);
+  for (const note of notes) await commitPath(obsidian, note.path);
 }
 
 test("demo vault (phone): status menu and file history", async () => {
@@ -97,7 +56,7 @@ test("demo vault (phone): status menu and file history", async () => {
     await seedDemoVaultOnDevice(obsidian, notes);
     await waitForStatusBar(obsidian.win, "Geode: synced", 180_000);
     await dismissModals(obsidian);
-    await darkTheme(obsidian);
+    await useDarkTheme(obsidian);
 
     /* ---- The status icon with its menu open, over a demo note ---- */
     await obsidian.eval(`
@@ -113,15 +72,8 @@ test("demo vault (phone): status menu and file history", async () => {
       timeout: 15_000,
     });
     await expect(obsidian.win.locator(".menu .menu-item-title")).toHaveCount(6);
-    await obsidian.eval(
-      `document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`,
-    );
     await new Promise((r) => setTimeout(r, 500));
-    await obsidian.win.screenshot({
-      path: docsShot("status-menu-phone"),
-      scale: "css",
-      animations: "disabled",
-    });
+    await shoot(obsidian, "status-menu-phone");
     await obsidian.eval(
       `document.querySelector(".menu")?.remove(); document.querySelector(".menu-container")?.remove(); return true;`,
     );
@@ -149,8 +101,7 @@ test("demo vault (phone): status menu and file history", async () => {
       app.commands.executeCommandById("geode:geode-show-file-history");
       return true;
     `);
-    const modal = obsidian.win.locator(".geode-history-modal");
-    await expect(modal).toBeVisible({ timeout: 20_000 });
+    await expect(obsidian.win.locator(".geode-history-modal")).toBeVisible({ timeout: 20_000 });
     await evalClick(obsidian, `.geode-history-modal [data-testid="geode-history-period"]`);
     await expect(obsidian.win.locator('[data-testid="geode-history-back"]')).toBeVisible({
       timeout: 15_000,
@@ -159,14 +110,7 @@ test("demo vault (phone): status menu and file history", async () => {
     await expect(obsidian.win.locator('[data-testid="geode-history-markdown"]')).toContainText(
       "the harbour wall at dusk",
     );
-    await obsidian.eval(
-      `document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`,
-    );
-    await obsidian.win.screenshot({
-      path: docsShot("file-history-phone"),
-      scale: "css",
-      animations: "disabled",
-    });
+    await shoot(obsidian, "file-history-phone");
   } finally {
     await obsidian.close();
     await server.stop?.().catch(() => {});

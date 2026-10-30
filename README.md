@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/geode-icon.png" width="128" alt="Geode logo: a low-poly geode split into two halves">
+</p>
+
 # Geode
 
 Geode syncs Obsidian vaults between your devices through a server you run yourself. Each device
@@ -34,7 +38,9 @@ flowchart TD
   file --> review["Review<br/>Keep original, Keep conflict, Keep both"]
 ```
 
-![The conflict review window: two versions of one note side by side, each in its own colour, with Keep original, Keep conflict and Keep both](docs/screenshots/conflict-review.png)
+![The conflict review window, two versions of one note compared](docs/screenshots/conflict-review.png)
+
+*Taken on plugin v0.41.7.*
 
 ### Recovery
 
@@ -46,7 +52,9 @@ flowchart TD
 - Rejoining over an existing folder keeps the local files the server doesn't know in a
   `Geode backup` folder inside the vault, instead of uploading them over your notes.
 
-![The file history window: editing periods on the left, the selected version diffed against the current note on the right](docs/screenshots/history-restore.png)
+![The file history window, a past version diffed against the current note](docs/screenshots/history-restore.png)
+
+*Taken on plugin v0.41.7.*
 
 ### Seeing what is happening
 
@@ -59,9 +67,13 @@ flowchart TD
 - Banners when something needs you: an error, a pause, or a plugin update.
 - Debug logging with **Copy logs**, for a bug report.
 
-![The status icon's menu on the phone: pause, sync activity, conflicts, deleted files, devices and settings](docs/screenshots/status-menu-phone.png)
+![The status icon's menu open on the phone](docs/screenshots/status-menu-phone.png)
 
-![The sync activity window listing the files that changed, each with its device and time](docs/screenshots/sync-activity.png)
+*Taken on plugin v0.41.7.*
+
+![The sync activity window, one row per file](docs/screenshots/sync-activity.png)
+
+*Taken on plugin v0.41.7.*
 
 ### Security and setup
 
@@ -72,11 +84,14 @@ flowchart TD
 - Change the passphrase at any time. Geode estimates the run first, and resumes it if it is
   interrupted.
 - Choose the encryption strength per vault, from the wizard or later in settings.
-- Rotate the admin token, rename the vault, leave the vault, or change the server address.
+- Rotate the admin token with a script on your server, rename or leave the vault, and change
+  the server address.
 - Self-hosted: a VPS or a computer at home, with Tailscale for access from outside.
 - No telemetry.
 
-![The setup wizard's create step, with a server address and an admin token field](docs/screenshots/setup-wizard.png)
+![The setup wizard's create step, with a server address and admin token field](docs/screenshots/setup-wizard.png)
+
+*Taken on plugin v0.41.7.*
 
 Every other screen, and the command that reshoots them all: [`docs/screenshots/README.md`](docs/screenshots/README.md).
 
