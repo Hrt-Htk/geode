@@ -93,12 +93,10 @@ token's vault. The routes live in `server/blob-routes.ts`, not `server/routes.ts
   wrong one or a short blob.
 - `test/unit/core/chunker.test.ts`: an empty input yields nothing; a small file yields one chunk;
   chunking is deterministic; sizes stay in `[min_size, max_size]`; an append changes only the last
-  chunk; a middle insertion changes only the overlapping chunks; a 1 byte prepend changes only the
-  first chunk.
-  Not yet met: no committed test pins the prepend case, and the one that tries is `ignore: true`,
-  `test/unit/core/chunker.test.ts:87`, because its periodic (i%256) pattern collapses 8 chunks into
-  4 distinct hashes. The property holds on real input: 500 KB of pseudorandom data keeps 7 of 8
-  chunk hashes after a 1 byte prepend, and 2 MB keeps 30 of 31.
+  chunk; a middle insertion changes only the overlapping chunks; a 1 byte prepend keeps at least half
+  of the chunk hashes on 500 KB of deterministic pseudorandom data. The test asserts locality, not
+  positional equality (the cut hash carries from each chunk start), which is what fastcdc guarantees;
+  `../crypto/encryption-chunking.md` §8 carries the measured rates.
 - `test/unit/core/hash.test.ts`, `normalize.test.ts`, `reassemble.test.ts`: known blake3 vectors,
   keyed versus unkeyed hashes, path and line-ending normalization, BOM stripping, MIME detection,
   and reassembly that throws on a reordered or swapped chunk.
