@@ -179,10 +179,9 @@ All use `test/two-vault-driver.ts`:
   an edit of a synced one both land on B, and the server holds exactly one new version for each path
   (1 and 2).
 - `test/scenarios/sync/reconnect-replay.test.ts`: B disconnects, A commits 3 times, B reconnects and
-  receives all 3 in seq order; a server restart mid-session leaves both clients reconnecting with
-  their stored `last_seen_seq` and no duplicates.
-  Not yet met: the mid-session server restart,
-  `test/scenarios/sync/reconnect-replay.test.ts:17` disconnects the client transport only.
+  receives all 3 in seq order; a server restart mid-session reconnects both clients from their stored
+  `last_seen_seq`: no already-applied version is replayed (the write spy on B sees only the one
+  post-restart edit) and the path ends with one new version, not one per reconnect.
 - `test/scenarios/sync/origin-echo.test.ts`: a replayed version of A's own commit advances the
   cursor without rewriting the file.
 - `test/scenarios/sync/reconciler-external-edit.test.ts`: an external create, modify and delete are

@@ -40,7 +40,9 @@ server:
   `pushNow()`, `reconcileNow()`, `commitDirect(path)`, `disconnect()` / `reconnect()`,
   `waitForIdle()`, `waitForCaughtUp(seq)` and `waitForConvergence(other, path)`.
 - `startTestServer()`: the real server handlers on port 0 with a temp data dir; returns
-  `{ url, db, dataDir, stop }`.
+  `{ url, db, dataDir, restart, stop }`. `restart()` closes the listener and the DB and boots again
+  on the same port and data dir, so connected clients keep their URL: the mid-session server restart
+  (`test/scenarios/sync/reconnect-replay.test.ts`). `server.db` is re-read after a restart.
 - `pair()` / `triple()`: one server, one vault, two or three devices; `stop()` tears it all down.
 - `restartPlugin()` / `restartWithDiskChange()`: rebuild the plugin on the same `FakeVault`, the
   in-process analogue of an app restart.

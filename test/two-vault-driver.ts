@@ -759,54 +759,80 @@ export class TestPlugin {
 
 export interface TestServer {
   url: string;
-  db: ReturnType<typeof openDb>;
+  /** The live DB: a restart replaces it, so read it through `server.db` each time. */
+  readonly db: ReturnType<typeof openDb>;
   dataDir: string;
   adminToken: string;
+  /** Close the listener and the DB, then boot again on the same port and data dir. */
+  restart: () => Promise<void>;
   stop: () => Promise<void>;
 }
 
 export function startTestServer(adminToken = "test-admin"): TestServer {
   const dataDir = Deno.makeTempDirSync();
-  const db = openDb(dataDir);
+  let stack = openStack(dataDir, adminToken);
+  let port = 0;
+  let shutdown: (() => Promise<void>) | null = null;
 
-  const blobHandler = blobRoutes(dataDir, db);
-  const vaultHandler = vaultRoutes(db, adminToken, dataDir);
-
-  const { port, shutdown } = serveOnPortZero((req: Request) => {
+  const handler = (req: Request): Response | Promise<Response> => {
     const url = new URL(req.url);
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      return handleTestUpgrade(req, db, dataDir, url);
+      return handleTestUpgrade(req, stack.db, dataDir, url);
     }
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts.length === 2 && parts[0] === "blobs") {
-      return blobHandler(req);
+      return stack.blob(req);
     }
     if (parts[0] === "vaults") {
-      return vaultHandler(req);
+      return stack.vault(req);
     }
     return new Response("ok", { status: 200 });
-  });
+  };
 
+  const listen = (): void => {
+    const started = serveOnPortZero(handler, { port });
+    port = started.port;
+    shutdown = started.shutdown;
+  };
+
+  const tearDown = async (): Promise<void> => {
+    await shutdown?.();
+    shutdown = null;
+    // Close each VaultHub before clearing the store: each hub schedules an
+    // idle setTimeout (VaultHub.scheduleIdle) that leaks if not cleared.
+    for (const hub of hubStore.values()) await hub.close();
+    hubStore.clear();
+    stack.db.close();
+  };
+
+  listen();
   const url = `http://localhost:${port}`;
   serverLog.info("test server started", { url });
 
   return {
     url,
-    db,
+    get db() {
+      return stack.db;
+    },
     dataDir,
     adminToken,
+    restart: async () => {
+      await tearDown();
+      stack = openStack(dataDir, adminToken);
+      listen();
+    },
     stop: async () => {
-      await shutdown();
-      // Close each VaultHub before clearing the store: each hub schedules an
-      // idle setTimeout (VaultHub.scheduleIdle) that leaks if not cleared.
-      for (const hub of hubStore.values()) await hub.close();
-      hubStore.clear();
-      db.close();
+      await tearDown();
       try {
         Deno.removeSync(dataDir, { recursive: true });
       } catch { /* ignore */ }
     },
   };
+}
+
+function openStack(dataDir: string, adminToken: string) {
+  const db = openDb(dataDir);
+  return { db, blob: blobRoutes(dataDir, db), vault: vaultRoutes(db, adminToken, dataDir) };
 }
 
 function handleTestUpgrade(
