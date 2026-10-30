@@ -375,12 +375,37 @@ sudo systemctl reload caddy
 | Replay loops or repeated conflicts after copying a vault | Two devices share one identity. See [Add another device](#add-another-device). |
 | "Update required" or "Server update required" | See [Update](#update). |
 
+## Network use
+
+Geode has one remote service: the Geode server you run yourself. The setup wizard asks for its
+address, and every request the plugin makes goes to that address and nowhere else.
+
+- **Sync.** The plugin keeps one WebSocket open to `/vaults/<id>/sync` and reports each change
+  there. Encrypted chunks go over HTTP to `/blobs` on the same host, and the reads behind history and
+  catch-up come back the same way. A server with a domain gets `wss://` and `https://`; a server on
+  your home network gets `ws://` and `http://`.
+- **The rest of the plugin.** Creating and listing vaults, joining one, file history, restore, the
+  deleted-files list and the space figure in settings are calls to the same address.
+- **Update notices.** Your own server reports a version mismatch when the plugin connects. The plugin
+  reads no update feed of its own; updating is BRAT's job, or the download in
+  [Install the plugin](#install-the-plugin).
+
+The server receives:
+
+- Encrypted chunks of your notes and attachments. A chunk is named by the hash of its plaintext:
+  that is how the server skips a chunk it already holds, and how it can tell which files share
+  content.
+- A keyed hash of each file path, plus each path and its metadata under the vault key.
+- The vault and device names, and the size and time of every edit.
+
+It never receives note contents or file names in the clear.
+
+There is no telemetry, no analytics, no crash reporting and no third-party service: no CDN, no font
+or icon host, no update endpoint of its own. Those are the only network calls the plugin makes.
+
 ## Privacy and security
 
 - Each device encrypts your notes with a key derived from your passphrase before anything is sent.
-  The server stores only encrypted chunks.
-- The server sees the vault and device names, when you edit, how many files you have, their sizes
-  and which files share content. It never sees file paths or note contents.
 - Keys are kept in Obsidian's storage on each device. Copying the vault folder does not copy them.
 - The server's web log drops the WebSocket protocol header that carries each device token, so tokens
   never reach the log.
@@ -391,7 +416,8 @@ sudo systemctl reload caddy
   inside your Obsidian config directory (`plugins/geode/`). Geode never syncs that folder, but it must
   stay on the device: another sync tool that copies your config directory would carry the token to its
   server. Keep one sync tool per vault.
-- Geode connects only to your server and sends no telemetry or analytics.
+
+Found a security problem? Report it privately, not in a public issue: [`SECURITY.md`](./SECURITY.md).
 
 ## Limits
 
@@ -417,6 +443,13 @@ sudo systemctl reload caddy
 - **Plugin:** TypeScript, libsodium for encryption, FastCDC for chunking and `node-diff3` for
   merging.
 - The encryption and chunking code is shared by the server and the plugin.
+
+`main.js` is about 3.5 MB because it is the whole plugin in one file: the sync engine and every
+library it runs on, bundled by `deno task build:plugin` (`scripts/plugin-build.ts`, esbuild). More
+than half of the size is libsodium, which arrives as WebAssembly inlined as base64. An Electron
+window never finishes fetching a separate `.wasm` file, so the build extracts the WebAssembly module
+from libsodium's own JavaScript, inlines it, and patches libsodium to start from those bytes
+synchronously. Nothing is loaded from the network when the plugin runs.
 
 ## Contributing
 
