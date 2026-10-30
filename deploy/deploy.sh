@@ -88,22 +88,22 @@ echo "Deploy complete! Service is active. Verified: live /version = $expected"
 echo "Admin token: ssh $SSH_HOST 'sudo cat $REMOTE_DIR/.admin-token'"
 
 # ── 6. BRAT release reminder ──────────────────────────────────────────
-# This deploy updates the SERVER only; BRAT users get the plugin from a v* tag.
-# #731: in a release the new v* tag already points at HEAD, so `describe` here
+# This deploy updates the SERVER only; BRAT users get the plugin from a release tag.
+# #731: in a release the new tag already points at HEAD, so `describe` here
 # returns that tag and the diff would be empty by construction. scripts/release.ts
 # passes the tag being replaced; a standalone redeploy compares against the
-# newest tag it can see.
+# newest tag it can see. #12: tags are the bare version, older ones keep their `v`.
 prev_tag="${GEODE_PREV_TAG:-}"
 [ -n "$prev_tag" ] ||
-  prev_tag="$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+  prev_tag="$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 --match '[0-9]*' --match 'v*' 2>/dev/null || true)"
 if [ -n "$prev_tag" ] &&
   ! git -C "$PROJECT_ROOT" rev-parse -q --verify "refs/tags/$prev_tag" >/dev/null; then
   prev_tag=""
 fi
 if [ -z "$prev_tag" ]; then
-  echo "No v* release tag found yet - cut the first plugin release when ready."
+  echo "No release tag found yet - cut the first plugin release when ready."
 elif [ -n "$(git -C "$PROJECT_ROOT" diff --name-only "$prev_tag..HEAD" -- plugin core)" ]; then
-  echo "[!] plugin/ or core/ changed since $prev_tag - BRAT users get it only from a v* tag."
+  echo "[!] plugin/ or core/ changed since $prev_tag - BRAT users get it only from a release tag."
 else
   echo "[ok] No plugin/core change since $prev_tag - no BRAT release needed."
 fi

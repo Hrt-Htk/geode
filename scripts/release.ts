@@ -6,7 +6,7 @@
  * Usage: deno run -A scripts/release.ts X.Y.Z
  */
 
-import { releaseHold } from "./after-merge.ts";
+import { prevReleaseTag, releaseHold } from "./after-merge.ts";
 
 const args = Deno.args;
 const version = args[0];
@@ -69,7 +69,7 @@ if (pkg.version === version) {
 console.log(`[1/5] Bumping version to ${version}...`);
 
 // Read minAppVersion from manifest.json
-const manifestPath = `${root}/plugin/manifest/manifest.json`;
+const manifestPath = `${root}/manifest.json`;
 const manifest = JSON.parse(await Deno.readTextFile(manifestPath)) as {
   version: string;
   minAppVersion: string;
@@ -87,7 +87,7 @@ manifest.version = version;
 await Deno.writeTextFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
 // Add entry to versions.json (never edit existing entries)
-const versionsPath = `${root}/plugin/manifest/versions.json`;
+const versionsPath = `${root}/versions.json`;
 const versions = JSON.parse(await Deno.readTextFile(versionsPath)) as Record<string, string>;
 versions[version] = minAppVersion;
 await Deno.writeTextFile(versionsPath, JSON.stringify(versions, null, 2) + "\n");
@@ -100,7 +100,7 @@ console.log(`  versions.json: added ${version} -> ${minAppVersion}`);
 
 console.log("[2/5] Committing...");
 await runGit(["add", pkgPath, manifestPath, versionsPath]);
-await runGit(["commit", "-m", `chore(release): v${version}`]);
+await runGit(["commit", "-m", `chore(release): ${version}`]);
 
 // ── Step 3: Push ───────────────────────────────────────────────────────
 
@@ -109,8 +109,10 @@ await runGit(["push", "origin", "main"]);
 
 // ── Step 4: Tag + push ─────────────────────────────────────────────────
 
-console.log("[4/5] Tagging and pushing v" + version + "...");
-const tag = `v${version}`;
+console.log(`[4/5] Tagging and pushing ${version}...`);
+// #12: the tag is the bare manifest version: the community directory matches
+// the release tag to manifest.json, and `v`-prefixed tags don't.
+const tag = version;
 await runGit(["tag", tag]);
 await runGit(["push", "origin", tag]);
 console.log(`  Tag ${tag} pushed: release.yml workflow will publish BRAT release.`);
@@ -118,12 +120,14 @@ console.log(`  Tag ${tag} pushed: release.yml workflow will publish BRAT release
 // ── Step 5: Deploy server ──────────────────────────────────────────────
 
 console.log("[5/5] Deploying server...");
-// #731: the v* tag for this version is already pushed, so deploy.sh cannot tell
-// from git which tag this release replaces. Hand it the one being replaced.
+// #731: the tag for this version is already pushed, so deploy.sh cannot tell
+// from git which tag this release replaces. Hand it the one being replaced,
+// resolving both the pre-#12 `v` form and the bare one.
+const tags = (await runGit(["tag", "--list"])).split("\n").filter(Boolean);
 const deployCmd = new Deno.Command("bash", {
   args: [`${root}/deploy/deploy.sh`],
   cwd: root,
-  env: { GEODE_PREV_TAG: `v${pkg.version}` },
+  env: { GEODE_PREV_TAG: prevReleaseTag(pkg.version, tags) ?? "" },
 });
 const deployOutput = await deployCmd.output();
 console.log(new TextDecoder().decode(deployOutput.stdout));
@@ -136,7 +140,7 @@ if (!deployOutput.success) {
 }
 console.log("Server deploy complete.");
 
-console.log(`\nRelease v${version} done!`);
+console.log(`\nRelease ${version} done!`);
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

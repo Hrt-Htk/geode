@@ -21,9 +21,9 @@ manual command below stays for cutting one yourself.
 deno task release X.Y.Z
 ```
 
-This bumps `package.json`, `plugin/manifest/manifest.json`, and `plugin/manifest/versions.json`,
-commits as `chore(release): vX.Y.Z`, pushes to `main`, tags `vX.Y.Z` (triggers `release.yml` → BRAT),
-and deploys the server (`$GEODE_SSH_HOST`): **one atomic step.**
+This bumps `package.json`, the root `manifest.json`, and the root `versions.json`, commits as
+`chore(release): X.Y.Z`, pushes to `main`, tags the bare `X.Y.Z` (triggers `release.yml` → BRAT), and
+deploys the server (`$GEODE_SSH_HOST`): **one atomic step.**
 
 Run it through the task, never `deno run -A scripts/release.ts`: only the task loads `.env.local` for
 the deploy step.
@@ -71,11 +71,14 @@ Run it locally after pruning (skill `geode-pr-flow`); Actions never releases or 
   BRAT users get the update on next plugin check.
 - **Release notes:** `release.yml` sets `generate_release_notes: true`, so the body is auto-populated
   from merged PRs/commits since the previous tag (plus a short BRAT preamble). Override if needed:
-  `gh release edit vX.Y.Z --notes "..."`
+  `gh release edit X.Y.Z --notes "..."`
 
 ## Gotchas
-- **Tag convention:** repo tags `vX.Y.Z` (with `v`). BRAT reads the manifest asset, so this works.
+- **Tag convention:** the tag is the bare version (`0.41.8`), identical to `manifest.json`: the
+  community directory matches the two, so a `v` prefix would be rejected. Tags cut before #12 keep
+  their `v`: `scripts/release.ts` resolves either form when it tells `deploy.sh` which tag it replaces,
+  and `deploy.sh` falls back to `git describe` over both (`--match '[0-9]*' --match 'v*'`).
 - **"No plugin/core change… no BRAT release needed" in the deploy log is a red herring**: that's the
   local deploy script's own check; `release.yml` still builds and publishes the plugin assets. Verify
-  with `gh release view vX.Y.Z --json assets` (expect `main.js`/`manifest.json`); allow ~1-2 min lag,
+  with `gh release view X.Y.Z --json assets` (expect `main.js`/`manifest.json`); allow ~1-2 min lag,
   empty `assets` right after release ≠ failure.

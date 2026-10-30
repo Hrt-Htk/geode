@@ -3,10 +3,15 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      # #12: the tag is the bare manifest version (0.41.8), never v0.41.8: the
+      # community directory matches the release tag to manifest.json.
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
+  # #17: artifact attestation for the release assets.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -30,6 +35,16 @@ jobs:
 
       - name: Build plugin
         run: deno task build:plugin
+
+      # #17: the community directory wants verified build provenance on the
+      # assets Obsidian loads.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            plugin-dist/main.js
+            plugin-dist/manifest.json
+            plugin-dist/styles.css
 
       - name: Create release
         uses: softprops/action-gh-release@v2

@@ -1,5 +1,5 @@
 ---
-covers: [plugin/main.ts, plugin/session.ts, plugin/plumbing/*.ts, plugin/sync/*.ts, plugin/ui/*.ts, plugin/manifest/*]
+covers: [plugin/main.ts, plugin/session.ts, plugin/plumbing/*.ts, plugin/sync/*.ts, plugin/ui/*.ts, plugin/manifest/styles.css]
 ---
 
 # Plugin (Obsidian, desktop + mobile)

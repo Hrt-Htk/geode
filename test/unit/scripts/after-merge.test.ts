@@ -3,7 +3,12 @@
 // shipped code) to the next version, or null for "no release".
 
 import { assertEquals } from "@std/assert";
-import { nextVersion, releaseHold, staleBoardItems } from "../../../scripts/after-merge.ts";
+import {
+  nextVersion,
+  prevReleaseTag,
+  releaseHold,
+  staleBoardItems,
+} from "../../../scripts/after-merge.ts";
 
 const v = "0.24.2";
 
@@ -50,6 +55,20 @@ Deno.test("nextVersion: a subject merely containing 'fix' doesn't count", () => 
 Deno.test("nextVersion pre-1.0: breaking change (!) bumps MINOR, not MAJOR", () => {
   assertEquals(nextVersion(v, ["feat!: new wire protocol"]), "0.25.0");
   assertEquals(nextVersion(v, ["fix!: drop legacy endpoint"]), "0.25.0");
+});
+
+// #12: releases are tagged with the bare manifest version, so the community
+// directory can match tag to manifest. Tags cut before #12 keep their `v`.
+Deno.test("prevReleaseTag: the bare tag wins when both forms exist", () => {
+  assertEquals(prevReleaseTag("0.42.0", ["0.42.0", "v0.42.0"]), "0.42.0");
+});
+
+Deno.test("prevReleaseTag: a pre-#12 tag is found by its v-prefixed form", () => {
+  assertEquals(prevReleaseTag("0.41.8", ["v0.41.7", "v0.41.8"]), "v0.41.8");
+});
+
+Deno.test("prevReleaseTag: null when the version was never tagged", () => {
+  assertEquals(prevReleaseTag("0.42.1", ["v0.41.8", "0.42.0"]), null);
 });
 
 // #413: auto-ship closes issues with github.token, which never fires the

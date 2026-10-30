@@ -7,7 +7,7 @@ const watch = Deno.args.includes("--watch");
 const rootDir = Deno.cwd();
 const entryPoint = path.join(rootDir, "plugin", "main.ts");
 const outDir = path.join(rootDir, "plugin-dist");
-const manifestSrc = path.join(rootDir, "plugin", "manifest", "manifest.json");
+const manifestSrc = path.join(rootDir, "manifest.json");
 const manifestDest = path.join(outDir, "manifest.json");
 const external = [
   "obsidian",
@@ -120,7 +120,7 @@ async function syncAssets() {
   await Deno.mkdir(outDir, { recursive: true });
   await Deno.copyFile(manifestSrc, manifestDest);
 
-  const versionsSrc = path.join(rootDir, "plugin", "manifest", "versions.json");
+  const versionsSrc = path.join(rootDir, "versions.json");
   const versionsDest = path.join(outDir, "versions.json");
   await Deno.stat(versionsSrc)
     .then(() => Deno.copyFile(versionsSrc, versionsDest))

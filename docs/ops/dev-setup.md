@@ -1,5 +1,5 @@
 ---
-covers: [package.json, tsconfig.plugin.json, eslint.config.mjs, .github/workflows/*.yml, scripts/plugin-build.ts, scripts/phone-*.ts, test/e2e/playwright.config.ts, test/e2e/global-setup.ts, .env.example]
+covers: [package.json, manifest.json, versions.json, tsconfig.plugin.json, eslint.config.mjs, .github/workflows/*.yml, scripts/plugin-build.ts, scripts/phone-*.ts, test/e2e/playwright.config.ts, test/e2e/global-setup.ts, .env.example]
 watches: [deno.json, test/e2e/fixtures/*.ts]
 ---
 
@@ -15,7 +15,7 @@ files, the dev loop, and the checks that prove the setup works. Design docs desc
 | --- | --- | --- |
 | Deno | `2.x` | `.github/workflows/ci.yml` (`deno-version: 2.x`) |
 | Node.js | `22` (20.12 or newer required) | `ci.yml`; `@types/node` in `package.json` |
-| Obsidian | `1.8.7` or newer | `minAppVersion` in `plugin/manifest/manifest.json` |
+| Obsidian | `1.8.7` or newer | `minAppVersion` in the root `manifest.json` |
 | esbuild | `^0.25.5` | `package.json` devDependency; `scripts/plugin-build.ts` imports `npm:esbuild` |
 | TypeScript | `^6.0.3` | `package.json` devDependency; the gate is `tsc -p tsconfig.plugin.json` |
 | `obsidian` typings | `^1.8.9` | `package.json`, resolved through `package-lock.json` |
@@ -116,12 +116,13 @@ Holds the dev-only toolchain (esbuild, typescript, eslint, jscpd, ts-unused-expo
 `obsidian` typings) and the three runtime deps the plugin bundle needs. Its npm scripts
 `build:plugin`, `build:plugin:watch` and `test:e2e` wrap the plugin build and the Playwright run.
 
-### 3.3 `plugin/manifest/manifest.json` and `versions.json`
+### 3.3 `manifest.json` and `versions.json` (repo root)
 
-`manifest.json` is the plugin manifest (`id: geode`, `main: main.js`). `versions.json` maps each plugin
-version to its `minAppVersion`; append a row on every release and never edit one. `styles.css` lives
-next to them. `deno task build:plugin` copies all three into `plugin-dist/`, which is what you install
-into a vault.
+`manifest.json` is the plugin manifest (`id: geode`, `main: main.js`); `versions.json` maps each plugin
+version to its `minAppVersion`: append a row on every release and never edit one. Both live at the repo
+root, which is where the community directory reads them; they are the single source. `styles.css` stays
+in `plugin/manifest/`. `deno task build:plugin` copies all three into `plugin-dist/`, which is what you
+install into a vault.
 
 ### 3.4 `tsconfig.plugin.json` and `tsconfig.lint.json`
 

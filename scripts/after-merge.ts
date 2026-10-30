@@ -32,6 +32,13 @@ export function nextVersion(current: string, subjects: string[]): string | null 
   return wantPatch ? `${major}.${minor}.${patch + 1}` : null;
 }
 
+// #12: releases are tagged with the bare manifest version, so the community
+// directory can match tag to manifest. Tags cut before #12 keep their `v`, so
+// resolving the tag a release replaces has to try both forms.
+export function prevReleaseTag(version: string, tags: string[]): string | null {
+  return tags.find((t) => t === version || t === `v${version}`) ?? null;
+}
+
 // Project board node id; the board step is skipped when unset. The Status field
 // and its "Done" option are looked up by name.
 const PROJECT = Deno.env.get("GEODE_BOARD")?.trim();
