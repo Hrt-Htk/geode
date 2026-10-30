@@ -9,7 +9,7 @@ Obsidian plugin: all business logic lives here. Desktop and mobile.
 | `sync/` | Sync core: transport, commit channel/queue, reconciler, pending ops, apply, merge, conflicts, rename chains, history, trash, recovery, re-key, mass-delete guard |
 | `plumbing/` | Infrastructure: state (in-memory + JSON persistence), settings types, vault lock and key cache, logging, atomic write, provisioning/rekey/trash/storage clients, command palette, URL scheme, `http-platform` |
 | `ui/` | Obsidian UI: settings tab + one module per section (status, vault, devices, scope, trash, advanced, logs), status bar + status menu, modals (setup wizard, passphrase, conflicts, trash, history, rekey, mass-delete, export, server address), views |
-| `manifest/` | Plugin metadata: `manifest.json`, `versions.json`, `styles.css` |
+| `manifest/` | `styles.css`. The plugin manifest (`manifest.json`) and `versions.json` live at the repo root |
 | `_generated/` | Build output: libsodium WASM as base64, patched libsodium CJS (gitignored) |
 
 Two rules that shape the layout:

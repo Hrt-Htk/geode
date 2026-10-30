@@ -12,7 +12,7 @@ async function tempRepo(): Promise<{ base: string; repo: string; home: string }>
   const base = await Deno.realPath(await Deno.makeTempDir({ prefix: "geode-release-preflight-" }));
   const repo = `${base}/repo`;
   const home = `${base}/home`;
-  await Deno.mkdir(`${repo}/plugin/manifest`, { recursive: true });
+  await Deno.mkdir(repo);
   await Deno.mkdir(home);
   const git = (args: string[]) =>
     new Deno.Command("git", {
@@ -26,10 +26,10 @@ async function tempRepo(): Promise<{ base: string; repo: string; home: string }>
   assertEquals(init.code, 0, new TextDecoder().decode(init.stderr));
   await Deno.writeTextFile(`${repo}/package.json`, JSON.stringify({ version: "0.0.1" }) + "\n");
   await Deno.writeTextFile(
-    `${repo}/plugin/manifest/manifest.json`,
+    `${repo}/manifest.json`,
     JSON.stringify({ version: "0.0.1", minAppVersion: "0.15.0" }) + "\n",
   );
-  await Deno.writeTextFile(`${repo}/plugin/manifest/versions.json`, "{}\n");
+  await Deno.writeTextFile(`${repo}/versions.json`, "{}\n");
   await git(["add", "-A"]);
   const commit = await git(["commit", "-m", "chore: init"]);
   assertEquals(commit.code, 0, new TextDecoder().decode(commit.stderr));
@@ -104,7 +104,7 @@ Deno.test("release preflight: the release and after-merge tasks load .env.local"
   }
 });
 
-// #731: deploy.sh runs after the bump commit and the v* tag are pushed, so
+// #731: deploy.sh runs after the bump commit and the release tag are pushed, so
 // `git describe` at HEAD returns the tag it just created and the plugin/core
 // diff is empty by construction. The release must hand the deploy the tag it is
 // replacing, or the "no BRAT release needed" line is a tautology.
@@ -125,6 +125,8 @@ Deno.test("release deploy: the deploy is told the tag being replaced", async () 
     await git(["init", "--bare", "-b", "main", `${base}/origin.git`]);
     await git(["remote", "add", "origin", `${base}/origin.git`]);
     await git(["push", "-u", "origin", "main"]);
+    // The previous release predates #12 and is `v`-prefixed.
+    await git(["tag", "v0.0.1"]);
     // release.ts runs ${repo}/deploy/deploy.sh; stand in for it and let it
     // report the environment it was given.
     await Deno.mkdir(`${repo}/deploy`, { recursive: true });
@@ -139,6 +141,13 @@ Deno.test("release deploy: the deploy is told the tag being replaced", async () 
     assertEquals(res.code, 0, `release failed\n${res.stdout}${res.stderr}`);
     assertStringIncludes(res.stdout, "[5/5] Deploying server");
     assertStringIncludes(res.stdout, "fake deploy: GEODE_PREV_TAG=v0.0.1");
+    // #12: the new tag is the bare manifest version, not `v`-prefixed.
+    const tags = await new Deno.Command("git", {
+      args: ["tag", "--list"],
+      cwd: repo,
+      stdout: "piped",
+    }).output();
+    assertEquals(new TextDecoder().decode(tags.stdout).trim().split("\n"), ["9.9.9", "v0.0.1"]);
   } finally {
     await Deno.remove(base, { recursive: true });
   }

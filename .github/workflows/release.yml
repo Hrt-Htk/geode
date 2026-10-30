@@ -3,7 +3,9 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      # #12: the tag is the bare manifest version (0.41.8), never v0.41.8: the
+      # community directory matches the release tag to manifest.json.
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
