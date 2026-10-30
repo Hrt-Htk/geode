@@ -345,7 +345,7 @@ The five used daily (the full list is in `deno.json`):
    - [ ] The `phone` and `hybrid` Playwright projects are green on a real device.
 4. **Security**
    - [ ] The server has no code path that reads plaintext content or paths.
-   - [ ] Token revocation closes the live WS immediately, not at the 60 s cache expiry.
+   - [ ] Token revocation closes the live WS immediately, and the next request with that token fails.
    - [ ] `crypto.ts` has been reviewed against the libsodium docs.
 5. **Operations**
    - [ ] The server starts from scratch with no manual setup beyond creating a vault.

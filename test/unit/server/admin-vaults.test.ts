@@ -219,7 +219,7 @@ Deno.test({
 // ── handleRevokeDevice ────────────────────────────────────────────────
 
 Deno.test({
-  name: "admin-vaults - DELETE revokes device and clears token cache",
+  name: "admin-vaults - DELETE revokes device so its token stops validating",
   async fn() {
     const dataDir = makeTempDataDir();
     try {
@@ -227,7 +227,7 @@ Deno.test({
       const { vaultId } = createVault(db);
       const { deviceId, token } = createDevice(db, vaultId);
 
-      // Validate token once to populate cache
+      // The token validates while the device row exists.
       const info = validateToken(db, token);
       assert(info);
       assertEquals(info.device_id, deviceId);
@@ -244,7 +244,7 @@ Deno.test({
       const body = await res.json() as { ok: boolean };
       assertEquals(body.ok, true);
 
-      // Token should now be invalid (cache was cleared)
+      // The revoked token no longer validates.
       const after = validateToken(db, token);
       assertEquals(after, null);
     } finally {
@@ -341,7 +341,7 @@ Deno.test({
         Date.now(),
       );
 
-      // Validate token once to populate cache
+      // The token validates while the device row exists.
       const info = validateToken(db, token);
       assert(info);
       assertEquals(info.device_id, deviceId);
@@ -356,7 +356,7 @@ Deno.test({
       const res = handleRevokeDevice(db, vaultId, deviceId, req, ADMIN);
       assertEquals(res.status, 200);
 
-      // Token should now be invalid
+      // The revoked token no longer validates.
       const after = validateToken(db, token);
       assertEquals(after, null);
 
@@ -526,7 +526,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "admin-vaults - PUT /name on nonexistent device returns 404",
+  name: "admin-vaults - a device row deleted while the body is read returns 404",
   async fn() {
     const dataDir = makeTempDataDir();
     try {
@@ -534,18 +534,29 @@ Deno.test({
       const { vaultId } = createVault(db);
       const { deviceId, token } = createDevice(db, vaultId);
 
-      // Populate the token cache, then remove the row: the cached token
-      // still passes the gate, so the handler must hit the not-found path.
-      const info = validateToken(db, token);
-      assert(info);
-      db.run("DELETE FROM devices WHERE id = ?", deviceId);
-
-      const req = makeReq(
+      // The gate reads the live row; `readJson` then awaits the body, which is where a
+      // concurrent delete lands. The handler must report not-found, not rename nothing.
+      let deleted = false;
+      const stream = new ReadableStream({
+        pull(controller) {
+          if (!deleted) {
+            deleted = true;
+            db.run("DELETE FROM devices WHERE id = ?", deviceId);
+          }
+          controller.enqueue(new TextEncoder().encode(JSON.stringify({ name: "New Name" })));
+          controller.close();
+        },
+      });
+      const req = new Request(
         `http://localhost/vaults/${vaultId}/devices/${deviceId}/name`,
-        "PUT",
-        { name: "New Name" },
-        token,
+        {
+          method: "PUT",
+          body: stream,
+          duplex: "half",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        } as RequestInit,
       );
+
       const res = await handleRenameDevice(db, vaultId, deviceId, req);
       assertEquals(res.status, 404);
       const body = await res.json() as { error: string };

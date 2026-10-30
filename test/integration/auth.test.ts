@@ -3,7 +3,7 @@ import { blobRoutes } from "../../server/blob-routes.ts";
 import { vaultRoutes } from "../../server/routes.ts";
 import { log } from "../../server/log.ts";
 import { getHub, hubStore } from "../../server/ws.ts";
-import { clearTokenCache } from "../../server/auth.ts";
+import { validateToken } from "../../server/auth.ts";
 import { resetRateLimits } from "../../server/rate-limit.ts";
 import { assert, assertEquals } from "@std/assert";
 import { makeTempDataDir, removeTempDir } from "../helpers/temp-dir.ts";
@@ -139,9 +139,9 @@ function makeWsHandler(
     }
 
     const token = protocol.slice(7);
-    const deviceInfo = db.prepare(
-      "SELECT d.id as device_id, d.vault_id FROM devices d WHERE d.token = ? LIMIT 1",
-    ).get(token) as { device_id: string; vault_id: string } | null;
+    // The product's own token check, not a copy of its query: the WS upgrade must be subject to
+    // whatever the HTTP routes are (it used to have a warm cache of its own).
+    const deviceInfo = validateToken(db, token);
 
     if (!deviceInfo || deviceInfo.vault_id !== vaultId) {
       // Upgrade then close with 1008
@@ -463,7 +463,7 @@ Deno.test({
 // ── Token Revocation Test ─────────────────────────────────────────────
 
 Deno.test({
-  name: "auth - token revocation: delete from devices → 401 after cache clear",
+  name: "auth - deleting a device row rejects its token on the next request",
   async fn() {
     const dataDir = makeTempDataDir();
     const db = openDb(dataDir);
@@ -472,20 +472,16 @@ Deno.test({
     const { port, shutdown, finished } = serveOnPortZero(handler);
 
     try {
-      // First request succeeds (populates cache)
+      // A successful request first: a repeated token must not be trusted from earlier state.
       let res = await fetch(`http://localhost:${port}/vaults/${fixtures.vaultId}/heads`, {
         headers: { Authorization: `Bearer ${fixtures.token}` },
       });
       assertEquals(res.status, 200);
       await drain(res);
 
-      // Revoke: delete device from DB
+      // A revoked (here: hand-deleted) row takes effect at once, with no cache to clear.
       db.run("DELETE FROM devices WHERE id = ?", fixtures.deviceId);
 
-      // Clear the in-memory cache so the next lookup hits the DB
-      clearTokenCache();
-
-      // Next request should fail
       res = await fetch(`http://localhost:${port}/vaults/${fixtures.vaultId}/heads`, {
         headers: { Authorization: `Bearer ${fixtures.token}` },
       });
@@ -496,6 +492,49 @@ Deno.test({
       await finished;
       db.close();
       removeTempDir(dataDir);
+    }
+  },
+});
+
+Deno.test({
+  name: "auth - a deleted device's token is refused on the next WebSocket upgrade",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const dataDir = makeTempDataDir();
+    const db = openDb(dataDir);
+    const fixtures = setupFixtures(db);
+    const { port, shutdown, finished } = serveOnPortZero(makeWsHandler(dataDir, db));
+    const dial = () =>
+      new WebSocket(
+        `ws://localhost:${port}/vaults/${fixtures.vaultId}/sync`,
+        `bearer.${fixtures.token}`,
+      );
+    const closeCode = (ws: WebSocket) =>
+      new Promise<number>((resolve) => {
+        ws.addEventListener("close", (e) => resolve(e.code), { once: true });
+        setTimeout(() => resolve(0), 5000);
+      });
+
+    try {
+      const first = dial();
+      await new Promise<void>((resolve, reject) => {
+        first.addEventListener("open", () => resolve(), { once: true });
+        first.addEventListener("error", (e) => reject(e), { once: true });
+        setTimeout(() => reject(new Error("timeout")), 5000);
+      });
+      first.close();
+
+      db.run("DELETE FROM devices WHERE id = ?", fixtures.deviceId);
+
+      const revoked = dial();
+      assertEquals(await closeCode(revoked), 1008);
+    } finally {
+      await shutdown();
+      await finished;
+      db.close();
+      removeTempDir(dataDir);
+      hubStore.clear();
     }
   },
 });

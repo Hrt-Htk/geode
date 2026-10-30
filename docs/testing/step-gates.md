@@ -339,8 +339,10 @@ merged-equals-remote case, conflict write order and a missing local row.
 - a WebSocket upgrade with a bad token closes with 1008; a valid token succeeds;
 - `POST /vaults` and `POST /vaults/:id/devices` require the admin token;
 - five wrong admin tokens from one IP are locked out with 429 and `Retry-After`;
-- deleting a device row makes the next request 401 within the 60 s cache TTL (`server/auth.ts:5`).
-  Not yet met: the TTL itself, `test/integration/auth.test.ts:485` clears the cache first.
+- deleting a device row rejects its token on the very next request, with nothing to clear first:
+  `test/integration/auth.test.ts` warms a token with a 200, deletes the row and expects 401, and does
+  the same for a WebSocket upgrade (close 1008). Token lookup has no cache to expire, so revocation
+  and a hand-deleted row take effect immediately.
 
 `test/unit/server/revoke-ws.test.ts` pins that revoking a device closes its live WebSocket
 immediately.
@@ -353,7 +355,7 @@ immediately.
 - [ ] The certificate is valid.
 - [ ] `kill -9` the deno process; systemd restarts it within 5 s (`RestartSec=5s`).
 - [ ] Reboot the box; `systemctl is-enabled geode` shows enabled and the service comes up.
-- [ ] Delete a device token via SQL; within 60 s the device starts failing requests.
+- [ ] Delete a device token via SQL; the next request fails immediately, not after a cache window.
 
 ### E2E (Playwright, real Obsidian)
 

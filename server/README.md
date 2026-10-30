@@ -5,7 +5,7 @@ Deno relay: SQLite version log + content-addressed blob store. It never sees pla
 | File | Purpose |
 |------|---------|
 | `main.ts` | Entry point, route dispatch, WebSocket upgrade, startup recovery/purge |
-| `auth.ts` | Device/admin token validation (60 s token cache), WS subprotocol bearer |
+| `auth.ts` | Device/admin token validation (one indexed join per request, no cache), WS subprotocol bearer |
 | `http-helpers.ts` | `jsonResp`, `requireDevice`, `adminGate`, CORS |
 | `rate-limit.ts` | Admin-token attempt rate limiting |
 | `db.ts` | SQLite schema + migrations runner, version/head queries |
