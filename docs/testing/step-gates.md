@@ -558,9 +558,9 @@ These hold at every gate. If one fails, a previous gate regressed.
 - [ ] No file in `core/` or `plugin/` exceeds 500 code lines (over 300 is a review candidate).
 - [ ] `deno task standards` clean (lint, plugin types, promise rules, unused exports, duplication,
       test names, docs and private-data gates, LOC tripwires).
-- [ ] `deno fmt --check` clean.
-      Not yet met: nothing runs it (`.github/workflows/ci.yml:173` runs `deno task standards`, which
-      has no format check), and `deno fmt --check` reports 480 unformatted files of 794.
+- [ ] `deno fmt --check` clean. It is the first step of `deno task standards` (`deno.json`), which
+      the `Deno checks` job runs on every push (`ci.yml`, "Standards" step), so an unformatted file
+      fails CI.
 - [ ] No `TODO` or `FIXME` without an associated issue.
 - [ ] No `console.log` outside `log.ts` modules.
 - [ ] Every cryptographic primitive comes from libsodium or `@noble/hashes`.
