@@ -23,10 +23,10 @@ async function replayOnly(plugin: TestPlugin): Promise<void> {
     plugin.transport!.addEventListener("live", () => resolve())
   );
   plugin.transport!.start(
-    plugin.settings.serverUrl,
-    plugin.settings.vaultId,
-    plugin.settings.deviceId,
-    plugin.settings.deviceToken,
+    plugin.pluginSettings.serverUrl,
+    plugin.pluginSettings.vaultId,
+    plugin.pluginSettings.deviceId,
+    plugin.pluginSettings.deviceToken,
     plugin.state!.getSyncCursor(),
     plugin.manifest.version,
   );

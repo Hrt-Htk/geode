@@ -25,7 +25,7 @@ export function isRejoin(input: JoinPlanInput): boolean {
 
 /** Where the old state lives and the login time it was written at. */
 type JoinStateHost = {
-  settings: { vaultId: string };
+  pluginSettings: { vaultId: string };
   pluginDataPath(name: string): string;
   app: { vault: { adapter: { readBinary(path: string): Promise<ArrayBuffer> } } };
 };
@@ -41,7 +41,7 @@ export async function detectRejoin(host: JoinStateHost, vaultId: string): Promis
     },
   );
   return isRejoin({
-    previousVaultId: host.settings.vaultId,
+    previousVaultId: host.pluginSettings.vaultId,
     vaultId,
     rowCount: persisted?.length ?? 0,
     cursor: persistedCursor ?? 0,

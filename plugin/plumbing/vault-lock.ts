@@ -55,17 +55,17 @@ export type VaultLockHost = SyncSessionHost & {
 };
 
 export async function unlockVault(host: VaultLockHost, passphrase: string): Promise<void> {
-  if (!host.settings.salt) {
+  if (!host.pluginSettings.salt) {
     log.error("no salt configured");
     return;
   }
-  const saltBytes = b64decode(host.settings.salt);
+  const saltBytes = b64decode(host.pluginSettings.salt);
   const keys = await deriveKeys(passphrase, saltBytes, {
-    opsLimit: host.settings.argon2Params.ops,
-    memLimit: host.settings.argon2Params.mem,
+    opsLimit: host.pluginSettings.argon2Params.ops,
+    memLimit: host.pluginSettings.argon2Params.mem,
   });
-  if (host.settings.verifier) {
-    const ok = await checkVerifier(keys, b64decode(host.settings.verifier));
+  if (host.pluginSettings.verifier) {
+    const ok = await checkVerifier(keys, b64decode(host.pluginSettings.verifier));
     if (!ok) {
       // #560: the local verifier may be stale: the passphrase changed on
       // another device and the in-memory rekeyElsewhere flag is gone (restart).
@@ -83,7 +83,7 @@ export async function unlockVault(host: VaultLockHost, passphrase: string): Prom
   host.keys = keys;
   host.isUnlocked = true;
   saveKeyCache((json) => host.app.saveLocalStorage(KEY_CACHE_STORAGE_KEY, json), keys);
-  registerAuthTofu(host.settings, keys);
+  registerAuthTofu(host.pluginSettings, keys);
   await host.restartUnlockedSession();
   host.settingTab?.applyLockState();
 }
@@ -107,9 +107,9 @@ export async function unlockAfterRemoteRekeyFlow(
   // device-gated persistence for them.
   const state = host.state ?? await openSessionState(host);
   const result = await unlockAfterRemoteRekey({
-    serverUrl: host.settings.serverUrl,
-    vaultId: host.settings.vaultId,
-    deviceToken: host.settings.deviceToken,
+    serverUrl: host.pluginSettings.serverUrl,
+    vaultId: host.pluginSettings.vaultId,
+    deviceToken: host.pluginSettings.deviceToken,
     passphrase,
     state,
   });
@@ -117,13 +117,13 @@ export async function unlockAfterRemoteRekeyFlow(
   host.isUnlocked = true;
   host.rekeyElsewhere = false;
   saveKeyCache((json) => host.app.saveLocalStorage(KEY_CACHE_STORAGE_KEY, json), result.keys);
-  host.settings = {
-    ...host.settings,
+  host.pluginSettings = {
+    ...host.pluginSettings,
     verifier: result.verifierB64,
     argon2Params: result.argon2Params,
   };
   await host.saveSettings();
-  registerAuthTofu(host.settings, result.keys);
+  registerAuthTofu(host.pluginSettings, result.keys);
   await host.restartUnlockedSession(state);
   host.settingTab?.applyLockState();
 }
@@ -137,7 +137,7 @@ export function lockVault(host: VaultLockHost): void {
 
 export async function leaveVault(host: VaultLockHost): Promise<void> {
   // Capture before clearing: needed for server revoke
-  const { serverUrl, vaultId, deviceToken, deviceId } = host.settings;
+  const { serverUrl, vaultId, deviceToken, deviceId } = host.pluginSettings;
 
   host.isUnlocked = false;
   clearKeyCache(() => clearKeyStore(host));
@@ -163,7 +163,7 @@ export async function leaveVault(host: VaultLockHost): Promise<void> {
   host.rekeyCursor = null;
   host.rekeyElsewhere = false;
   host.activity?.clear();
-  host.settings = clearedVaultSettings(host.settings);
+  host.pluginSettings = clearedVaultSettings(host.pluginSettings);
   await host.saveSettings();
   host.lastBackupAt = 0;
   host.settingTab?.display();
@@ -182,7 +182,7 @@ export async function restartUnlockedSession(
 
 export async function tryCachedKeys(host: VaultLockHost): Promise<boolean> {
   const cached = loadKeyCache(() => host.app.loadLocalStorage(KEY_CACHE_STORAGE_KEY));
-  if (!isCacheValid(cached, host.settings.unlockTimeoutHours)) {
+  if (!isCacheValid(cached, host.pluginSettings.unlockTimeoutHours)) {
     if (cached) {
       clearKeyCache(() => clearKeyStore(host));
     }
@@ -193,8 +193,8 @@ export async function tryCachedKeys(host: VaultLockHost): Promise<boolean> {
     clearKeyCache(() => clearKeyStore(host));
     return false;
   }
-  if (host.settings.verifier) {
-    const ok = await checkVerifier(keys, b64decode(host.settings.verifier));
+  if (host.pluginSettings.verifier) {
+    const ok = await checkVerifier(keys, b64decode(host.pluginSettings.verifier));
     if (!ok) {
       clearKeyCache(() => clearKeyStore(host));
       return false;
@@ -219,7 +219,7 @@ export async function finishRekey(
   // The history modal decrypted under the old keys: close it before the restart.
   notifyKeysChanged(host);
   saveKeyCache((json) => host.app.saveLocalStorage(KEY_CACHE_STORAGE_KEY, json), newKeys);
-  host.settings = { ...host.settings, verifier: verifierB64, argon2Params: params };
+  host.pluginSettings = { ...host.pluginSettings, verifier: verifierB64, argon2Params: params };
   await host.saveSettings();
   await host.restartUnlockedSession();
   host.settingTab?.applyLockState();

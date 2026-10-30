@@ -89,16 +89,21 @@ async function startRekeyedFixture(): Promise<RekeyedFixture> {
   const { A, B, server, vaultId, stop } = await pair();
   await seed(A);
   B.stop();
-  const salt = b64decode(A.settings.salt);
+  const salt = b64decode(A.pluginSettings.salt);
   await putVaultAuth(
     server.url,
     vaultId,
-    A.settings.deviceToken,
+    A.pluginSettings.deviceToken,
     authKeyHex(A.keys),
     server.adminToken,
   );
   const newKeys = await deriveKeys("newpass", salt, { opsLimit: FAST.ops, memLimit: FAST.mem });
-  const client = makeRekeyClient(server.url, vaultId, A.settings.deviceToken, authKeyHex(A.keys));
+  const client = makeRekeyClient(
+    server.url,
+    vaultId,
+    A.pluginSettings.deviceToken,
+    authKeyHex(A.keys),
+  );
   const a2 = addDevice(server, vaultId, "device-A2");
   const b2 = addDevice(server, vaultId, "device-B2");
   return {
@@ -290,16 +295,21 @@ Deno.test("rekey replace mode: a long chain survives a mid-rows abort/resume", a
     await A.fakeVault.delete("note3.md");
     await A.flushPending();
     B.stop();
-    const salt = b64decode(A.settings.salt);
+    const salt = b64decode(A.pluginSettings.salt);
     await putVaultAuth(
       server.url,
       vaultId,
-      A.settings.deviceToken,
+      A.pluginSettings.deviceToken,
       authKeyHex(A.keys),
       server.adminToken,
     );
     const newKeys = await deriveKeys("newpass", salt, { opsLimit: FAST.ops, memLimit: FAST.mem });
-    const client = makeRekeyClient(server.url, vaultId, A.settings.deviceToken, authKeyHex(A.keys));
+    const client = makeRekeyClient(
+      server.url,
+      vaultId,
+      A.pluginSettings.deviceToken,
+      authKeyHex(A.keys),
+    );
     const cursor = memoryCursor();
     const ac = new AbortController();
     let aborted = false;
@@ -337,7 +347,7 @@ Deno.test("rekey replace mode: a long chain survives a mid-rows abort/resume", a
     const newClient = makeRekeyClient(
       server.url,
       vaultId,
-      A.settings.deviceToken,
+      A.pluginSettings.deviceToken,
       authKeyHex(newKeys),
     );
     const hashLong = hashPathHex(newKeys.mac_key, "long.md");

@@ -82,10 +82,10 @@ test("logs section on phone: fixed-height box, real lines, scrollable", async ()
        misconfigured-vault path: empty salt → unlockVault logs "no salt configured"). */
     await o.eval(`
       const geode = app.plugins.plugins.geode;
-      const saved = geode.settings.salt;
-      geode.settings.salt = "";
+      const saved = geode.pluginSettings.salt;
+      geode.pluginSettings.salt = "";
       await geode.unlockVault("anything");
-      geode.settings.salt = saved;
+      geode.pluginSettings.salt = saved;
       return true;
     `);
     await expect

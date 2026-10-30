@@ -15,7 +15,7 @@ const MASK_L = 0x7ffn; // 11 bits → 1/2048
 // Seeded LCG to generate deterministic 64-bit gear values.
 // Reference implementation seed from the FastCDC paper.
 function makeGear(): bigint[] {
-  const gear = new Array(256);
+  const gear = new Array<bigint>(256);
   let seed = 0x6969696969696969n;
   for (let i = 0; i < 256; i++) {
     seed = (seed * 6364136223846793005n + 1442695040888963407n) & 0xffffffffffffffffn;

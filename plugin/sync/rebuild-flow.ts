@@ -25,14 +25,14 @@ export function rejoinAction(
 /** #701: one transport for a rebuild that has no session to borrow one from: a rejoin
  * runs before the new device's session exists. The caller stops it. */
 export function startRebuildTransport(
-  host: { settings: PluginSettings; manifest: { version: string } },
+  host: { pluginSettings: PluginSettings; manifest: { version: string } },
 ): Transport {
   const transport = new Transport();
   transport.start(
-    host.settings.serverUrl,
-    host.settings.vaultId,
-    host.settings.deviceId,
-    host.settings.deviceToken,
+    host.pluginSettings.serverUrl,
+    host.pluginSettings.vaultId,
+    host.pluginSettings.deviceId,
+    host.pluginSettings.deviceToken,
     0,
     host.manifest.version,
   );
@@ -51,9 +51,9 @@ export async function rebuildVault(
   // half-way leaves rows open, and releasing the hold here would let the next start sync
   // the rest as deletes. A rejoin is already the restore-everything decision, and it runs
   // over its own transport rather than the held session's.
-  const held = host.settings.massDeleteHold !== null;
+  const held = host.pluginSettings.massDeleteHold !== null;
   if (held && !rejoin) {
-    if (host.settings.pauseAt > 0) throw new Error(MASS_DELETE_NEEDS_RESUME);
+    if (host.pluginSettings.pauseAt > 0) throw new Error(MASS_DELETE_NEEDS_RESUME);
     await reconnectAndWaitLive(host);
   }
   let freshState: StateDB | null = null;
@@ -68,9 +68,9 @@ export async function rebuildVault(
       transport,
       state: freshState,
       keys: host.keys,
-      vaultId: host.settings.vaultId,
-      isSyncable: (filePath) => isSyncable(filePath, host.app.vault.configDir, host.settings),
-      parkedMoves: () => host.settings.pendingMoveOuts,
+      vaultId: host.pluginSettings.vaultId,
+      isSyncable: (filePath) => isSyncable(filePath, host.app.vault.configDir, host.pluginSettings),
+      parkedMoves: () => host.pluginSettings.pendingMoveOuts,
       rejoin,
     });
     log.info("rebuild done", {
@@ -81,15 +81,15 @@ export async function rebuildVault(
       backedUp: result.backup?.count ?? 0,
     });
     if (held) {
-      host.settings.massDeleteHold = null;
+      host.pluginSettings.massDeleteHold = null;
       host.statusBar?.setMassDeleteHold(null);
       await host.saveSettings();
     }
     if (rejoin) {
       // #701: clear the marker that would send the next session back here, and lift the
       // pause only when this rejoin set it: a pause the user chose survives.
-      if (host.settings.rejoinIncomplete) host.settings.pauseAt = 0;
-      host.settings.rejoinIncomplete = false;
+      if (host.pluginSettings.rejoinIncomplete) host.pluginSettings.pauseAt = 0;
+      host.pluginSettings.rejoinIncomplete = false;
       await host.saveSettings();
     }
     await host.restartUnlockedSession(freshState);
@@ -101,8 +101,8 @@ export async function rebuildVault(
     // marker that makes the next session finish the rejoin) is what stops the stale state
     // from being replayed over the server.
     if (rejoin) {
-      host.settings.pauseAt = Date.now();
-      host.settings.rejoinIncomplete = true;
+      host.pluginSettings.pauseAt = Date.now();
+      host.pluginSettings.rejoinIncomplete = true;
       await host.saveSettings();
     }
     throw error;

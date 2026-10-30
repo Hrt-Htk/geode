@@ -20,7 +20,7 @@ test("settings tab refreshes to configured state after create", async () => {
     // vault so the tab really starts unconfigured (desktop gets a fresh vault per test).
     await A.eval(`
       const geode = app.plugins.plugins.geode;
-      if (geode.settings.vaultId) await geode.leaveVault();
+      if (geode.pluginSettings.vaultId) await geode.leaveVault();
       return true;
     `);
 

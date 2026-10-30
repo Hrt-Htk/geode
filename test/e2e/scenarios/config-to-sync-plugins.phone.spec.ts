@@ -43,7 +43,7 @@ test("config-to-sync modal lists and toggles plugins (phone)", async () => {
     await obsidian.eval(`
       app.plugins.manifests['dataview'] = { id:'dataview', name:'Dataview', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'d' };
       app.plugins.manifests['templater-obsidian'] = { id:'templater-obsidian', name:'Templater', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'t' };
-      const s = app.plugins.plugins.geode.settings;
+      const s = app.plugins.plugins.geode.pluginSettings;
       s.syncObsidianConfig = true;
       s.syncedPlugins = ['dataview'];
       return true;
@@ -92,7 +92,7 @@ test("config-to-sync modal lists and toggles plugins (phone)", async () => {
       return true;
     `);
     const synced = await obsidian.eval<string>(
-      `return JSON.stringify(app.plugins.plugins.geode.settings.syncedPlugins);`,
+      `return JSON.stringify(app.plugins.plugins.geode.pluginSettings.syncedPlugins);`,
     );
     console.log("PHONE syncedPlugins after toggling templater: " + synced);
     expect(synced).toContain("templater-obsidian");

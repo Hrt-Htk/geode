@@ -271,7 +271,7 @@ export class CommitQueue {
   }
 
   private async runPass(): Promise<void> {
-    await null; // let process() record this pass before it can finish and clear itself
+    await Promise.resolve(); // let process() record this pass before it can finish and clear itself
     const requeuedThisPass = new Set<string>();
     let processed = 0;
     try {

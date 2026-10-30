@@ -108,7 +108,7 @@ const inFlight = new WeakMap<StateDB, Map<string, Promise<boolean>>>();
 
 function inFlightOf(state: StateDB): Map<string, Promise<boolean>> {
   let runs = inFlight.get(state);
-  if (!runs) inFlight.set(state, runs = new Map());
+  if (!runs) inFlight.set(state, runs = new Map<string, Promise<boolean>>());
   return runs;
 }
 
@@ -590,7 +590,7 @@ async function mergeBase(
 /** Absent = null (real Obsidian) or a throw (#505). */
 export async function existsOnDisk(
   path: string,
-  adapter: { stat: (path: string) => Promise<unknown | null> },
+  adapter: { stat: (path: string) => Promise<unknown> },
 ): Promise<boolean> {
   try {
     return (await adapter.stat(path)) != null;

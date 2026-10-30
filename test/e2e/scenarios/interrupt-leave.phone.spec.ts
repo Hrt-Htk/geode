@@ -68,7 +68,9 @@ test("issue493 (phone): force-stop mid leave → relaunch → honest offline sta
 
     const obsidian2 = await obsidian.relaunch();
     try {
-      const configured = await obsidian2.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+      const configured = await obsidian2.eval<string>(
+        "app.plugins.plugins.geode.pluginSettings.vaultId",
+      );
       if (configured !== "") {
         /* Mixed state: settings point at a now-revoked device. Honest = offline, not synced. */
         await unlockIfLocked(obsidian2, PASSPHRASE);
@@ -99,7 +101,9 @@ test("issue493 (phone): force-stop mid leave → relaunch → honest offline sta
       }
 
       /* Fully left in both cases: settings cleared, state files gone. */
-      expect(await obsidian2.eval<string>("app.plugins.plugins.geode.settings.vaultId")).toBe("");
+      expect(await obsidian2.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId")).toBe(
+        "",
+      );
       const stateFileGone = await obsidian2.eval<boolean>(
         `!(await app.vault.adapter.exists(
           app.plugins.plugins.geode.pluginDataPath("local-files.json")))`,

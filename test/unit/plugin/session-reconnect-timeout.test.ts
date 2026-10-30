@@ -17,7 +17,7 @@ Deno.test({
       transport,
       state,
       manifest: { version: "0.0.0" },
-      settings: {
+      pluginSettings: {
         ...DEFAULT_SETTINGS,
         serverUrl: "http://127.0.0.1:1",
         vaultId: "vault",

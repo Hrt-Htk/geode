@@ -55,8 +55,8 @@ async function resyncLikeThePlugin(plugin: TestPlugin) {
     transport,
     state,
     keys,
-    vaultId: plugin.settings.vaultId,
-    isSyncable: (p) => isSyncable(p, plugin.fakeVault.configDir, plugin.settings),
+    vaultId: plugin.pluginSettings.vaultId,
+    isSyncable: (p) => isSyncable(p, plugin.fakeVault.configDir, plugin.pluginSettings),
   });
   await plugin.restartUnlockedSession(state);
   return result;

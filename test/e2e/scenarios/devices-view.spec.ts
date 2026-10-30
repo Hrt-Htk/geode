@@ -86,7 +86,7 @@ test("devices view: device-token list, N changes behind, then up to date", async
 
     /* ---- A commits while B is offline ---- */
     const aTokenValue = await A.eval<string>(
-      "app.plugins.plugins.geode.settings.deviceToken",
+      "app.plugins.plugins.geode.pluginSettings.deviceToken",
     );
     await disconnectSync(B);
     for (const file of FILES) {

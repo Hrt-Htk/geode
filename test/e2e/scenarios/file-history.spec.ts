@@ -130,12 +130,12 @@ test("file history: periods, preview, Changes diff, image, empty state", async (
     await waitForStatusBar(pair.A.win, "Geode: synced", 60_000);
     await waitForStatusBar(pair.B.win, "Geode: synced", 60_000);
     await pair.A.eval(`
-      app.plugins.plugins.geode.settings.deviceName = "device-A";
+      app.plugins.plugins.geode.pluginSettings.deviceName = "device-A";
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);
     await pair.B.eval(`
-      app.plugins.plugins.geode.settings.deviceName = "device-B";
+      app.plugins.plugins.geode.pluginSettings.deviceName = "device-B";
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);
@@ -486,7 +486,7 @@ test("file history: a deletion and a restore are their own rows", async () => {
     await waitForUnlocked(pair.B);
     await waitForStatusBar(pair.A.win, "Geode: synced", 60_000);
     await pair.A.eval(`
-      app.plugins.plugins.geode.settings.deviceName = "device-A";
+      app.plugins.plugins.geode.pluginSettings.deviceName = "device-A";
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);

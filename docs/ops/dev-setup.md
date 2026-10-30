@@ -21,6 +21,7 @@ files, the dev loop, and the checks that prove the setup works. Design docs desc
 | `obsidian` typings | `^1.8.9` | `package.json`, resolved through `package-lock.json` |
 | Playwright | `^1.54.0` | `package.json` devDependency |
 | jscpd, eslint, ts-unused-exports | current | `package.json`, run by `deno task standards` |
+| eslint-plugin-obsidianmd | `0.4.2` | `package.json`; its `recommended` config is the community scanner ruleset |
 | `libsodium-wrappers-sumo` | `^0.7.15`, plus `libsodium-sumo` as a direct dep | `deno.json` imports, `package.json` |
 | `@noble/hashes` | `2.2.0` | `deno.json` imports, `package.json` |
 | `node-diff3` | `^3.1.2` | `deno.json` imports, `package.json` |
@@ -112,11 +113,16 @@ Holds the import map (aliases for `@noble/hashes/*`, `libsodium-wrappers-sumo`, 
 
 `--allow-ffi` is mandatory for the server: `@db/sqlite` is a native binding.
 
+ESLint runs `obsidianmd.configs.recommended` over `plugin/` and `core/` (the community scanner
+ruleset, `eslint.config.mjs`): `server/`, `test/` and `scripts/` get only the repo rules. A rule a
+later issue owns is `off` there with a comment naming that issue.
+
 ### 3.2 `package.json`
 
-Holds the dev-only toolchain (esbuild, typescript, eslint, jscpd, ts-unused-exports, Playwright,
-`obsidian` typings) and the three runtime deps the plugin bundle needs. Its npm scripts
-`build:plugin`, `build:plugin:watch` and `test:e2e` wrap the plugin build and the Playwright run.
+Holds the dev-only toolchain (esbuild, typescript, eslint, eslint-plugin-obsidianmd, jscpd,
+ts-unused-exports, Playwright, `obsidian` typings) and the three runtime deps the plugin bundle needs.
+Its npm scripts `build:plugin`, `build:plugin:watch` and `test:e2e` wrap the plugin build and the
+Playwright run.
 
 ### 3.3 `manifest.json` and `versions.json` (repo root)
 

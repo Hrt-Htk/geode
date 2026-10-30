@@ -94,7 +94,7 @@ test("rejoin over a stale copy: the server wins, nothing is resurrected (phone)"
     await waitForPluginLoaded(B);
     await waitForUnlocked(A);
     await waitForUnlocked(B);
-    const vaultId = await A.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+    const vaultId = await A.eval<string>("app.plugins.plugins.geode.pluginSettings.vaultId");
 
     // 2. Seed the notes on A and let them land on the phone.
     for (let i = 0; i < SEEDED + MOVED; i++) {
@@ -109,7 +109,7 @@ test("rejoin over a stale copy: the server wins, nothing is resurrected (phone)"
     await waitForStatusBar(B, "Geode: synced", 120_000);
 
     // 3. Revoke the phone, stop it, and reproduce the reported split: rows gone, cursor kept.
-    const phoneDeviceId = await B.eval<string>("app.plugins.plugins.geode.settings.deviceId");
+    const phoneDeviceId = await B.eval<string>("app.plugins.plugins.geode.pluginSettings.deviceId");
     await revokeDevice(server.url, vaultId, phoneDeviceId);
     await removeStateFileStopped(B as PhoneDevice, "local-files.json");
 

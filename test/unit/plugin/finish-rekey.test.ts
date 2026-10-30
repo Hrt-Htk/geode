@@ -11,7 +11,7 @@ Deno.test("finishRekey: saves the new key cache, updates settings, restarts the 
   const storage = new Map<string, string | null>();
   const order: string[] = [];
   const host = {
-    settings: {
+    pluginSettings: {
       serverUrl: "http://localhost:1",
       vaultId: "v",
       deviceToken: "t",
@@ -40,8 +40,8 @@ Deno.test("finishRekey: saves the new key cache, updates settings, restarts the 
 
   assertEquals(order, ["keys-changed", "restart"]);
   assertEquals(host.isUnlocked, true);
-  assertEquals(host.settings.verifier, verifierB64);
-  assertEquals(host.settings.argon2Params, { ops: 2, mem: 4096 });
+  assertEquals(host.pluginSettings.verifier, verifierB64);
+  assertEquals(host.pluginSettings.argon2Params, { ops: 2, mem: 4096 });
   const cached = loadKeyCache(() => storage.get("key-cache") ?? null);
   assert(cached, "key cache written");
   assert(

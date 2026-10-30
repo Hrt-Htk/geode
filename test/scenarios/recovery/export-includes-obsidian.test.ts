@@ -13,8 +13,8 @@ Deno.test({
       // .obsidian files only sync with the config toggle on (real isSyncable gating,
       // per device: both devices need it).
       for (const dev of [A, B]) {
-        dev.settings.syncObsidianConfig = true;
-        dev.settings.syncedPlugins = ["community"];
+        dev.pluginSettings.syncObsidianConfig = true;
+        dev.pluginSettings.syncedPlugins = ["community"];
         dev.syncManager.setSyncObsidianConfig(true);
       }
       // Seed regular files and .obsidian config files

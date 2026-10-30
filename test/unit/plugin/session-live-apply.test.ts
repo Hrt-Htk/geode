@@ -71,7 +71,7 @@ function makeHost(): SyncSessionHost {
   };
   return {
     keys: {} as VaultKeys,
-    settings,
+    pluginSettings: settings,
     manifest: { version: "0.0.0-test" },
     app: {
       vault: vault as unknown as SyncSessionHost["app"]["vault"],
@@ -114,7 +114,7 @@ Deno.test({
       await new Promise((r) => setTimeout(r, 0));
 
       // #424 live apply: the new address lands in settings, the session restarts.
-      host.settings.serverUrl = "new-host:2222";
+      host.pluginSettings.serverUrl = "new-host:2222";
       await startUnlockedSession(host);
 
       assertEquals(FakeWebSocket.instances.length, 2);

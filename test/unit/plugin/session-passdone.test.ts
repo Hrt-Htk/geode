@@ -101,7 +101,7 @@ function makeHost(sb: SyncSessionStatusBar & { calls: string[] }): SyncSessionHo
   };
   return {
     keys: {} as VaultKeys,
-    settings,
+    pluginSettings: settings,
     manifest: { version: "0.0.0-test" },
     app: {
       vault: vault as unknown as SyncSessionHost["app"]["vault"],

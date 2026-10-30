@@ -308,7 +308,7 @@ export class Transport extends EventTarget {
   private sendCommit(req: CommitRequest): boolean {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    ws.send(JSON.stringify({
+    const message: ClientCommit = {
       type: "client_commit",
       vault_id: this.vaultId,
       path_hash: req.path_hash,
@@ -318,7 +318,8 @@ export class Transport extends EventTarget {
       deleted: req.deleted,
       path_ciphertext: req.path_ciphertext,
       rename_mark: req.rename_mark,
-    } as ClientCommit));
+    };
+    ws.send(JSON.stringify(message));
     return true;
   }
 

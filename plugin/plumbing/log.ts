@@ -26,17 +26,16 @@ addSink((entry) => {
   }
 });
 
-// Console sink for DevTools visibility: gated on debugLogging
+// Console sink for DevTools visibility: gated on debugLogging. `info` goes to
+// console.debug, not console.info: the default console stays for errors only.
 addSink((entry) => {
   if (!consoleEnabled) return;
   const fields = Object.keys(entry.fields).length > 0 ? ` ${JSON.stringify(entry.fields)}` : "";
   const line = `[geode] [${entry.level}] ${entry.msg}${fields}`;
   switch (entry.level) {
     case "debug":
-      console.debug(line);
-      break;
     case "info":
-      console.info(line);
+      console.debug(line);
       break;
     case "warn":
       console.warn(line);

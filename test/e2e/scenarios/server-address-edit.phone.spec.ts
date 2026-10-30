@@ -82,7 +82,7 @@ test("server address (phone): read-only advanced rows, modal open and cancel", a
     await evalClick(obsidian, '[data-testid="geode-server-cancel"]');
     await expect(modal).not.toBeVisible({ timeout: 10_000 });
     expect(
-      await obsidian.eval<string>("app.plugins.plugins.geode.settings.serverUrl"),
+      await obsidian.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl"),
     ).toBe(server.url);
 
     /* #706: a revoked device token gets its own line, not "no vault". */
@@ -93,7 +93,7 @@ test("server address (phone): read-only advanced rows, modal open and cancel", a
     );
     expect(revoke.status).toBe(200);
     await obsidian.eval(
-      `app.plugins.plugins.geode.settings.deviceToken = ${JSON.stringify(stale.token)};` +
+      `app.plugins.plugins.geode.pluginSettings.deviceToken = ${JSON.stringify(stale.token)};` +
         " return true;",
     );
     await evalClick(obsidian, '[data-testid="geode-settings-adv-server-edit"]');
@@ -114,7 +114,7 @@ test("server address (phone): read-only advanced rows, modal open and cancel", a
     await evalClick(obsidian, '[data-testid="geode-server-cancel"]');
     await expect(modal).not.toBeVisible({ timeout: 10_000 });
     await obsidian.eval(
-      `app.plugins.plugins.geode.settings.deviceToken = ${JSON.stringify(device.token)};` +
+      `app.plugins.plugins.geode.pluginSettings.deviceToken = ${JSON.stringify(device.token)};` +
         " return true;",
     );
   } finally {

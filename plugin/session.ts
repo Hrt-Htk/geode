@@ -1,4 +1,5 @@
 import type { VaultKeys } from "../core/crypto.ts";
+import type { ServerVersion } from "../core/protocol.ts";
 import { formatError, log } from "./plumbing/log.ts";
 import { isSyncable, type PluginSettings } from "./plumbing/settings-types.ts";
 import { retryPendingCatchUp } from "./plumbing/scope-pending.ts";
@@ -43,7 +44,7 @@ export interface SyncSessionStatusBar {
 
 export interface SyncSessionHost {
   keys: VaultKeys | null;
-  settings: PluginSettings;
+  pluginSettings: PluginSettings;
   manifest: { version: string };
   app: {
     vault: { adapter: unknown; configDir: string };
@@ -179,7 +180,7 @@ export async function startUnlockedSession(
   host.transport.setCursorSink((seq) => host.state?.advanceSyncCursor(seq));
   host.syncManager = new SyncManager(host.transport, {
     vault: host.app.vault as unknown as SyncVault,
-    settings: host.settings,
+    settings: host.pluginSettings,
     configDir: host.app.vault.configDir,
     recordActivity: host.activity ? (input) => host.activity!.record(input) : undefined,
     persistScope: () => host.saveSettings(),
@@ -200,7 +201,7 @@ export async function startUnlockedSession(
         log.error("failed to handle pending ops", { error: formatError(error) });
       });
     },
-    (filePath) => isSyncable(filePath, host.app.vault.configDir, host.settings),
+    (filePath) => isSyncable(filePath, host.app.vault.configDir, host.pluginSettings),
     (count) => host.statusBar?.updateDirty(count),
     // #342/#584: moves across the excluded-folder boundary: a file moved out is
     // parked (row tombstoned, no server delete) and its rename link is written when the
@@ -225,16 +226,18 @@ export async function startUnlockedSession(
   host.syncManager.setEditFlusher(() => host.eventHandler?.flushNow());
   // A persisted pause survives restart: gate the queue now, skip transport.start
   // below, and keep the event handler counting local edits until resume.
-  if (host.settings.pauseAt > 0) host.syncManager.pause();
+  if (host.pluginSettings.pauseAt > 0) host.syncManager.pause();
   // #601: a persisted hold survives restart the same way (the manager gates itself on
   // construction): no transport, and the notice explains why the device is offline.
-  const persistedHold = host.settings.massDeleteHold;
+  const persistedHold = host.pluginSettings.massDeleteHold;
   if (persistedHold) announceMassDeleteHold(host, persistedHold);
 
   // Defer transport.start + eventHandler.start to onLayoutReady so a large
   // vault backlog doesn't monopolize startup and trip the mobile crash-guard.
   const deferredStart = () => {
-    if (host.settings.pauseAt === 0 && host.settings.massDeleteHold === null) startTransport(host);
+    if (host.pluginSettings.pauseAt === 0 && host.pluginSettings.massDeleteHold === null) {
+      startTransport(host);
+    }
     host.eventHandler?.start();
   };
   // onLayoutReady returns void, so cancellation rides a flag: dispose flips it,
@@ -252,12 +255,12 @@ export async function startUnlockedSession(
 /** Start the transport from the persisted cursor. Non-null guarded: no-op unless the session is up and configured. */
 function startTransport(host: SyncSessionHost): void {
   const state = host.state;
-  if (!host.transport || !state || !host.settings.serverUrl) return;
+  if (!host.transport || !state || !host.pluginSettings.serverUrl) return;
   host.transport.start(
-    host.settings.serverUrl,
-    host.settings.vaultId,
-    host.settings.deviceId,
-    host.settings.deviceToken,
+    host.pluginSettings.serverUrl,
+    host.pluginSettings.vaultId,
+    host.pluginSettings.deviceId,
+    host.pluginSettings.deviceToken,
     state.getSyncCursor(),
     host.manifest.version,
   );
@@ -306,20 +309,20 @@ export function resumeSessionSync(host: SyncSessionHost): void {
   // with "Resume sync first" otherwise) but must not connect, or the unconfirmed deletes
   // would sync. The hold keeps the queue and the reconciler gated on its own.
   host.syncManager?.resume();
-  if (host.settings.massDeleteHold) return;
+  if (host.pluginSettings.massDeleteHold) return;
   host.statusBar?.clearOffline();
   startTransport(host);
 }
 
 function attachTransportListeners(host: SyncSessionHost, transport: Transport): void {
   transport.addEventListener("version", (event: Event) => {
-    const pending = host.syncManager?.handleVersion((event as CustomEvent).detail);
+    const pending = host.syncManager?.handleVersion((event as CustomEvent<ServerVersion>).detail);
     pending?.catch((error) => {
       log.error("failed to handle remote version", { error: formatError(error) });
     });
   });
   transport.addEventListener("status", (event: Event) => {
-    host.statusBar?.updateState((event as CustomEvent).detail);
+    host.statusBar?.updateState((event as CustomEvent<string>).detail);
   });
   transport.addEventListener("reconnect", (event: Event) => {
     host.statusBar?.updateReconnectDelay((event as CustomEvent<number>).detail);
@@ -329,7 +332,7 @@ function attachTransportListeners(host: SyncSessionHost, transport: Transport): 
     // #342: retry pending folder re-includes whose catch-up failed earlier. A
     // missing sync manager is a failure (keeps pending), never a false success.
     void retryPendingCatchUp({
-      settings: host.settings,
+      settings: host.pluginSettings,
       saveSettings: () => host.saveSettings(),
       catchUpFolders: (folders) => {
         if (!host.syncManager) return Promise.reject(new Error("sync not started"));
@@ -360,14 +363,14 @@ function attachTransportListeners(host: SyncSessionHost, transport: Transport): 
     };
     // #560: the re-key signal is decided before anything else: a paused or
     // locked device must not commit with keys the vault no longer uses.
-    host.onHelloRekey(helloRekeyDecision(detail, host.settings.verifier));
+    host.onHelloRekey(helloRekeyDecision(detail, host.pluginSettings.verifier));
     // #529: surface the server version first: the hint must show even when the
     // vault name already matches (the reconcileVaultName early return below).
     host.onServerVersion(detail.server_version ?? "");
     // Record the connection's replay end (the vault's max seq at handshake) and
     // reset the per-connection received state before the paced replay streams in.
     host.state?.beginReplay(detail.seq);
-    const next = reconcileVaultName(host.settings.vaultName, detail.vault_name);
+    const next = reconcileVaultName(host.pluginSettings.vaultName, detail.vault_name);
     if (next === null) return;
     host.onVaultNameResolved(next);
   });

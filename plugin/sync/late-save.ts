@@ -46,7 +46,7 @@ function keptChars(want: string, have: string): number {
   let kept = 0;
   let at = 0;
   for (const hunk of diffIndices(wantLines, haveLines)) {
-    const [start, length] = hunk.buffer1 as [number, number];
+    const [start, length] = hunk.buffer1;
     for (let i = at; i < start; i++) kept += lineChars(wantLines, i);
     kept += changedChars(hunk.buffer1Content, hunk.buffer2Content);
     at = start + length;

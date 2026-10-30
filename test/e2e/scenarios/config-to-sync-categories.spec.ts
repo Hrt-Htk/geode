@@ -73,7 +73,7 @@ test("config to sync row + modal (two devices)", async () => {
     await B.eval(`
       app.plugins.manifests['dataview'] = { id:'dataview', name:'Dataview', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'d' };
       app.plugins.manifests['templater-obsidian'] = { id:'templater-obsidian', name:'Templater', version:'1.0.0', minAppVersion:'1.0.0', author:'x', description:'t' };
-      const s = app.plugins.plugins.geode.settings;
+      const s = app.plugins.plugins.geode.pluginSettings;
       s.syncedPlugins = ['dataview'];
       return true;
     `);
@@ -180,7 +180,7 @@ test("config to sync row + modal (two devices)", async () => {
     /* ---- A plugin toggle still gates plugin data ---- */
     // A opts both plugins in so it uploads their data; B has only dataview.
     await A.eval(
-      `app.plugins.plugins.geode.settings.syncedPlugins = ['dataview', 'templater-obsidian']; return true;`,
+      `app.plugins.plugins.geode.pluginSettings.syncedPlugins = ['dataview', 'templater-obsidian']; return true;`,
     );
     // Templater is off on B: A writes its data, B must not receive it.
     await B.eval(`document.querySelector('.geode-config-modal .mod-cta')?.click(); return true;`);
@@ -195,7 +195,7 @@ test("config to sync row + modal (two devices)", async () => {
       .toBeVisible();
     await B.win.locator('[data-testid="geode-config-plugin-templater-obsidian"]').click();
     await expect.poll(() =>
-      B.eval(`JSON.stringify(app.plugins.plugins.geode.settings.syncedPlugins)`)
+      B.eval(`JSON.stringify(app.plugins.plugins.geode.pluginSettings.syncedPlugins)`)
     ).toContain("templater-obsidian");
     // Summary shows both plugins now.
     await expect.poll(() =>

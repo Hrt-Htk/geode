@@ -23,7 +23,7 @@ import { ConflictsModal } from "./conflicts-modal.ts";
 /** The slice of the plugin the conflicts wiring needs (structural). */
 export type ConflictsHost = {
   app: App;
-  settings: {
+  pluginSettings: {
     serverUrl: string;
     vaultId: string;
     deviceToken: string;
@@ -71,15 +71,19 @@ export function openConflictsModal(host: ConflictsHost): void {
         state,
         keys,
         transport,
-        deviceName: host.settings.deviceName,
-        deviceId: host.settings.deviceId,
-        activity: host.activity?.entries ?? new Map(),
+        deviceName: host.pluginSettings.deviceName,
+        deviceId: host.pluginSettings.deviceId,
+        activity: host.activity?.entries ?? new Map<string, ActivityEntry>(),
         deviceNames,
       }),
     resolve: (row, action) => resolveConflict(host, row, action, state, keys, transport, adapter),
-    deviceName: () => host.settings.deviceName,
+    deviceName: () => host.pluginSettings.deviceName,
     remoteNames: () =>
-      deviceNameMap(host.settings.serverUrl, host.settings.vaultId, host.settings.deviceToken),
+      deviceNameMap(
+        host.pluginSettings.serverUrl,
+        host.pluginSettings.vaultId,
+        host.pluginSettings.deviceToken,
+      ),
   }).open();
 }
 
@@ -92,7 +96,7 @@ function statAdapter(app: App) {
   return {
     readBinary: async (path: string) => toUint8Array(await app.vault.adapter.readBinary(path)),
     writeBinary: (path: string, data: Uint8Array, opts?: { mtime?: number }) =>
-      app.vault.adapter.writeBinary(path, data.slice().buffer as ArrayBuffer, opts),
+      app.vault.adapter.writeBinary(path, data.slice().buffer, opts),
     stat,
     remove: (path: string) => app.vault.adapter.remove(path),
     exists: (path: string) => app.vault.adapter.exists(path),
@@ -121,7 +125,7 @@ async function resolveConflict(
   host.activity?.record({
     path: row.path,
     kind: "resolved",
-    label: resolutionLabel(action, host.settings.deviceName, row.theirs.device),
+    label: resolutionLabel(action, host.pluginSettings.deviceName, row.theirs.device),
   });
   return keptPath;
 }

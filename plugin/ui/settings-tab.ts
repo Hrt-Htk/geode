@@ -32,7 +32,7 @@ import type { RekeyKind } from "./rekey-modal-logic.ts";
 
 type PluginInstance = {
   app: ObsidianApp;
-  settings: PluginSettings;
+  pluginSettings: PluginSettings;
   saveSettings: () => Promise<void>;
   reconcileNow: () => Promise<void>;
   pushNow: () => Promise<void>;
@@ -149,7 +149,7 @@ export class GeodeSettingTab extends PluginSettingTab {
     this.savedScrollTop = 0;
     this.lastState = null;
 
-    const state = tabStateOf(isConfigured(this.plugin.settings), this.getUnlocked());
+    const state = tabStateOf(isConfigured(this.plugin.pluginSettings), this.getUnlocked());
 
     if (state !== "notset") {
       this.bannerContainerEl = containerEl.createDiv();
@@ -159,15 +159,15 @@ export class GeodeSettingTab extends PluginSettingTab {
 
     this.statusSection = new SettingsStatusSection(this.section("status", "Status").fieldsEl, {
       app: this.app,
-      configured: () => isConfigured(this.plugin.settings),
+      configured: () => isConfigured(this.plugin.pluginSettings),
       getUnlocked: () => this.getUnlocked(),
       getStatusInput: () => this.plugin.getStatusInput(),
       unlock: (p) => this.plugin.unlockVault(p),
       openForgotModal: () => openForgotModal(this.plugin, () => this.plugin.openPassphraseModal()),
       getStorageTarget: () => ({
-        serverUrl: this.plugin.settings.serverUrl,
-        vaultId: this.plugin.settings.vaultId,
-        deviceToken: this.plugin.settings.deviceToken,
+        serverUrl: this.plugin.pluginSettings.serverUrl,
+        vaultId: this.plugin.pluginSettings.vaultId,
+        deviceToken: this.plugin.pluginSettings.deviceToken,
       }),
       runSetupWizard: () => this.plugin.startSetupWizard(),
       reconcileNow: () => this.plugin.reconcileNow(),
@@ -207,7 +207,7 @@ export class GeodeSettingTab extends PluginSettingTab {
   private renderConfiguredSections(): void {
     this.vaultSection = new SettingsVaultSection(this.section("vault", "Vault").fieldsEl, {
       app: this.app,
-      settings: () => this.plugin.settings,
+      settings: () => this.plugin.pluginSettings,
       saveSettings: () => this.plugin.saveSettings(),
       getUnlocked: () => this.getUnlocked(),
       lockVault: () => this.plugin.lockVault(),
@@ -218,16 +218,16 @@ export class GeodeSettingTab extends PluginSettingTab {
     this.devicesSection = devices.sectionEl;
     this.devicesSectionDispose = renderSettingsDevicesSection(devices.fieldsEl, {
       app: this.app,
-      serverUrl: this.plugin.settings.serverUrl,
-      vaultId: this.plugin.settings.vaultId,
-      currentDeviceId: this.plugin.settings.deviceId,
-      deviceToken: this.plugin.settings.deviceToken,
+      serverUrl: this.plugin.pluginSettings.serverUrl,
+      vaultId: this.plugin.pluginSettings.vaultId,
+      currentDeviceId: this.plugin.pluginSettings.deviceId,
+      deviceToken: this.plugin.pluginSettings.deviceToken,
       adminToken: this.plugin.adminToken,
       setAdminToken: (token) => {
         this.plugin.adminToken = token;
       },
       onRename: (name) => {
-        this.plugin.settings.deviceName = name;
+        this.plugin.pluginSettings.deviceName = name;
         void this.plugin.saveSettings();
       },
       relativeTime,
@@ -237,7 +237,7 @@ export class GeodeSettingTab extends PluginSettingTab {
     this.scopeSection = scope.sectionEl;
     new SettingsScopeSection(scope.fieldsEl, {
       app: this.app,
-      settings: () => this.plugin.settings,
+      settings: () => this.plugin.pluginSettings,
       selfPluginId: this.plugin.manifest.id,
       configDir: this.app.vault.configDir,
       saveSettings: () => this.plugin.saveSettings(),
@@ -248,11 +248,11 @@ export class GeodeSettingTab extends PluginSettingTab {
     const trash = this.section("trash", "Trash");
     this.trashSection = trash.sectionEl;
     const trashSettings = renderTrashSettings(trash.fieldsEl, {
-      settings: this.plugin.settings,
+      settings: this.plugin.pluginSettings,
       saveSettings: () => void this.plugin.saveSettings(),
       openTrashModal: () => this.plugin.openTrashModal(),
       openMassDeleteReview: () => this.plugin.openMassDeleteReview(),
-      getHold: () => this.plugin.settings.massDeleteHold,
+      getHold: () => this.plugin.pluginSettings.massDeleteHold,
       getUnlocked: () => this.getUnlocked(),
       trash: this.plugin.trash,
     });
@@ -263,13 +263,13 @@ export class GeodeSettingTab extends PluginSettingTab {
     advanced.fieldsEl.addClass("geode-advanced-fields");
     this.advancedSection = advanced.sectionEl;
     this.renderAdvancedSection(advanced.fieldsEl);
-    if (this.plugin.settings.debugLogging) this.renderLogsSection();
+    if (this.plugin.pluginSettings.debugLogging) this.renderLogsSection();
   }
 
   private renderAdvancedSection(fields: HTMLElement): void {
     new SettingsAdvancedSection(fields, {
       app: this.app,
-      settings: () => this.plugin.settings,
+      settings: () => this.plugin.pluginSettings,
       saveSettings: () => this.plugin.saveSettings(),
       applyServerAddress: (url) => this.plugin.applyServerAddress(url),
       resyncFromScratch: () => this.plugin.resyncFromScratch(),
@@ -315,7 +315,7 @@ export class GeodeSettingTab extends PluginSettingTab {
 
   /** In-place state update: swap rows/buttons and hide whole sections (#458, #134); scrollTop survives lock (save/restore, #458). */
   applyLockState(): void {
-    const state = tabStateOf(isConfigured(this.plugin.settings), this.getUnlocked());
+    const state = tabStateOf(isConfigured(this.plugin.pluginSettings), this.getUnlocked());
     const prev = this.lastState;
     this.lastState = state;
     if (state === "locked" && prev !== "locked") this.savedScrollTop = this.containerEl.scrollTop;
@@ -429,7 +429,7 @@ export class GeodeSettingTab extends PluginSettingTab {
   /** #601: the held mass-delete row sits above every other banner: it is the only state
    * that keeps sync from moving at all, and its Review opens the decision. */
   private updateHoldBanner(): void {
-    const hold = this.getUnlocked() ? this.plugin.settings.massDeleteHold : null;
+    const hold = this.getUnlocked() ? this.plugin.pluginSettings.massDeleteHold : null;
     this.banners?.hold.sync(
       hold
         ? {
@@ -446,7 +446,7 @@ export class GeodeSettingTab extends PluginSettingTab {
     const banner = describeErrorBanner(
       this.plugin.getStatusInput(),
       Date.now(),
-      this.plugin.settings.serverUrl,
+      this.plugin.pluginSettings.serverUrl,
     );
     this.banners?.error.sync(
       banner ? { name: banner.name, desc: banner.desc } : null,

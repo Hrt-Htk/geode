@@ -51,12 +51,12 @@ test("sync activity: per-file rows, save count, delete row, filters, search, rel
 
     /* ---- Give the devices names so rows can be asserted on the label ---- */
     await pair.A.eval(`
-      app.plugins.plugins.geode.settings.deviceName = "Laptop";
+      app.plugins.plugins.geode.pluginSettings.deviceName = "Laptop";
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);
     await pair.B.eval(`
-      app.plugins.plugins.geode.settings.deviceName = "Phone";
+      app.plugins.plugins.geode.pluginSettings.deviceName = "Phone";
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);

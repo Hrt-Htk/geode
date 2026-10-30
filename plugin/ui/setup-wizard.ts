@@ -313,10 +313,9 @@ export class SetupWizardModal extends Modal {
     // before it runs. The detection is async, so the line fills in; until it says yes the
     // paragraph takes no space (a first join shows nothing).
     const warningEl = contentEl.createEl("p", {
-      cls: "geode-warn",
+      cls: "geode-warn geode-hidden",
       attr: { "data-testid": "geode-join-rejoin-warning" },
     });
-    warningEl.style.display = "none";
     new Setting(contentEl)
       .setName("Geode vault")
       .addDropdown((d) => {
@@ -386,7 +385,7 @@ export class SetupWizardModal extends Modal {
     const apply = (rejoin: boolean): void => {
       if (this.values.joinVaultId !== vaultId) return; // the user picked another vault
       el.setText(rejoin ? rejoinWarningText() : "");
-      el.style.display = rejoin ? "" : "none";
+      el.toggleClass("geode-hidden", !rejoin);
     };
     void this.plugin.detectRejoin(vaultId).then(apply).catch(() => apply(false));
   }

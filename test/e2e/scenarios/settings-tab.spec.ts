@@ -135,20 +135,20 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     const debugToggle = obsidian.win.locator('[data-testid="geode-settings-toggle-debug"]');
 
     const originalDebugLogging = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.settings.debugLogging",
+      "app.plugins.plugins.geode.pluginSettings.debugLogging",
     );
 
     /* Flip it */
     await debugToggle.click();
     const flippedDebug = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.settings.debugLogging",
+      "app.plugins.plugins.geode.pluginSettings.debugLogging",
     );
     expect(flippedDebug).not.toBe(originalDebugLogging);
 
     /* Flip back */
     await debugToggle.click();
     const restoredDebug = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.settings.debugLogging",
+      "app.plugins.plugins.geode.pluginSettings.debugLogging",
     );
     expect(restoredDebug).toBe(originalDebugLogging);
 
@@ -161,18 +161,18 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     );
 
     const originalSyncObs = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.settings.syncObsidianConfig",
+      "app.plugins.plugins.geode.pluginSettings.syncObsidianConfig",
     );
 
     await syncObsToggle.click();
     const flippedSyncObs = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.settings.syncObsidianConfig",
+      "app.plugins.plugins.geode.pluginSettings.syncObsidianConfig",
     );
     expect(flippedSyncObs).not.toBe(originalSyncObs);
 
     await syncObsToggle.click();
     const restoredSyncObs = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.settings.syncObsidianConfig",
+      "app.plugins.plugins.geode.pluginSettings.syncObsidianConfig",
     );
     expect(restoredSyncObs).toBe(originalSyncObs);
 
@@ -180,7 +180,7 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     const autoLockInput = obsidian.win.locator('[data-testid="geode-settings-autolock"]');
 
     const originalAutoLock = await obsidian.eval<number>(
-      "app.plugins.plugins.geode.settings.unlockTimeoutHours",
+      "app.plugins.plugins.geode.pluginSettings.unlockTimeoutHours",
     );
 
     const newAutoLockValue = originalAutoLock === 24 ? 48 : 24;
@@ -189,7 +189,7 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     await autoLockInput.press("Enter");
 
     const updatedAutoLock = await obsidian.eval<number>(
-      "app.plugins.plugins.geode.settings.unlockTimeoutHours",
+      "app.plugins.plugins.geode.pluginSettings.unlockTimeoutHours",
     );
     expect(updatedAutoLock).toBe(newAutoLockValue);
 
@@ -199,7 +199,7 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     await autoLockInput.press("Enter");
 
     const restoredAutoLock = await obsidian.eval<number>(
-      "app.plugins.plugins.geode.settings.unlockTimeoutHours",
+      "app.plugins.plugins.geode.pluginSettings.unlockTimeoutHours",
     );
     expect(restoredAutoLock).toBe(originalAutoLock);
 

@@ -47,7 +47,7 @@ test("gate7 BRAT-shape install (main.js + manifest.json only) unlocks and syncs"
     `);
 
     const creds = await obs.eval<{ vaultId: string; token: string }>(
-      `(() => { const s = app.plugins.plugins.geode.settings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
+      `(() => { const s = app.plugins.plugins.geode.pluginSettings; return { vaultId: s.vaultId, token: s.deviceToken }; })()`,
     );
     await expect
       .poll(async () => {

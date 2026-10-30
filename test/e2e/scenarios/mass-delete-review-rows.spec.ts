@@ -15,7 +15,7 @@ import path from "node:path";
 // (outage, pause), desktop only.
 
 const PASSPHRASE = "mass-delete-review-pass";
-const HOLD = "app.plugins.plugins.geode.settings.massDeleteHold";
+const HOLD = "app.plugins.plugins.geode.pluginSettings.massDeleteHold";
 
 type SeedSettings = {
   serverUrl: string;

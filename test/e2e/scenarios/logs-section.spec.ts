@@ -111,10 +111,10 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
     // unlockVault logs "no salt configured") so the Errors view has content.
     await o.eval(`
       const geode = app.plugins.plugins.geode;
-      const saved = geode.settings.salt;
-      geode.settings.salt = "";
+      const saved = geode.pluginSettings.salt;
+      geode.pluginSettings.salt = "";
       await geode.unlockVault("anything");
-      geode.settings.salt = saved;
+      geode.pluginSettings.salt = saved;
       return true;
     `);
     await expect

@@ -32,7 +32,7 @@ Model on `test/fuzz/engine.ts` (`runConcurrentSequence`, `settle`, `mapsEqual`) 
 `test/two-vault-driver.ts` (fresh in-memory server + two `TestPlugin`s with `.fakeVault`). Seed device
 A's FakeVault from the real files, sync to B, and compare `mapsEqual(A.fakeVault.files, B.fakeVault.files)`,
 which is the on-disk `diff -rq` equivalent. To exercise `.obsidian` discovery, set
-`A.settings.syncObsidianConfig = true` before `A.start()` (B gets `.obsidian` files only via the real
+`A.pluginSettings.syncObsidianConfig = true` before `A.start()` (B gets `.obsidian` files only via the real
 discover→commit→apply path, since `getAllLoadedFiles` excludes them, so convergence there proves the
 scan works).
 

@@ -37,8 +37,8 @@ let _sodium: Sodium | null = null;
 
 async function getSodium(): Promise<Sodium> {
   if (_sodium) return _sodium;
-  const mod = await import("libsodium-wrappers-sumo");
-  const lib = ((mod as unknown as { default?: Sodium }).default ?? mod) as Sodium;
+  const mod = await import("libsodium-wrappers-sumo") as unknown as Sodium & { default?: Sodium };
+  const lib = mod.default ?? mod;
   await lib.ready;
   _sodium = lib;
   return lib;
@@ -218,7 +218,7 @@ export async function decryptMetadata(
     nonce,
     keys.content_key,
   );
-  return JSON.parse(new TextDecoder().decode(decrypted));
+  return JSON.parse(new TextDecoder().decode(decrypted)) as FileMeta;
 }
 
 const VERIFIER_CONSTANT = "geode-verifier-v1";

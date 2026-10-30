@@ -39,7 +39,7 @@ function makeHost(): { host: Host; storage: Map<string, string | null>; restarts
     unlockTimeoutHours: 24,
   };
   const host = {
-    settings,
+    pluginSettings: settings,
     keys: null as unknown,
     isUnlocked: false,
     app: {
@@ -63,7 +63,7 @@ Deno.test("tryCachedKeys: the cached unlock makes no Argon2id call", async () =>
   const salt = new Uint8Array(16).fill(7);
   const keys = await deriveKeys("passphrase", salt, { opsLimit: 1, memLimit: 8192 });
   const { host, storage, restarts } = makeHost();
-  host.settings.verifier = b64encode(await makeVerifier(keys));
+  host.pluginSettings.verifier = b64encode(await makeVerifier(keys));
   saveKeyCache((json) => storage.set("key-cache", json), keys);
   const pwhash = await countPwhash();
 

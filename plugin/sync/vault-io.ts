@@ -10,7 +10,7 @@ import { log } from "../plumbing/log.ts";
 /** The vault surface apply, the rename link and commit touch (Obsidian's vault is a
  * superset, so sync code and the conflict handler can pass theirs unchanged). */
 export type Vault = {
-  getAbstractFileByPath?: (path: string) => unknown | null;
+  getAbstractFileByPath?: (path: string) => unknown;
   createBinary?: (
     path: string,
     data: ArrayBuffer,
@@ -78,7 +78,7 @@ export async function writeVaultBinary(
 
 /** #697: the handle a vault rename can move: the index knows this path and the vault has
  * the API. A path the index does not know (config/dot-file) has no editor to keep. */
-export function renameableFile(path: string, vault: Vault): unknown | null {
+export function renameableFile(path: string, vault: Vault): unknown {
   if (typeof vault.rename !== "function") return null;
   return vault.getAbstractFileByPath?.(path) ?? null;
 }

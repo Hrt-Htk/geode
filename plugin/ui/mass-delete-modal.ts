@@ -313,6 +313,6 @@ export class MassDeleteModal extends Modal {
 /** The whole notice opens the review, which is the only thing that lets sync move again. */
 export function notifyMassDeleteHold(hold: MassDeleteHold, open: () => void): void {
   const notice = new Notice(holdNoticeText(hold.files.length, Platform.isMobile), 12000);
-  notice.noticeEl.addClass("geode-missing-notice");
-  notice.noticeEl.onClickEvent(open);
+  notice.messageEl.addClass("geode-missing-notice");
+  notice.messageEl.onClickEvent(open);
 }

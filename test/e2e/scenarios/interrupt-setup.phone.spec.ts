@@ -106,7 +106,9 @@ test("issue493 (phone): force-stop mid wizard create → relaunch → wizard re-
     const obsidian2 = await obsidian.relaunch();
     try {
       /* Honest state: wizard re-opens (settings unsaved) or configured + Unlock (saved). */
-      const configured = await obsidian2.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+      const configured = await obsidian2.eval<string>(
+        "app.plugins.plugins.geode.pluginSettings.vaultId",
+      );
       if (configured === "") {
         await focusSetupWizard(obsidian2);
         await obsidian2.screenshot(shotPath("493-setup-create-phone-relaunch-wizard.png"));
@@ -177,7 +179,9 @@ test("issue493 (phone): force-stop mid wizard join → relaunch → wizard re-op
     const obsidian2 = await obsidian.relaunch();
     try {
       /* Honest state: wizard re-opens (settings unsaved) or configured + Unlock (saved). */
-      const configured = await obsidian2.eval<string>("app.plugins.plugins.geode.settings.vaultId");
+      const configured = await obsidian2.eval<string>(
+        "app.plugins.plugins.geode.pluginSettings.vaultId",
+      );
       if (configured === "") {
         await focusSetupWizard(obsidian2);
         await obsidian2.screenshot(shotPath("493-setup-join-phone-relaunch-wizard.png"));

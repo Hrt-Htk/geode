@@ -310,7 +310,7 @@ export interface TestPluginOptions {
 export class TestPlugin {
   fakeVault: FakeVault;
   keys: VaultKeys | null = null;
-  settings: PluginSettings;
+  pluginSettings: PluginSettings;
   transport: Transport | null = null;
   syncManager: SyncManager | null = null;
   state: StateDB | null = null;
@@ -352,7 +352,7 @@ export class TestPlugin {
     this.pluginVersion = opts.pluginVersion ?? SERVER_VERSION;
     this.onStatusUpdate = opts.onStatusUpdate ?? null;
     this.manifest = { version: this.pluginVersion };
-    this.settings = {
+    this.pluginSettings = {
       ...DEFAULT_SETTINGS,
       deviceName: opts.deviceName ?? "",
       serverUrl: opts.url,
@@ -374,7 +374,7 @@ export class TestPlugin {
     this.activity = new ActivityRecorder({
       now: () => Date.now(),
       deviceName: () => "test",
-      myDeviceId: () => this.settings.deviceId,
+      myDeviceId: () => this.pluginSettings.deviceId,
       persist: () => {},
     });
 
@@ -413,7 +413,7 @@ export class TestPlugin {
       this.rekeyInProgress = false;
       void this.restartUnlockedSession().catch((error) => {
         serverLog.error("test plugin failed to restart after re-key", {
-          deviceId: this.settings.deviceId,
+          deviceId: this.pluginSettings.deviceId,
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -425,7 +425,9 @@ export class TestPlugin {
   restartUnlockedSession(existingState?: StateDB): Promise<void> {
     // Mirrors GeodePlugin.restartUnlockedSession: an incomplete rejoin finishes instead of
     // starting a session over the rows it left armed.
-    if (rejoinAction(this.settings) === "rejoin") return this.rejoinOverOldCopy().then(() => {});
+    if (rejoinAction(this.pluginSettings) === "rejoin") {
+      return this.rejoinOverOldCopy().then(() => {});
+    }
     // Re-attach the test listeners: the restart builds a fresh Transport.
     return startUnlockedSession(this, existingState).then(() => {
       this.attachTestListeners();
@@ -440,7 +442,7 @@ export class TestPlugin {
     this.isUnlocked = true;
     await this.restartUnlockedSession();
     // #601: a held device deliberately never connects (no "live" to wait for).
-    if (this.settings.massDeleteHold) this.liveResolve();
+    if (this.pluginSettings.massDeleteHold) this.liveResolve();
     if (this.onStatusUpdate) {
       // Chain the test spy after the session's own status handler.
       const sm = this.syncManager!;
@@ -477,7 +479,7 @@ export class TestPlugin {
 
   // Mirrors GeodePlugin.isPaused (plugin/main.ts): the persisted user pause.
   isPaused(): boolean {
-    return this.settings.pauseAt > 0;
+    return this.pluginSettings.pauseAt > 0;
   }
 
   /** User pause: transport closed (no reconnect), commit queue gated. */
@@ -488,8 +490,8 @@ export class TestPlugin {
   /** Resume: ungate the commit queue, then reconnect (mirrors GeodePlugin.resumeSync,
    * including a rejoin it left incomplete). */
   async resume(): Promise<void> {
-    if (rejoinAction(this.settings) === "rejoin") {
-      this.settings.pauseAt = 0;
+    if (rejoinAction(this.pluginSettings) === "rejoin") {
+      this.pluginSettings.pauseAt = 0;
       await this.saveSettings();
       await this.rejoinOverOldCopy();
       return;
@@ -503,10 +505,10 @@ export class TestPlugin {
       this.liveResolve = r;
     });
     this.transport?.start(
-      this.settings.serverUrl,
-      this.settings.vaultId,
-      this.settings.deviceId,
-      this.settings.deviceToken,
+      this.pluginSettings.serverUrl,
+      this.pluginSettings.vaultId,
+      this.pluginSettings.deviceId,
+      this.pluginSettings.deviceToken,
       this.state.getSyncCursor(),
       this.pluginVersion,
     );
@@ -676,7 +678,7 @@ export class TestPlugin {
     // #601: mirrors the plugin: a rebuild IS the restore-everything decision, so connect
     // first; the hold stays in force until the rebuild has returned (a half-finished one
     // must not let the remaining paths sync as deletes).
-    const held = this.settings.massDeleteHold !== null;
+    const held = this.pluginSettings.massDeleteHold !== null;
     if (held) {
       if (this.isPaused()) throw new Error(MASS_DELETE_NEEDS_RESUME);
       await reconnectAndWaitLive(this);
@@ -694,15 +696,15 @@ export class TestPlugin {
         transport: recoveryTransport,
         state: freshState,
         keys: this.keys,
-        vaultId: this.settings.vaultId,
+        vaultId: this.pluginSettings.vaultId,
         // The real plugin's scope check: the config dir (where the driver's
         // persisted state files live) is never syncable, so prune leaves it.
-        isSyncable: (p) => isSyncable(p, this.fakeVault.configDir, this.settings),
-        parkedMoves: () => this.settings.pendingMoveOuts,
+        isSyncable: (p) => isSyncable(p, this.fakeVault.configDir, this.pluginSettings),
+        parkedMoves: () => this.pluginSettings.pendingMoveOuts,
       });
 
       if (held) {
-        this.settings.massDeleteHold = null;
+        this.pluginSettings.massDeleteHold = null;
         await this.saveSettings();
       }
       this.livePromise = new Promise((resolve) => {
@@ -734,7 +736,7 @@ export class TestPlugin {
     try {
       const result = await rebuildVault(this, transport, true);
       // A paused device never connects: that is the expected outcome, not a hang.
-      if (this.settings.pauseAt === 0) {
+      if (this.pluginSettings.pauseAt === 0) {
         await this.livePromise;
         this.throwIfBlocked();
       }
@@ -1194,13 +1196,13 @@ export async function restartPlugin(
   await sleep(200);
   const fresh = new TestPlugin({
     url: server.url,
-    vaultId: old.settings.vaultId,
-    deviceId: old.settings.deviceId,
-    deviceToken: old.settings.deviceToken,
+    vaultId: old.pluginSettings.vaultId,
+    deviceId: old.pluginSettings.deviceId,
+    deviceToken: old.pluginSettings.deviceToken,
     passphrase: old.passphrase,
-    saltBytes: b64decode(old.settings.salt),
-    verifierB64: old.settings.verifier,
-    deviceName: old.settings.deviceName,
+    saltBytes: b64decode(old.pluginSettings.salt),
+    verifierB64: old.pluginSettings.verifier,
+    deviceName: old.pluginSettings.deviceName,
   });
   for (const [p, d] of files) fresh.fakeVault.files.set(p, new Uint8Array(d));
   for (const [p, m] of mtimes) fresh.fakeVault.mtimes.set(p, m);
@@ -1208,7 +1210,7 @@ export async function restartPlugin(
     fresh.fakeVault.pluginData.set(p, new Uint8Array(d));
   }
   // Settings survive a restart (data.json in the real plugin): carry what a scenario needs.
-  Object.assign(fresh.settings, opts?.settings ?? {});
+  Object.assign(fresh.pluginSettings, opts?.settings ?? {});
   if (opts?.unlocked !== false) await fresh.start();
   return fresh;
 }
