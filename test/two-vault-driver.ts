@@ -1054,6 +1054,22 @@ export function versionCount(server: TestServer, vaultId: string): number {
   return row.n;
 }
 
+/** Versions the server holds for one path hash: one row per commit, so a duplicate commit shows up.
+ * A client-side duplicate apply does not (it writes no row), so pair it with a write spy when the
+ * assertion is about applies. */
+export function pathVersionCount(
+  server: TestServer,
+  vaultId: string,
+  pathHash: string,
+): number {
+  const row = server.db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM file_versions WHERE vault_id = ? AND path_hash = ?",
+    )
+    .get(vaultId, pathHash) as { n: number };
+  return row.n;
+}
+
 /** Heads sitting in the server trash (what a plain delete leaves behind). */
 export function trashCount(server: TestServer, vaultId: string): number {
   const row = server.db

@@ -175,9 +175,9 @@ All use `test/two-vault-driver.ts`:
 
 - `test/scenarios/sync/basic-sync.test.ts`: create, modify and delete on A reach B.
 - `test/scenarios/sync/initial-sync.test.ts`: B joins a vault with 5 existing files and converges;
-  initial sync is followed by live updates with no duplicates and no missed updates.
-  Not yet met: the live update phase, `test/scenarios/sync/initial-sync.test.ts:5-35` ends at the
-  join, with no writes after it.
+  initial sync is followed by live updates with no duplicates and no missed updates: a new file and
+  an edit of a synced one both land on B, and the server holds exactly one new version for each path
+  (1 and 2).
 - `test/scenarios/sync/reconnect-replay.test.ts`: B disconnects, A commits 3 times, B reconnects and
   receives all 3 in seq order; a server restart mid-session leaves both clients reconnecting with
   their stored `last_seen_seq` and no duplicates.
