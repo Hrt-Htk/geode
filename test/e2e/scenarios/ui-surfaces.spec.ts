@@ -161,7 +161,7 @@ test("UI surfaces unchanged by #387 type/promise edits", async () => {
     await dismissAllModals(o.win);
 
     /* ---- TRASH modal via its command (trash is a modal, not a side panel) ---- */
-    await o.eval(`app.commands.executeCommandById("geode:geode-open-trash"); return true;`);
+    await o.eval(`app.commands.executeCommandById("geode:open-trash"); return true;`);
     const trash = o.win.locator(".geode-trash-modal");
     await expect.poll(async () => await trash.isVisible().catch(() => false), { timeout: 30_000 })
       .toBe(true);
@@ -210,10 +210,10 @@ test("UI surfaces unchanged by #387 type/promise edits", async () => {
     await o.win.keyboard.press("Escape").catch(() => {});
 
     /* ---- PASSPHRASE modal: lock via command, then trigger unlock (the real path) ---- */
-    await o.eval(`app.commands.executeCommandById("geode:geode-lock"); return true;`);
+    await o.eval(`app.commands.executeCommandById("geode:lock"); return true;`);
     await expect.poll(async () => await readGeodeStatusBar(o.win), { timeout: 15_000 })
       .toBe("Geode: locked");
-    await o.eval(`app.commands.executeCommandById("geode:geode-unlock"); return true;`);
+    await o.eval(`app.commands.executeCommandById("geode:unlock"); return true;`);
     const passModal = o.win.locator('.modal:has([data-testid="geode-passphrase-input"])');
     await expect(passModal).toBeVisible({ timeout: 10_000 });
     await clearNotices(o.win);
@@ -225,7 +225,7 @@ test("UI surfaces unchanged by #387 type/promise edits", async () => {
 
     /* ---- EXPORT modal via its command ---- */
     await o.eval(
-      `app.commands.executeCommandById("geode:geode-export-decrypted-vault"); return true;`,
+      `app.commands.executeCommandById("geode:export-decrypted-vault"); return true;`,
     );
     const exportModal = o.win.locator('.modal:has([data-testid="geode-export-folder-input"])');
     await expect(exportModal).toBeVisible({ timeout: 10_000 });

@@ -18,6 +18,7 @@ import { VaultEventHandler } from "./sync/events.ts";
 import { ActivityRecorder } from "./sync/activity-log.ts";
 import { reconcileVaultName } from "./sync/vault-name-heal.ts";
 import { type MassDeleteHold } from "./sync/mass-delete-hold.ts";
+import { windowGlobal } from "./plumbing/window.ts";
 
 type VaultEventHost = ConstructorParameters<typeof VaultEventHandler>[0];
 type SyncVault = ConstructorParameters<typeof SyncManager>[1]["vault"];
@@ -77,7 +78,7 @@ export interface SyncSessionHost {
 }
 
 export function disposeSession(host: SyncSessionHost): void {
-  if (appliedSeqReportTimer) clearTimeout(appliedSeqReportTimer);
+  if (appliedSeqReportTimer) windowGlobal.clearTimeout(appliedSeqReportTimer);
   appliedSeqReportTimer = null;
   host.deferredStartCleanup?.();
   host.deferredStartCleanup = null;
@@ -284,11 +285,11 @@ export function reconnectAndWaitLive(
   if (transport.isLive()) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const done = () => {
-      clearTimeout(timer);
+      windowGlobal.clearTimeout(timer);
       transport.removeEventListener("live", done);
       resolve();
     };
-    const timer = setTimeout(() => {
+    const timer = windowGlobal.setTimeout(() => {
       transport.removeEventListener("live", done);
       reject(new Error("reconnect timed out: needs a connection"));
     }, timeoutMs);
@@ -466,7 +467,7 @@ function handleSyncStatus(host: SyncSessionHost, status: string, data?: unknown)
 // catch-up drain (go-live), and trailing-throttled on every apply/commit batch
 // ("sync" status) so a long replay storm coalesces into one report after it
 // settles, while a single commit lands within ~2 s.
-let appliedSeqReportTimer: ReturnType<typeof setTimeout> | null = null;
+let appliedSeqReportTimer: number | null = null;
 let lastReportedAppliedSeq = 0;
 const APPLIED_SEQ_REPORT_THROTTLE_MS = 2_000;
 
@@ -479,7 +480,7 @@ function scheduleAppliedSeqReport(host: SyncSessionHost, immediate: boolean): vo
     // One small report per (re)connect: the server's applied_seq is authoritative
     // for the Devices view, so always re-send this device's true position after
     // the catch-up drain (covers a server rebuild where the column was reset).
-    if (appliedSeqReportTimer) clearTimeout(appliedSeqReportTimer);
+    if (appliedSeqReportTimer) windowGlobal.clearTimeout(appliedSeqReportTimer);
     appliedSeqReportTimer = null;
     const cursor = state.getSyncCursor();
     lastReportedAppliedSeq = cursor;
@@ -487,7 +488,7 @@ function scheduleAppliedSeqReport(host: SyncSessionHost, immediate: boolean): vo
     return;
   }
   if (appliedSeqReportTimer) return;
-  appliedSeqReportTimer = setTimeout(() => {
+  appliedSeqReportTimer = windowGlobal.setTimeout(() => {
     appliedSeqReportTimer = null;
     const cursor = state.getSyncCursor();
     if (cursor > lastReportedAppliedSeq) {

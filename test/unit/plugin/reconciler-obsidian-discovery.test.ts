@@ -44,6 +44,7 @@ Deno.test("reconciler discovers .obsidian/ files when syncObsidianConfig is enab
     makeIsSyncable(true),
     true, // syncObsidianConfig = true
     massDeleteGuard(),
+    ".obsidian",
   );
 
   reconciler.start();
@@ -88,6 +89,8 @@ Deno.test("reconciler does NOT discover .obsidian/ files when syncObsidianConfig
     onOps,
     makeIsSyncable(false),
     false, // syncObsidianConfig = false
+    undefined,
+    ".obsidian",
   );
 
   reconciler.start();
@@ -100,6 +103,52 @@ Deno.test("reconciler does NOT discover .obsidian/ files when syncObsidianConfig
   assert(
     !createdPaths.includes(".obsidian/app.json"),
     "should NOT discover .obsidian/ files when disabled",
+  );
+  assert(createdPaths.includes("notes/test.md"), "should still discover regular notes");
+});
+
+Deno.test("reconciler scans the vault's own config dir, not a hardcoded .obsidian", async () => {
+  const vault = new FakeVault();
+  const state = openStateDB();
+
+  let capturedOps: ReconcileOp[] = [];
+  const onOps = (ops: ReconcileOp[]) => {
+    capturedOps = ops;
+  };
+
+  vault.write(".obsidian-custom/app.json", '{"theme":"obsidian"}');
+  vault.write("notes/test.md", "# Hello");
+
+  // Obsidian's file API hides the configured config dir from a vault-root listing, which
+  // is why the reconciler scans it separately: only that scan can surface these files.
+  const listAll = vault.list.bind(vault);
+  vault.list = async (path: string) => {
+    const listed = await listAll(path);
+    if (path !== "") return listed;
+    return { files: listed.files, folders: listed.folders.filter((f) => f !== ".obsidian-custom") };
+  };
+
+  const reconciler = new Reconciler(
+    vault as any,
+    state,
+    onOps,
+    // Permissive scope with config sync on: what the reconciler enumerates is the assertion.
+    (path) => !path.startsWith("/"),
+    true, // syncObsidianConfig = true
+    massDeleteGuard(),
+    ".obsidian-custom",
+  );
+
+  reconciler.start();
+  await reconciler.run(true);
+  reconciler.stop();
+  state.close();
+
+  const createdPaths = capturedOps.filter((op) => op.kind === "create").map((op) => op.path);
+
+  assert(
+    createdPaths.includes(".obsidian-custom/app.json"),
+    "should discover the vault's own config dir",
   );
   assert(createdPaths.includes("notes/test.md"), "should still discover regular notes");
 });
@@ -135,6 +184,8 @@ Deno.test("reconciler emits a modify op for a tracked .obsidian/ file whose cont
     onOps,
     makeIsSyncable(true),
     true, // syncObsidianConfig = true
+    undefined,
+    ".obsidian",
   );
   reconciler.start();
 
@@ -177,6 +228,8 @@ Deno.test("reconciler handles missing .obsidian/ directory gracefully", async ()
     onOps,
     makeIsSyncable(true),
     true, // syncObsidianConfig = true, but no .obsidian/ dir exists
+    undefined,
+    ".obsidian",
   );
 
   reconciler.start();

@@ -134,7 +134,7 @@ export class SettingsAdvancedSection {
     });
     new Setting(this.fields)
       .setName("Debug logging")
-      .setDesc("Log sync activity and show the Logs section.")
+      .setDesc("Log sync activity and show the logs section.")
       .addToggle((t) => {
         t.toggleEl.dataset.testid = "geode-settings-toggle-debug";
         t.setValue(this.host.settings().debugLogging).onChange((v) => {

@@ -59,7 +59,7 @@ test("key cache lives in per-device storage, never in the vault (mobile)", async
     expect(await legacyCacheExists(obsidian), "no in-vault cache after unlock").toBe(false);
 
     /* ---- Lock vault via the real command (Obsidian prefixes custom command ids) ---- */
-    await obsidian.eval(`await app.commands.executeCommandById("geode:geode-lock"); return true;`);
+    await obsidian.eval(`await app.commands.executeCommandById("geode:lock"); return true;`);
     await expect.poll(() => cachedInStore(obsidian), { timeout: 15_000 }).toBe(false);
     expect(await obsidian.eval<boolean>("app.plugins.plugins.geode.isUnlockedCheck()")).toBe(false);
 

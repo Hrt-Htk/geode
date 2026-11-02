@@ -9,13 +9,16 @@ import { dismissModals, evalClick, evalSetValue } from "../helpers/mobile-ui";
 
 const PASSPHRASE = "palette-passphrase";
 
+/* Export is desktop only (#15: the writer needs Node's filesystem), so it is listed
+ * with the absent command instead of the palette's. */
+const DESKTOP_ONLY_COMMAND = "Export decrypted vault to folder...";
+
 const GEODE_COMMANDS = [
-  "Geode: Push now",
-  "Geode: Reconcile now",
-  "Geode: Unlock vault",
-  "Geode: Lock vault",
-  "Geode: Resync from scratch",
-  "Geode: Export decrypted vault to folder...",
+  "Push now",
+  "Reconcile now",
+  "Unlock vault",
+  "Lock vault",
+  "Resync from scratch",
 ];
 
 test("command palette: all Geode commands visible and functional", async () => {
@@ -67,7 +70,7 @@ test("command palette: all Geode commands visible and functional", async () => {
       { timeout: 10_000 },
     ).toBeGreaterThanOrEqual(GEODE_COMMANDS.length);
 
-    /* Suggestion text includes a plugin-name chip prefix (e.g. "GeodeGeode: Push now"),
+    /* Suggestion text includes a plugin-name chip prefix (e.g. "GeodePush now"),
        so check substring containment rather than exact match. */
     const visibleCommands = await suggestionItems.allTextContents();
     for (const cmd of GEODE_COMMANDS) {
@@ -76,13 +79,17 @@ test("command palette: all Geode commands visible and functional", async () => {
         `Command "${cmd}" not found in palette suggestions`,
       ).toBe(true);
     }
+    expect(
+      visibleCommands.some((t) => t.includes(DESKTOP_ONLY_COMMAND)),
+      `Command "${DESKTOP_ONLY_COMMAND}" must not be offered on the phone`,
+    ).toBe(false);
 
     /* Close the palette. */
     await obsidian.win.keyboard.press("Escape");
     await new Promise((r) => setTimeout(r, 300));
 
     /* ---- Step 2: Lock vault via palette ---- */
-    await runCommand(obsidian.win, "Geode: Lock vault");
+    await runCommand(obsidian.win, "Lock vault");
 
     await expect.poll(
       async () => await readGeodeStatusBar(obsidian.win),
@@ -91,7 +98,7 @@ test("command palette: all Geode commands visible and functional", async () => {
 
     /* ---- Step 3: Unlock vault via palette → passphrase modal → type + Enter ---- */
     await dismissModals(obsidian);
-    await runCommand(obsidian.win, "Geode: Unlock vault");
+    await runCommand(obsidian.win, "Unlock vault");
 
     /* Assert passphrase modal opens with password input visible. */
     const passphraseModal = obsidian.win.locator(
@@ -118,7 +125,7 @@ test("command palette: all Geode commands visible and functional", async () => {
     await dismissModals(obsidian);
 
     /* ---- Step 4: Push now and Reconcile now: no error notices ---- */
-    await runCommand(obsidian.win, "Geode: Push now");
+    await runCommand(obsidian.win, "Push now");
     await new Promise((r) => setTimeout(r, 3_000));
 
     /* Assert no error notice appeared. */
@@ -127,7 +134,7 @@ test("command palette: all Geode commands visible and functional", async () => {
     ).count();
     expect(pushErrorNotices).toBe(0);
 
-    await runCommand(obsidian.win, "Geode: Reconcile now");
+    await runCommand(obsidian.win, "Reconcile now");
     await new Promise((r) => setTimeout(r, 3_000));
 
     const reconcileErrorNotices = await obsidian.win.locator(
@@ -137,18 +144,17 @@ test("command palette: all Geode commands visible and functional", async () => {
 
     /* ---- Step 5: Resync from scratch: SKIPPED (destructive/slow) ---- */
 
-    /* ---- Step 7: Export decrypted vault to folder...: modal appears, Escape closes it ---- */
-    await runCommand(obsidian.win, "Geode: Export decrypted vault to folder...");
+    /* ---- Step 7: export is desktop only: the command is registered but its check fails ---- */
+    const exportUsable = await obsidian.eval<boolean>(`
+      const cmd = app.commands.commands["geode:export-decrypted-vault"];
+      return cmd?.checkCallback ? cmd.checkCallback(false) === true : false;
+    `);
+    expect(exportUsable, "the export command must not be offered on the phone").toBe(false);
 
-    /* Assert the export modal opens with its input and button visible. */
-    const exportInput = obsidian.win.locator('[data-testid="geode-export-folder-input"]');
-    await expect(exportInput).toBeVisible({ timeout: 10_000 });
-    const exportBtn = obsidian.win.locator('[data-testid="geode-export-submit"]');
-    await expect(exportBtn).toBeVisible();
-
-    /* Close it without triggering a real export (Escape doesn't fire on the mobile WebView). */
-    await dismissModals(obsidian);
-    await expect(exportInput).not.toBeVisible({ timeout: 5_000 });
+    /* Running its id opens nothing: executeCommandById reports the id exists, not that the
+     * command was allowed to run. */
+    await obsidian.eval(`app.commands.executeCommandById("geode:export-decrypted-vault")`);
+    await expect(obsidian.win.locator('[data-testid="geode-export-folder-input"]')).toHaveCount(0);
 
     /* Verify vault is still unlocked and synced (nothing broke). */
     const finalStatus = await readGeodeStatusBar(obsidian.win);

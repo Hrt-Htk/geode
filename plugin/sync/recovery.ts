@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { normalizePath } from "../../core/normalize.ts";
 import {
   b64decode,
@@ -16,6 +14,7 @@ import type { PendingMoveOut } from "../plumbing/scope-pending.ts";
 import { removeVaultPath, type Vault } from "./vault-io.ts";
 import { log } from "../plumbing/log.ts";
 import { StateDB } from "../plumbing/state.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 import { enumerateDisk, type EnumerateDiskVault } from "./enumerate-disk.ts";
 import { prepareRejoin, type RejoinBackup, type RejoinPreparation } from "./rejoin.ts";
 
@@ -49,6 +48,9 @@ export interface ResyncDeps {
 export interface ExportDeps {
   transport: HeadTransport;
   keys: VaultKeys;
+  /** Writes one exported file, creating its folder. Injected because the write goes
+   * outside the vault through Node's filesystem, which only desktop has (#15). */
+  write: (destination: string, bytes: Uint8Array) => Promise<void>;
   onProgress?: (progress: ProgressInfo) => void;
 }
 
@@ -260,9 +262,11 @@ export async function exportDecryptedVault(
       (hash) => deps.transport.getBlob(hash),
       meta.plaintext_hash,
     );
-    const destination = path.join(targetDir, ...normalizePath(meta.path).split("/"));
-    await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, bytes);
+    // The destination is the target folder plus the server's path, joined here with the
+    // separators an absolute folder path already uses; the writer only makes the folder and
+    // writes the bytes.
+    const destination = `${targetDir.replace(/[\\/]+$/, "")}/${normalizePath(meta.path)}`;
+    await deps.write(destination, bytes);
     exportedFiles++;
     await yieldToUi(index);
   }
@@ -324,5 +328,5 @@ async function yieldToUi(index: number): Promise<void> {
   if ((index + 1) % 5 !== 0) {
     return;
   }
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => windowGlobal.setTimeout(resolve, 0));
 }

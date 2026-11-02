@@ -172,7 +172,7 @@ All are plugin commands (`plugin/plumbing/commands.ts`); the server has no recov
 
 ### "Resync from scratch" (`rebuildFromScratch`)
 
-The settings button asks for confirmation first; the `Geode: Resync from scratch` command starts
+The settings button asks for confirmation first; the `Resync from scratch` command starts
 immediately.
 
 1. Rebuild local state from the server: it replaces `local-files.json` and the cursor, and does not
@@ -191,7 +191,9 @@ contents from the server; unsynced local edits are kept (#590).
 
 ### "Export decrypted vault" (`exportDecryptedVault`)
 
-1. Pick a destination folder (`Geode: Export decrypted vault to folder...` opens the modal).
+1. Pick a destination folder (`Export decrypted vault to folder...` opens the modal). Desktop only:
+   the export writes outside the vault through Node's filesystem, so the command is not offered on
+   a phone.
 2. Reassemble every head from the server into that folder as plaintext. The vault folder is not
    copied; the export works from the server's chain, which is what makes it an escape hatch when
    Geode itself misbehaves.

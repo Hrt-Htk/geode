@@ -6,12 +6,12 @@ import type { Page } from "@playwright/test";
  * Mirrors plugin/plumbing/commands.ts: keep in sync.
  */
 const COMMAND_IDS: Record<string, string> = {
-  "Geode: Push now": "geode:geode-push-now",
-  "Geode: Reconcile now": "geode:geode-reconcile-now",
-  "Geode: Unlock vault": "geode:geode-unlock",
-  "Geode: Lock vault": "geode:geode-lock",
-  "Geode: Resync from scratch": "geode:geode-resync",
-  "Geode: Export decrypted vault to folder...": "geode:geode-export-decrypted-vault",
+  "Push now": "geode:push-now",
+  "Reconcile now": "geode:reconcile-now",
+  "Unlock vault": "geode:unlock",
+  "Lock vault": "geode:lock",
+  "Resync from scratch": "geode:resync",
+  "Export decrypted vault to folder...": "geode:export-decrypted-vault",
 };
 
 /**

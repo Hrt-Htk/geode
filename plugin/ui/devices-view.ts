@@ -11,6 +11,7 @@ import { deviceDescText, deviceSyncStatus } from "./device-status.ts";
 import { validateDeviceName } from "./device-name.ts";
 import { confirmRevokeDevice } from "./confirm-copy.ts";
 import { ConfirmModal } from "./confirm-modal.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 // #433/#447: the unified Devices view (mockup DevicesModal): one row per
 // device with a status dot, name, last seen and up-to-date/behind status,
@@ -60,12 +61,12 @@ class DevicesModal extends Modal {
     this.renderList();
     void this.refresh();
     // #502: register with the plugin so a disable/unload (BRAT reload) clears the timer
-    this.timer = window.setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
+    this.timer = windowGlobal.setInterval(() => void this.refresh(), REFRESH_INTERVAL_MS);
     this.host.registerInterval(this.timer);
   }
 
   onClose(): void {
-    if (this.timer) clearInterval(this.timer);
+    if (this.timer) windowGlobal.clearInterval(this.timer);
     this.timer = null;
     this.contentEl.empty();
   }

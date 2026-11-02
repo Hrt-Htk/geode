@@ -7,6 +7,8 @@
 // (`HttpResp` and `TransportHttpResponse` carry status and body only), so `retry-after`
 // is not read here; the budget is sized instead. Five attempts at 200 ms doubling backoff
 // wait 3 s in total, three times the advertised second, and that is the worst case.
+import { windowGlobal } from "./window.ts";
+
 const RETRY_MAX = 5;
 const RETRY_BASE_MS = 200;
 
@@ -14,6 +16,6 @@ export async function retryBusy<T extends { status: number }>(send: () => Promis
   for (let attempt = 1;; attempt++) {
     const res = await send();
     if (res.status !== 503 || attempt >= RETRY_MAX) return res;
-    await new Promise((r) => setTimeout(r, RETRY_BASE_MS * 2 ** (attempt - 1)));
+    await new Promise((r) => windowGlobal.setTimeout(r, RETRY_BASE_MS * 2 ** (attempt - 1)));
   }
 }

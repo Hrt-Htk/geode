@@ -47,6 +47,7 @@ import type { FileHistoryModal } from "./ui/history-modal.ts";
 import { HISTORY_ENTRY_TITLE } from "./ui/history-view.ts";
 import { registerCommands } from "./plumbing/commands.ts";
 import { wirePlatformHttp } from "./plumbing/http-platform.ts";
+import { windowGlobal } from "./plumbing/window.ts";
 import {
   disposeRuntime,
   enterRekeyLockedState,
@@ -80,8 +81,9 @@ import { b64decode } from "../core/protocol.ts";
 // libsodium's Emscripten loader tries to fetch its .wasm over the network in the
 // Electron renderer, which hangs forever. Hand it the build-inlined binary via a
 // global that the patched libsodium-sumo (see scripts/plugin-build.ts) reads at init.
+// `window` is the renderer's globalThis, so the patched `globalThis.` read still sees it.
 {
-  const g = globalThis as { __GEODE_LIBSODIUM_WASM__?: Uint8Array };
+  const g = window as { __GEODE_LIBSODIUM_WASM__?: Uint8Array };
   g.__GEODE_LIBSODIUM_WASM__ ??= b64decode(LIBSODIUM_WASM_BASE64);
 }
 
@@ -154,7 +156,7 @@ export default class GeodePlugin extends Plugin {
     this.statusBar = new StatusBar(this);
     this.statusBar.setPausedAt(this.pluginSettings.pauseAt);
     wireConflictCount(this);
-    this.registerInterval(window.setInterval(() => this.statusBar?.tick(), 1000));
+    this.registerInterval(windowGlobal.setInterval(() => this.statusBar?.tick(), 1000));
     this.settingTab = new GeodeSettingTab(this.app, this, this.statusBar);
     this.addSettingTab(this.settingTab);
     this.registerFileMenu();
@@ -367,7 +369,7 @@ export default class GeodePlugin extends Plugin {
   openFileHistory(path: string): void {
     openHistoryModal(this, { path });
   }
-  /** #464: "Geode: Show file history" on any file in the explorer menu, offered
+  /** #464: "Show file history" on any file in the explorer menu, offered
    * only while a vault is unlocked (history needs the keys to decrypt). */
   private registerFileMenu(): void {
     this.registerEvent(

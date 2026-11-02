@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import type { TrashApi, TrashEntry } from "../plumbing/trash-client.ts";
 import { formatUserError } from "../plumbing/errors.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 import { FilePreview } from "./preview-render.ts";
 import {
   binaryPreviewLine,
@@ -137,12 +138,12 @@ function waitForRestoredFile(app: App, path: string): Promise<TFile | null> {
       return;
     }
     const ref = app.vault.on("create", (file) => {
-      if (file.path !== path) return;
+      if (file.path !== path || !(file instanceof TFile)) return;
       app.vault.offref(ref);
-      clearTimeout(timer);
-      resolve(file as TFile);
+      windowGlobal.clearTimeout(timer);
+      resolve(file);
     });
-    const timer = setTimeout(() => {
+    const timer = windowGlobal.setTimeout(() => {
       app.vault.offref(ref);
       resolve(null);
     }, OPEN_TIMEOUT_MS);

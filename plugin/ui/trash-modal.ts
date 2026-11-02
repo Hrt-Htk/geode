@@ -138,7 +138,7 @@ export class TrashModal extends Modal {
     });
     toolbar.createEl("label", { cls: "geode-trash-toolbar-select", text: "Select all" })
       .prepend(selCb);
-    toolbar.createEl("span", {
+    toolbar.createSpan({
       cls: "geode-trash-retention",
       text: keptLabel(this.deps.retentionDays()),
     });
@@ -234,7 +234,7 @@ export class TrashModal extends Modal {
 
   private renderRow(list: HTMLElement, entry: TrashEntry): void {
     const label = trashEntryLabel(entry);
-    const frag = document.createDocumentFragment();
+    const frag = createFragment();
     frag.createDiv({
       text: deletedFromLabel(
         entry.trashed_at,

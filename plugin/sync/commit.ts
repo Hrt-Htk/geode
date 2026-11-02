@@ -34,6 +34,7 @@ import { readVaultBinary, type Vault as ApplyVault, writeVaultBinary } from "./v
 import { mergeText, readVersionBytes, surfaceConflict } from "./merger.ts";
 import { toUint8Array } from "../plumbing/bytes.ts";
 import type { ActivityRecord } from "./activity-log.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 /** commit also reads the body and stats the file (mtime, the #498 stale guard). */
 export type Vault = Omit<ApplyVault, "adapter"> & {
@@ -165,7 +166,10 @@ export async function waitForInFlightCommit(
   const runs = inFlight.get(state);
   const prior = runs?.get(path);
   if (!prior) return true;
-  await Promise.race([prior.catch(() => {}), new Promise((r) => setTimeout(r, timeoutMs))]);
+  await Promise.race([
+    prior.catch(() => {}),
+    new Promise((r) => windowGlobal.setTimeout(r, timeoutMs)),
+  ]);
   return !runs?.has(path);
 }
 

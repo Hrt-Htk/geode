@@ -55,7 +55,7 @@ const view = (over: Partial<HistoryView> = {}): HistoryView => ({
 Deno.test("history-view - historyTitle names the file without dashes", () => {
   assertEquals(historyTitle("Notes/Meeting notes.md"), "History · Meeting notes.md");
   assertEquals(historyTitle("Meeting notes.md"), "History · Meeting notes.md");
-  assertEquals(HISTORY_ENTRY_TITLE, "Geode: Show file history");
+  assertEquals(HISTORY_ENTRY_TITLE, "Show file history");
 });
 
 Deno.test("history-view - historySubtitle shows the folder then the head's device", () => {

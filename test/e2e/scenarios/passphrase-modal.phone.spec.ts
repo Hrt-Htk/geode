@@ -55,7 +55,7 @@ test("passphrase modal: empty, wrong, escape, and correct passphrase paths", asy
     await dismissModals(obsidian);
 
     /* Open a fresh passphrase modal via the unlock command. */
-    await obsidian.eval<void>(`app.commands.executeCommandById("geode:geode-unlock")`);
+    await obsidian.eval<void>(`app.commands.executeCommandById("geode:unlock")`);
     const passphraseModal = obsidian.win.locator(
       '.modal:has([data-testid="geode-passphrase-input"])',
     ).last();
@@ -99,7 +99,7 @@ test("passphrase modal: empty, wrong, escape, and correct passphrase paths", asy
     await dismissModals(obsidian);
 
     /* Reopen the passphrase modal via the unlock command. */
-    await obsidian.eval<void>(`app.commands.executeCommandById("geode:geode-unlock")`);
+    await obsidian.eval<void>(`app.commands.executeCommandById("geode:unlock")`);
 
     const wrongModal = obsidian.win.locator('.modal:has([data-testid="geode-passphrase-input"])')
       .last();
@@ -139,7 +139,7 @@ test("passphrase modal: empty, wrong, escape, and correct passphrase paths", asy
     await dismissModals(obsidian);
 
     /* Reopen the modal and close it with Escape. */
-    await obsidian.eval<void>(`app.commands.executeCommandById("geode:geode-unlock")`);
+    await obsidian.eval<void>(`app.commands.executeCommandById("geode:unlock")`);
 
     const escapeModal = obsidian.win.locator('.modal:has([data-testid="geode-passphrase-input"])')
       .last();
@@ -159,7 +159,7 @@ test("passphrase modal: empty, wrong, escape, and correct passphrase paths", asy
 
     /* ---- Step 5: Correct passphrase via Enter key ---- */
     /* Reopen the modal. */
-    await obsidian.eval<void>(`app.commands.executeCommandById("geode:geode-unlock")`);
+    await obsidian.eval<void>(`app.commands.executeCommandById("geode:unlock")`);
 
     const correctModal = obsidian.win.locator('.modal:has([data-testid="geode-passphrase-input"])')
       .last();

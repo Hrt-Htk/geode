@@ -72,6 +72,8 @@ Deno.test("reconciler enumerates disk via adapter.list, not getAllLoadedFiles (n
     onOps,
     makeIsSyncable(false),
     false,
+    undefined,
+    ".obsidian",
   );
 
   reconciler.start();
@@ -116,6 +118,8 @@ Deno.test("reconciler verifies file existence via adapter.stat before deleting",
     onOps,
     makeIsSyncable(false),
     false,
+    undefined,
+    ".obsidian",
   );
 
   reconciler.start();
@@ -178,6 +182,7 @@ async function runGuard(opts: {
       },
       opts.thresholds ?? { minFiles: MASS_DELETE_MIN_FILES, minPercent: MASS_DELETE_MIN_PERCENT },
     ),
+    ".obsidian",
   );
 
   reconciler.start();

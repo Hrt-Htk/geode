@@ -97,11 +97,11 @@ test("joined device stores the vault's KDF params and unlocks after lock", async
 
     // Lock via the real command, then unlock via the real passphrase modal. The
     // correct passphrase must verify: unlockVault derives with settings.argon2Params.
-    await B.eval<void>(`app.commands.executeCommandById("geode:geode-lock")`);
+    await B.eval<void>(`app.commands.executeCommandById("geode:lock")`);
     await waitForStatusBar(B.win, "Geode: locked", 30_000);
 
     await dismissAllModals(B);
-    await B.eval<void>(`app.commands.executeCommandById("geode:geode-unlock")`);
+    await B.eval<void>(`app.commands.executeCommandById("geode:unlock")`);
     const modal = B.win.locator('.modal:has([data-testid="geode-passphrase-input"])');
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await modal.locator('[data-testid="geode-passphrase-input"]').fill(PASSPHRASE);

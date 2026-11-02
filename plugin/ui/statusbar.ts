@@ -71,8 +71,7 @@ export class StatusBar {
 
   private setupMobileStatus() {
     // Native-style button matching .view-actions children
-    this.mobileEl = document.createElement("button");
-    this.mobileEl.className = "clickable-icon view-action geode-mobile-status";
+    this.mobileEl = createEl("button", { cls: "clickable-icon view-action geode-mobile-status" });
     this.mobileEl.dataset.testid = "geode-mobile-status";
     this.mobileEl.setAttribute("aria-label", "Geode sync status");
     this.mobileEl.addEventListener("click", (evt) => this.openMenu(evt));
@@ -276,7 +275,7 @@ export class StatusBar {
 
     if (this.mobileIcon !== state.icon) {
       this.mobileIconEl?.remove();
-      const iconEl = document.createElement("span");
+      const iconEl = createSpan();
       setIcon(iconEl, state.icon);
       el.appendChild(iconEl);
       this.mobileIconEl = iconEl;

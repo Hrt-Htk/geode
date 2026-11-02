@@ -62,7 +62,7 @@ test("issue561 rekey copy: cancel mid-run keeps old keys + sync; a full run swit
     await expect.poll(async () => await readGeodeStatusBar(pair.A.win), { timeout: 15_000 }).toBe(
       "Geode: locked",
     );
-    await pair.A.eval(`app.commands.executeCommandById("geode:geode-unlock"); return true;`);
+    await pair.A.eval(`app.commands.executeCommandById("geode:unlock"); return true;`);
     const unlockModal = pair.A.win.locator('.modal:has([data-testid="geode-passphrase-input"])');
     await expect(unlockModal).toBeVisible({ timeout: 10_000 });
     await unlockModal.locator('[data-testid="geode-passphrase-input"]').fill(PASSPHRASE);

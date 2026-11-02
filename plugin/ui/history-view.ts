@@ -15,7 +15,7 @@ import { alignLines } from "./line-diff.ts";
 /** Periods revealed before "Show older" also pages the chain (`nextUpTo`). */
 export const PERIODS_PER_PAGE = 4;
 
-export const HISTORY_ENTRY_TITLE = "Geode: Show file history";
+export const HISTORY_ENTRY_TITLE = "Show file history";
 export const OLDER_BUTTON = "Show older";
 export const OLDER_ERROR_TEXT = "Couldn't load older versions.";
 export const RETRY_BUTTON = "Retry";

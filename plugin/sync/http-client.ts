@@ -3,6 +3,7 @@ import { log } from "../plumbing/log.ts";
 import { httpBase } from "../plumbing/scheme.ts";
 import { toArrayBuffer } from "../plumbing/bytes.ts";
 import { retryBusy } from "../plumbing/retry.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 export interface TransportHttpRequest {
   url: string;
@@ -19,8 +20,9 @@ export interface TransportHttpResponse {
 export type TransportHttpFn = (req: TransportHttpRequest) => Promise<TransportHttpResponse>;
 
 // Platform HTTP injectable: requestUrl on desktop, fetch on mobile (#133).
+// The default is the renderer's fetch, for tests and before wirePlatformHttp runs.
 let transportHttp: TransportHttpFn = async ({ url, method, headers, body }) => {
-  const res = await fetch(url, {
+  const res = await windowGlobal.fetch(url, {
     method,
     headers,
     body: body ? toArrayBuffer(body) : undefined,
@@ -72,7 +74,7 @@ export class HttpClient {
         if (attempt < BLOB_RETRY_MAX) {
           const delay = BLOB_RETRY_BASE_MS * 2 ** attempt;
           log.debug("blob retry", { hash, attempt, delay });
-          await new Promise((r) => setTimeout(r, delay));
+          await new Promise((r) => windowGlobal.setTimeout(r, delay));
         }
       }
     }

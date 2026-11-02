@@ -35,6 +35,7 @@ async function runReconcile(
     isSyncable,
     false,
     massDeleteGuard(),
+    ".obsidian",
   );
   r.start(); // sets isRunning; run() no-ops without it
   await r.run(true);

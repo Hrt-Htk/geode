@@ -1,4 +1,5 @@
 import { log } from "../plumbing/log.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 export const COMMIT_TIMEOUT = 30_000;
 
@@ -41,7 +42,7 @@ export interface CommitChannelEnv {
 export class CommitChannel {
   private pendingCommits: PendingCommit[] = [];
   private commitInFlight: PendingCommit | null = null;
-  private commitTimer: ReturnType<typeof setTimeout> | null = null;
+  private commitTimer: number | null = null;
 
   constructor(private env: CommitChannelEnv) {}
 
@@ -113,7 +114,7 @@ export class CommitChannel {
 
   private armCommitTimeout(): void {
     this.cancelCommitTimeout();
-    this.commitTimer = setTimeout(() => {
+    this.commitTimer = windowGlobal.setTimeout(() => {
       log.warn("commit timeout", { path_hash: this.commitInFlight?.req.path_hash });
       this.settle({ kind: "error", message: "commit timeout" });
       this.env.closeSocket();
@@ -122,7 +123,7 @@ export class CommitChannel {
 
   private cancelCommitTimeout(): void {
     if (this.commitTimer) {
-      clearTimeout(this.commitTimer);
+      windowGlobal.clearTimeout(this.commitTimer);
       this.commitTimer = null;
     }
   }

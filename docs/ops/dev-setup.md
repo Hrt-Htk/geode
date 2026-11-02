@@ -153,7 +153,9 @@ files (the CJS libsodium entry, see the comment in `deno.json`), inlines the lib
 module (`plugin/_generated/`), and copies the manifest, `versions.json` and `styles.css` into
 `plugin-dist/`. The manifest is written by `stampManifest` (`scripts/manifest-stamp.ts`) with the
 released version from `package.json`, not the root manifest's promoted one (#22). `--watch` rebuilds on
-change. It does not talk to a running Obsidian.
+change. It does not talk to a running Obsidian. After a non-watch build it reads `main.js` back and
+fails on any `require("node:...")` at load, because mobile has no Node (#15): Node builtins must sit
+inside a function behind `Platform.isDesktop`.
 
 Why the WASM is inlined and patched: libsodium's Emscripten loader fetches its `.wasm` file at init,
 and that request never resolves in Obsidian's Electron window, so the plugin would hang on unlock. The
@@ -161,7 +163,8 @@ build therefore pulls the WebAssembly module out of the JS the sumo build alread
 (`extractEmbeddedWasm`), writes it as base64 (`plugin/_generated/libsodium-wasm-base64.ts`), and
 annotates the libsodium source at `var Module = exports;` with an `instantiateWasm` hook that builds
 the instance synchronously from those bytes. `plugin/main.ts` decodes the base64 into
-`globalThis.__GEODE_LIBSODIUM_WASM__` before libsodium loads. libsodium is more than half of the
+`window.__GEODE_LIBSODIUM_WASM__` before libsodium loads (the renderer's `window` is its `globalThis`,
+which is what the patched read resolves). libsodium is more than half of the
 resulting `main.js` (about 3.5 MB), which is why the bundle is that size; it is also why the plugin
 fetches nothing from the network at runtime.
 

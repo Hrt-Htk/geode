@@ -1,3 +1,4 @@
+import { dirname } from "@std/path";
 import { arraysEqual } from "./helpers/bytes.ts";
 import { serveOnPortZero } from "./helpers/port.ts";
 import { openDb } from "../server/db.ts";
@@ -746,15 +747,26 @@ export class TestPlugin {
     }
   }
 
-  async exportDecryptedVault(targetDir: string): Promise<ExportStats> {
+  async exportDecryptedVault(
+    targetDir: string,
+    /** Overrides the on-disk writer, so a test can assert the destinations it receives. */
+    write: (destination: string, bytes: Uint8Array) => Promise<void> = writeExportedFileToDisk,
+  ): Promise<ExportStats> {
     if (!this.keys) {
       throw new Error("plugin not started");
     }
     return await exportDecryptedVault(targetDir, {
       transport: this.transport,
       keys: this.keys,
+      write,
     });
   }
+}
+
+/** The plugin's export writer without the desktop gate: Deno writes the file directly. */
+async function writeExportedFileToDisk(destination: string, bytes: Uint8Array): Promise<void> {
+  await Deno.mkdir(dirname(destination), { recursive: true });
+  await Deno.writeFile(destination, bytes);
 }
 
 // ── Test server ────────────────────────────────────────────────────────

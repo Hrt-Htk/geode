@@ -6,6 +6,7 @@ import {
   ROTATE_ADMIN_TOKEN_NAME,
 } from "./device-status.ts";
 import { type DevicesViewHost, openDevicesView } from "./devices-view.ts";
+import { windowGlobal } from "../plumbing/window.ts";
 
 // #447: settings Devices section is one summary row "N devices · M behind" +
 // [Manage] opening the Devices view. Loads with the device token (no admin
@@ -48,7 +49,7 @@ export function renderSettingsDevicesSection(
 
   void refresh();
   // #502: register with the plugin so a disable/unload (BRAT reload) clears the timer
-  const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+  const timer = windowGlobal.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
   host.registerInterval(timer);
-  return { dispose: () => clearInterval(timer) };
+  return { dispose: () => windowGlobal.clearInterval(timer) };
 }

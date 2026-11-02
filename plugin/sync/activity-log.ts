@@ -4,6 +4,8 @@
 // search, relative vs absolute time. No I/O here: `now` is injected and
 // persistence is serialize/parse; the ActivityRecorder wires throttled writes.
 
+import { windowGlobal } from "../plumbing/window.ts";
+
 export type ActivityKind =
   | "upload"
   | "download"
@@ -311,7 +313,7 @@ export function parseActivity(json: string | null): ActivityEntry[] | null {
 /** Plugin-scope recorder: throttled trailing writes, torn-load → empty. */
 export class ActivityRecorder {
   readonly entries = new Map<string, ActivityEntry>();
-  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistTimer: number | null = null;
 
   constructor(
     private ctx: {
@@ -340,7 +342,7 @@ export class ActivityRecorder {
 
   clear(): void {
     if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
+      windowGlobal.clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
     this.entries.clear();
@@ -348,7 +350,7 @@ export class ActivityRecorder {
 
   flush(): void {
     if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
+      windowGlobal.clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
     this.ctx.persist(serializeActivity(this.entries.values()));
@@ -356,7 +358,7 @@ export class ActivityRecorder {
 
   private schedulePersist(): void {
     if (this.persistTimer) return;
-    this.persistTimer = setTimeout(() => {
+    this.persistTimer = windowGlobal.setTimeout(() => {
       this.persistTimer = null;
       try {
         this.ctx.persist(serializeActivity(this.entries.values()));

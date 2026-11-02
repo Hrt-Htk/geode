@@ -235,6 +235,8 @@ This is what keeps the plugin correct against edits it never saw a vault event f
 - On every go-live: `SyncManager.startReconciler` stops the previous reconciler first, so reconnects
   never leave a second scanner running (#622).
 - "Reconcile now" forces a pass; otherwise a run within half the interval is skipped.
+- The config dir is a constructor input (`Vault#configDir`, passed by `SyncManager`), never assumed to
+  be `.obsidian`: users can rename it.
 
 ### Algorithm
 
@@ -481,7 +483,7 @@ the path and the local copy to a conflict file (`merge.md` §6).
 | `sync/replay.ts`, `replay-coalesce.ts`, `version-state.ts` | inbound pipeline, version queue, applied-version cache, version banner state |
 | `sync/history-fetch.ts`, `history-restore.ts`, `ui/history-*` | file history walk, preview and restore (follows rename notes) |
 | `sync/conflicts.ts`, `conflict-list.ts`, `conflict-resolve.ts`, `ui/conflicts-modal*`, `ui/conflict-review-*` | conflict naming/recognition, the conflicts list, the per file review, resolution |
-| `sync/export-vault.ts`, `recovery.ts` | export a decrypted copy; resync from scratch |
+| `sync/export-vault.ts`, `export-writer.ts`, `recovery.ts` | export a decrypted copy (desktop only: `export-writer.ts` is the one Node user); resync from scratch |
 | `sync/rekey-*.ts`, `plumbing/rekey-client.ts`, `rekey-cursor-store.ts` | resumable re-key worker (see `encryption-chunking.md` §1) |
 | `sync/mass-delete-hold.ts` | the #601 guard's thresholds, hold record and review |
 | `sync/activity-log.ts`, `backup-stamp.ts` | per-device activity feed; last-backup stamp |
@@ -561,6 +563,7 @@ retention floor (#677, `../ops/trash-soft-delete.md` §5).
 | `plumbing/vault-lock.ts`, `key-cache.ts` | unlock/lock/leave, key cache |
 | `plumbing/log.ts`, `commands.ts`, `atomic-write.ts`, `bytes.ts`, `errors.ts` | log ring buffer, palette commands, file helpers |
 | `plumbing/http-platform.ts`, `scheme.ts`, `server-address.ts`, `server-host.ts` (`ui/`) | transport selection, URL schemes/host handling |
+| `plumbing/window.ts` | `windowGlobal`: the renderer's window for timers and the default transport (popout windows need it; Deno tests only have `self`) |
 | `plumbing/provisioning-client.ts`, `rekey-client.ts`, `trash-client.ts`, `storage-client.ts`, `scope-pending.ts` | server calls outside the sync core |
 | `sync/transport.ts`, `http-client.ts`, `commit-channel.ts`, `commit-queue.ts` | connectivity, HTTP, commit serialization and queueing |
 | `sync/events.ts`, `reconciler.ts`, `enumerate-disk.ts`, `vault-io.ts` | vault → op translation, full scans, disk IO |

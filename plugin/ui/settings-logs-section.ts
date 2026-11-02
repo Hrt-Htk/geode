@@ -101,7 +101,7 @@ export class SettingsLogsSection {
   }
 
   private appendEntry(entry: LogEntry): void {
-    const line = this.boxEl.createEl("div", { cls: `geode-log-line geode-log-${entry.level}` });
+    const line = this.boxEl.createDiv({ cls: `geode-log-line geode-log-${entry.level}` });
     line.setText(formatLogLine(entry));
   }
 

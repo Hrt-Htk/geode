@@ -42,6 +42,7 @@ Deno.test("reconciler picks up .obsidian/ files after setSyncObsidianConfig(true
     makeIsSyncable(true),
     false, // syncObsidianConfig = false: .obsidian/ discovery is OFF
     massDeleteGuard(),
+    ".obsidian",
   );
 
   reconciler.start();

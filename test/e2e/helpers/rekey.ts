@@ -189,7 +189,7 @@ export async function assertSwitchLanded(
   await expect.poll(async () => await readGeodeStatusBar(inst.win), { timeout: 15_000 }).toBe(
     "Geode: locked",
   );
-  await inst.eval(`app.commands.executeCommandById("geode:geode-unlock"); return true;`);
+  await inst.eval(`app.commands.executeCommandById("geode:unlock"); return true;`);
   const d = inst as unknown as MobileUI;
   await expect.poll(() => present(d, '[data-testid="geode-passphrase-input"]'), { timeout: 10_000 })
     .toBe(true);
