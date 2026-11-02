@@ -1,3 +1,4 @@
+import { dirname } from "@std/path";
 import { arraysEqual } from "./helpers/bytes.ts";
 import { serveOnPortZero } from "./helpers/port.ts";
 import { openDb } from "../server/db.ts";
@@ -757,7 +758,6 @@ export class TestPlugin {
     return await exportDecryptedVault(targetDir, {
       transport: this.transport,
       keys: this.keys,
-      // The plugin's writer is desktop only (obsidian Platform); Deno writes directly.
       write,
     });
   }
@@ -765,7 +765,6 @@ export class TestPlugin {
 
 /** The plugin's export writer without the desktop gate: Deno writes the file directly. */
 async function writeExportedFileToDisk(destination: string, bytes: Uint8Array): Promise<void> {
-  const { dirname } = await import("node:path");
   await Deno.mkdir(dirname(destination), { recursive: true });
   await Deno.writeFile(destination, bytes);
 }

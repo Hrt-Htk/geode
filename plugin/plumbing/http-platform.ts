@@ -13,7 +13,6 @@ export function wirePlatformHttp(): void {
   setHttpImpl(async ({ url, method, headers, body }) => {
     const payload = body instanceof Uint8Array ? toArrayBuffer(body) : body;
     if (Platform.isMobile) {
-      // windowGlobal, not bare `fetch`: the scanner bans that global and forbids disabling it.
       const res = await windowGlobal.fetch(url, { method, headers, body: payload });
       return { status: res.status, text: await res.text() };
     }
