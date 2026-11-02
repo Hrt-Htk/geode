@@ -1208,8 +1208,9 @@ body:not(.is-phone) .geode-history-modal .modal-content {
 }
 
 .geode-history-list {
+  /* #29: never shrinks, so the version's content cannot take width from it. */
+  flex: none;
   width: 40%;
-  min-width: 0;
   overflow-y: auto;
   border-right: 1px solid var(--background-modifier-border);
 }

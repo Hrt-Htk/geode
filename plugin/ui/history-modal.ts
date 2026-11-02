@@ -108,6 +108,10 @@ export class FileHistoryModal extends Modal {
   private olderFailed = false;
   private view: HistoryView | null = null;
   private listScroll = 0;
+  // #29: what a click redraws: each lives until the next full render.
+  private subEl: HTMLElement | null = null;
+  private listEl: HTMLElement | null = null;
+  private previewEl: HTMLElement | null = null;
   private disposed = false;
   private pathHash: string;
   private pane: HistoryPane;
@@ -123,7 +127,7 @@ export class FileHistoryModal extends Modal {
       keys: deps.keys,
       getBlob: (hash) => deps.source.getBlob(hash),
       current: () => newestLive(this.walk.rows()),
-      onChange: () => this.render(),
+      onChange: () => this.renderPreview(),
       onToggleDiff: () => this.toggleDiff(),
       onRestore: () => this.confirmRestore(),
     });
@@ -177,7 +181,9 @@ export class FileHistoryModal extends Modal {
     const names = await this.deps.remoteNames();
     if (!names || this.disposed) return;
     for (const [id, name] of names) this.names.set(id, name);
-    this.render();
+    this.renderSub();
+    this.renderList();
+    this.pane.setMeta(this.meta());
   }
 
   private showSelected(): void {
@@ -191,7 +197,7 @@ export class FileHistoryModal extends Modal {
     if (!view || this.olderLoading) return;
     if (visibleRows(this.items(), view.shown).morePeriods) {
       this.view = showOlder(view);
-      this.render();
+      this.renderList();
       return;
     }
     if (this.walk.done) return;
@@ -202,7 +208,7 @@ export class FileHistoryModal extends Modal {
   private async loadOlder(): Promise<void> {
     this.olderLoading = true;
     this.olderFailed = false;
-    this.render();
+    this.renderList();
     try {
       await this.walk.next();
       if (this.disposed) return;
@@ -212,20 +218,20 @@ export class FileHistoryModal extends Modal {
       this.olderFailed = true;
     }
     this.olderLoading = false;
-    this.render();
+    this.renderList();
   }
 
+  /** The whole window: a load, a retry, a restore, or the phone switching panes. */
   private render(): void {
     if (this.disposed) return;
     const c = this.contentEl;
     const view = this.view;
     const head = this.walk.segments[0]?.versions[0];
     c.empty();
+    this.subEl = this.listEl = this.previewEl = null;
     if (view && head && this.walk.opensWithHistory()) {
-      c.createDiv({
-        cls: "geode-history-sub",
-        text: historySubtitle(this.deps.path, deviceNameLabel(head.device_id, this.names)),
-      });
+      this.subEl = c.createDiv({ cls: "geode-history-sub" });
+      this.renderSub();
       if (this.deps.ceiling !== undefined) {
         c.createDiv({ cls: "geode-history-capped", text: NAME_CAPPED_TEXT });
       }
@@ -239,17 +245,44 @@ export class FileHistoryModal extends Modal {
       }
     } else if (!view || !this.walk.opensWithHistory()) {
       this.renderEmpty(body);
-    } else if (Platform.isMobile) {
-      this.renderMobile(body, view);
     } else {
-      this.renderList(body.createDiv({ cls: "geode-history-list" }), view);
-      this.pane.render(body.createDiv({ cls: "geode-history-preview" }), view, this.meta());
+      // Phone: the list, then one version with Back: stacked, never side by side.
+      const phone = Platform.isMobile;
+      if (!phone || view.pane === "list") {
+        const listEl = (this.listEl = body.createDiv({ cls: "geode-history-list" }));
+        listEl.addEventListener("scroll", () => {
+          this.listScroll = listEl.scrollTop;
+        });
+      }
+      if (!phone || view.pane === "preview") {
+        this.previewEl = body.createDiv({ cls: "geode-history-preview" });
+      }
+      this.renderList();
+      this.renderPreview();
     }
     new Setting(c).addButton((b) => {
       b.setCta().setButtonText(DONE_BUTTON);
       b.buttonEl.dataset.testid = "geode-history-done";
       b.onClick(() => this.close());
     });
+  }
+
+  private renderSub(): void {
+    const head = this.walk.segments[0]?.versions[0];
+    if (!this.subEl || !head) return;
+    this.subEl.setText(
+      historySubtitle(this.deps.path, deviceNameLabel(head.device_id, this.names)),
+    );
+  }
+
+  /** The selected version, with Back on the phone. */
+  private renderPreview(): void {
+    const preview = this.previewEl;
+    const view = this.view;
+    if (this.disposed || !preview || !view) return;
+    preview.empty();
+    if (Platform.isMobile) this.renderBack(preview);
+    this.pane.render(preview, view, this.meta());
   }
 
   private meta(): string | null {
@@ -267,25 +300,23 @@ export class FileHistoryModal extends Modal {
     box.createDiv({ cls: "geode-history-empty-desc", text: EMPTY_DESC });
   }
 
-  /** Phone: the list, then one version with Back: stacked, never side by side. */
-  private renderMobile(parent: HTMLElement, view: HistoryView): void {
-    if (view.pane === "list") {
-      this.renderList(parent.createDiv({ cls: "geode-history-list" }), view);
-      return;
-    }
-    const preview = parent.createDiv({ cls: "geode-history-preview" });
+  private renderBack(preview: HTMLElement): void {
     const back = preview.createDiv({ cls: "geode-history-back" });
     back.dataset.testid = "geode-history-back";
     setIcon(back.createSpan(), "arrow-left");
     back.createSpan({ text: BACK_BUTTON });
     back.onClickEvent(() => {
-      this.view = backToList(view);
+      if (!this.view) return;
+      this.view = backToList(this.view);
       this.render();
     });
-    this.pane.render(preview, view, this.meta());
   }
 
-  private renderList(listEl: HTMLElement, view: HistoryView): void {
+  private renderList(): void {
+    const listEl = this.listEl;
+    const view = this.view;
+    if (!listEl || !view) return;
+    listEl.empty();
     const { rows, morePeriods } = visibleRows(this.items(), view.shown);
     for (const item of rows) {
       if (item.kind === "period") this.renderPeriod(listEl, view, item);
@@ -294,11 +325,8 @@ export class FileHistoryModal extends Modal {
       else listEl.createDiv({ cls: "geode-history-note is-faint", text: gapLabel() });
     }
     this.renderOlder(listEl, morePeriods);
-    // Selecting a save re-renders the modal; the list must not jump.
+    // A rebuilt list, or the phone's list again after Back, must not jump.
     listEl.scrollTop = this.listScroll;
-    listEl.addEventListener("scroll", () => {
-      this.listScroll = listEl.scrollTop;
-    });
   }
 
   /** #583: the boundary between two names: the rows under it live at `from`. */
@@ -331,10 +359,7 @@ export class FileHistoryModal extends Modal {
       return;
     }
     // A deletion holds no content to preview: the tap only shows the text it cut off.
-    row.onClickEvent(() => {
-      this.view = toggleExpanded(view, event.key);
-      this.render();
-    });
+    row.onClickEvent(() => this.toggle(event.key));
   }
 
   private renderOlder(listEl: HTMLElement, morePeriods: boolean): void {
@@ -369,8 +394,7 @@ export class FileHistoryModal extends Modal {
     head.onClickEvent(() => this.select(period.saves[period.saves.length - 1].key));
     chevron.onClickEvent((event) => {
       event.stopPropagation();
-      this.view = toggleExpanded(view, key);
-      this.render();
+      this.toggle(key);
     });
     if (!view.expanded.has(key)) return;
     for (const save of period.saves) {
@@ -398,19 +422,32 @@ export class FileHistoryModal extends Modal {
     button.onClickEvent(retry);
   }
 
+  /** Opening or closing a row changes the list only. */
+  private toggle(key: string): void {
+    if (!this.view) return;
+    this.view = toggleExpanded(this.view, key);
+    this.renderList();
+  }
+
+  /** The highlight and the preview; the phone swaps the list for the preview. */
   private select(key: string): void {
     const view = this.view;
     if (!view) return;
     this.view = selectSave(view, key);
     this.showSelected();
-    this.render();
+    if (Platform.isMobile) {
+      this.render();
+      return;
+    }
+    this.renderList();
+    this.renderPreview();
   }
 
   private toggleDiff(): void {
     const view = this.view;
     if (!view) return;
     this.view = toggleDiff(view);
-    this.render();
+    this.renderPreview();
     if (this.view.showDiff) this.pane.ensureBaseline();
   }
 
