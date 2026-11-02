@@ -15,8 +15,8 @@ import { FilePreview } from "./preview-render.ts";
 
 // #464: the history modal's right pane: the selected version (rendered markdown,
 // an image, or a binary line), the Changes toggle, and the line diff against the
-// newest live version. The modal hands it state and re-renders; this module owns the
-// loaded preview, the diff baseline, and their disposal.
+// newest live version. The modal hands it state and redraws it alone (#29); this
+// module owns the loaded preview, the diff baseline, and their disposal.
 
 export type HistoryPaneDeps = {
   path: string;
@@ -24,7 +24,7 @@ export type HistoryPaneDeps = {
   getBlob: (hash: string) => Promise<Uint8Array>;
   /** The diff baseline: newest version whose content still exists. */
   current: () => VersionRecord | null;
-  /** An async load landed: re-render. */
+  /** An async load landed: redraw the pane. */
   onChange: () => void;
   /** The toolbar toggle (the modal owns the view state). */
   onToggleDiff: () => void;
@@ -39,6 +39,7 @@ export class HistoryPane {
   private currentFailed = false;
   private currentLoading = false;
   private wanted: string | null = null;
+  private metaEl: HTMLElement | null = null;
   private file: FilePreview;
 
   constructor(app: App, private deps: HistoryPaneDeps) {
@@ -83,7 +84,12 @@ export class HistoryPane {
     const pane = container.createDiv({ cls: "geode-history-pane" });
     pane.dataset.testid = "geode-history-pane";
     this.renderPane(pane, state?.mode ?? "version");
-    if (meta) pane.createDiv({ cls: "geode-history-meta", text: meta });
+    this.metaEl = meta ? pane.createDiv({ cls: "geode-history-meta", text: meta }) : null;
+  }
+
+  /** Device names landed: retitle the caption without rebuilding the version. */
+  setMeta(meta: string | null): void {
+    if (meta) this.metaEl?.setText(meta);
   }
 
   dispose(): void {

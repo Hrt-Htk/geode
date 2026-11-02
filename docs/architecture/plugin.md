@@ -519,6 +519,12 @@ key. `ui/line-diff.ts` is the one line alignment, shared with the history diff. 
 Keep conflict name the files; which `keep-mine`/`keep-theirs` they run inverts with
 `conflictFileIsMine`. Binaries keep their thumbnails and in row keep actions.
 
+**History window** (`ui/history-modal.ts` + `history-pane.ts`): a click redraws only what it
+changed. Opening or closing a day rebuilds the list; selecting a version, the list and the preview;
+Changes, the preview; device names landing, the list, the subtitle and the caption text. Only a
+load, a retry, a restore or the phone switching panes rebuilds the window. The list is 40% wide and
+never shrinks, so a version's content cannot take width from it.
+
 **History labels** (`ui/history-periods.ts`, `ui/history-view.ts`, `obsidian`-free): a deletion and
 a trash restore are rows of their own between the editing periods, like the rename marker:
 `Today 14:06 · Deleted on <device>`, `Today 14:08 · Restored from trash on <device>`. A row is one
@@ -583,6 +589,8 @@ reviewer can check against those gates:
   not re-committed (self-write suppression plus the row's identity hash).
 - A rename is one marker and one note, never a re-upload. A rename missed while Obsidian was closed is
   paired only on exact 1:1 content, and the mass-delete guard holds everything when it trips.
+- The history window keeps the list's width across clicks and keeps the preview when a day opens or
+  closes (`test/e2e/scenarios/history-redraw.spec.ts`).
 - A conflict never loses a side: the path holds the server copy, the conflict file holds the local one,
   and only a `clean` outcome commits (`merge.md` §6).
 - Mobile: a cached-key launch skips Argon2; a resumed app reconnects and reconciles; HTTP goes through
