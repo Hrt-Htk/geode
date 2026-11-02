@@ -248,7 +248,12 @@ export class FileHistoryModal extends Modal {
     } else {
       // Phone: the list, then one version with Back: stacked, never side by side.
       const phone = Platform.isMobile;
-      if (!phone || view.pane === "list") this.listEl = this.newList(body);
+      if (!phone || view.pane === "list") {
+        const listEl = (this.listEl = body.createDiv({ cls: "geode-history-list" }));
+        listEl.addEventListener("scroll", () => {
+          this.listScroll = listEl.scrollTop;
+        });
+      }
       if (!phone || view.pane === "preview") {
         this.previewEl = body.createDiv({ cls: "geode-history-preview" });
       }
@@ -268,14 +273,6 @@ export class FileHistoryModal extends Modal {
     this.subEl.setText(
       historySubtitle(this.deps.path, deviceNameLabel(head.device_id, this.names)),
     );
-  }
-
-  private newList(parent: HTMLElement): HTMLElement {
-    const listEl = parent.createDiv({ cls: "geode-history-list" });
-    listEl.addEventListener("scroll", () => {
-      this.listScroll = listEl.scrollTop;
-    });
-    return listEl;
   }
 
   /** The selected version, with Back on the phone. */

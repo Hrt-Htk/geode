@@ -35,8 +35,8 @@ async function listWidth(o: ObsidianInstance): Promise<number> {
   );
 }
 
-/** Tag the preview's current content node, so a rebuild shows as a new node. */
-async function tagPreview(o: ObsidianInstance, testid: string): Promise<void> {
+/** Tag a node in the window, so a rebuild shows as a new node. */
+async function tagNode(o: ObsidianInstance, testid: string): Promise<void> {
   await o.eval(`
     const el = document.querySelector(${JSON.stringify(`${MODAL} [data-testid="${testid}"]`)});
     if (!el) throw new Error("missing " + ${JSON.stringify(testid)});
@@ -45,7 +45,7 @@ async function tagPreview(o: ObsidianInstance, testid: string): Promise<void> {
   `);
 }
 
-async function previewKept(o: ObsidianInstance, testid: string): Promise<boolean> {
+async function nodeKept(o: ObsidianInstance, testid: string): Promise<boolean> {
   return await o.eval<boolean>(
     `document.querySelector(${
       JSON.stringify(`${MODAL} [data-testid="${testid}"]`)
@@ -92,10 +92,10 @@ test("history window: a click redraws only what it changed and the list keeps it
     await o.win.screenshot({ path: shotPath("history-redraw-01-open.png") });
 
     /* ---- Opening the day rebuilds the list, not the preview ---- */
-    await tagPreview(o, "geode-history-markdown");
+    await tagNode(o, "geode-history-markdown");
     same("open day", await clickAndMeasure(o, '[data-testid="geode-history-chevron"]'));
     await expect(o.win.locator(`${MODAL} [data-testid="geode-history-save"]`)).toHaveCount(3);
-    expect.soft(await previewKept(o, "geode-history-markdown"), "open day kept the preview")
+    expect.soft(await nodeKept(o, "geode-history-markdown"), "open day kept the preview")
       .toBe(true);
     await o.win.screenshot({ path: shotPath("history-redraw-02-day-open.png") });
 
@@ -113,27 +113,20 @@ test("history window: a click redraws only what it changed and the list keeps it
     same("short save landed", await listWidth(o));
 
     /* ---- Changes swaps the preview only; the list stays put ---- */
-    await o.win.locator(`${MODAL} [data-testid="geode-history-chevron"]`).evaluate((el) =>
-      el.setAttribute("data-redraw-tag", "kept")
-    );
+    await tagNode(o, "geode-history-chevron");
     same("changes", await clickAndMeasure(o, '[data-testid="geode-history-diff-toggle"]'));
     await expect(o.win.locator(`${MODAL} [data-testid="geode-history-diff"]`)).toBeVisible({
       timeout: 15_000,
     });
-    expect.soft(
-      await o.eval<boolean>(
-        `document.querySelector('${MODAL} [data-testid="geode-history-chevron"]')?.dataset.redrawTag === "kept"`,
-      ),
-      "Changes kept the list",
-    ).toBe(true);
+    expect.soft(await nodeKept(o, "geode-history-chevron"), "Changes kept the list").toBe(true);
     same("diff landed", await listWidth(o));
     await o.win.screenshot({ path: shotPath("history-redraw-04-changes.png") });
 
     /* ---- Closing the day keeps the diff as it is ---- */
-    await tagPreview(o, "geode-history-diff");
+    await tagNode(o, "geode-history-diff");
     same("close day", await clickAndMeasure(o, '[data-testid="geode-history-chevron"]'));
     await expect(o.win.locator(`${MODAL} [data-testid="geode-history-save"]`)).toHaveCount(0);
-    expect.soft(await previewKept(o, "geode-history-diff"), "close day kept the preview")
+    expect.soft(await nodeKept(o, "geode-history-diff"), "close day kept the preview")
       .toBe(true);
     await o.win.screenshot({ path: shotPath("history-redraw-05-day-closed.png") });
   } finally {
