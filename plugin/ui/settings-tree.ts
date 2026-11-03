@@ -40,3 +40,16 @@ export function definitionsOf<Row>(sections: TreeSection<Row>[]): TreeGroup<Row>
 export function wholeAtLeastOne(value: number): string | undefined {
   return Number.isInteger(value) && value >= 1 ? undefined : "Enter a whole number, 1 or more.";
 }
+
+/** A number control's typed text: the value to store, or the reason it is refused with the stored
+ * value put back. display() shows both; Obsidian applies the same validation on 1.13+ before
+ * setControlValue, so the two paths agree on what is stored. */
+export async function numberControlChange(
+  validate: ((value: number) => string | void | Promise<string | void>) | undefined,
+  typed: string,
+  stored: number,
+): Promise<{ value: number; error?: string }> {
+  const value = Number(typed);
+  const error = await validate?.(value);
+  return error ? { value: stored, error } : { value };
+}

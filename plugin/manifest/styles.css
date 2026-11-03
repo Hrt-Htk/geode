@@ -54,13 +54,11 @@
 }
 
 /* Collapsible settings sections (#134) */
-.geode-collapsible-heading,
-.geode-advanced-heading {
+.geode-collapsible-heading {
   cursor: pointer;
   user-select: none;
 }
 
-.geode-advanced-fields.geode-collapsed,
 .geode-section-fields.geode-collapsed {
   display: none;
 }

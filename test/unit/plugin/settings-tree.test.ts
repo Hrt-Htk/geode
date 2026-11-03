@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import {
   definitionsOf,
+  numberControlChange,
   type TreeSection,
   wholeAtLeastOne,
 } from "../../../plugin/ui/settings-tree.ts";
@@ -52,4 +53,16 @@ Deno.test("settings-tree - wholeAtLeastOne accepts whole numbers from 1", () => 
   assertEquals(wholeAtLeastOne(1), undefined);
   assertEquals(wholeAtLeastOne(48), undefined);
   for (const bad of [0, -3, 1.5, NaN]) assertEquals(typeof wholeAtLeastOne(bad), "string");
+});
+
+Deno.test("settings-tree - a rejected number keeps the stored value and says why", async () => {
+  assertEquals(await numberControlChange(wholeAtLeastOne, "30", 45), { value: 30 });
+  assertEquals(await numberControlChange(wholeAtLeastOne, "0", 45), {
+    value: 45,
+    error: "Enter a whole number, 1 or more.",
+  });
+  // An empty field reads as 0, which the validator refuses: the row keeps the stored value.
+  assertEquals((await numberControlChange(wholeAtLeastOne, "", 45)).value, 45);
+  // A row without a validator takes what was typed.
+  assertEquals(await numberControlChange(undefined, "7", 45), { value: 7 });
 });

@@ -2,21 +2,21 @@ import {
   Setting,
   type SettingControl,
   type SettingDefinitionControl,
-  type SettingDefinitionEmpty,
   type SettingDefinitionRender,
 } from "obsidian";
 import { type CollapsibleSection, createCollapsibleSection } from "./collapsible-section.ts";
-import type { TreeSection } from "./settings-tree.ts";
+import { numberControlChange, type TreeSection } from "./settings-tree.ts";
+
+/** A render row's body. The definitions contract also hands over a `SettingGroup` that this path
+ * does not build, so the row declares the one argument both hosts give it. */
+type RowRender = (setting: Setting) => void | (() => void);
 
 /** One settings row: a definition on Obsidian 1.13+, a Setting this file builds before that. */
 export type SettingsRow =
-  | (Omit<SettingDefinitionRender, "render"> & {
-    render: (setting: Setting) => void | (() => void);
-  })
-  | SettingDefinitionControl
-  | SettingDefinitionEmpty;
+  | (Omit<SettingDefinitionRender, "render"> & { render: RowRender })
+  | SettingDefinitionControl;
 
-export type ControlStore = {
+type ControlStore = {
   getControlValue(key: string): unknown;
   setControlValue(key: string, value: unknown): void | Promise<void>;
 };
@@ -58,16 +58,13 @@ export class LegacySettingsView {
   }
 
   private headed(container: HTMLElement, id: string, heading: string): CollapsibleSection {
-    const section = createCollapsibleSection(container, heading, {
+    return createCollapsibleSection(container, heading, {
       open: !this.collapsed.has(id),
       onToggle: (open) => {
         if (open) this.collapsed.delete(id);
         else this.collapsed.add(id);
       },
     });
-    section.headingEl.addClass(`geode-${id}-heading`);
-    section.fieldsEl.addClass(`geode-${id}-fields`);
-    return section;
   }
 
   private renderRow(fields: HTMLElement, row: SettingsRow): void {
@@ -95,10 +92,17 @@ export class LegacySettingsView {
         t.inputEl.type = "number";
         if (control.min !== undefined) t.inputEl.min = String(control.min);
         t.setValue(String(value));
+        const errorEl = setting.descEl.createDiv({ cls: "geode-error" });
+        errorEl.toggleClass("geode-hidden", true);
         t.inputEl.addEventListener("change", () => {
-          const next = Number(t.inputEl.value);
-          void Promise.resolve(control.validate?.(next)).then((error) => {
-            if (!error) void commit(next);
+          const stored = this.store.getControlValue(control.key) as number;
+          void numberControlChange(control.validate, t.inputEl.value, stored).then((change) => {
+            // A rejected value leaves the row honest: the stored value is back and the reason
+            // shows (Obsidian renders the same message on 1.13+).
+            t.inputEl.value = String(change.value);
+            errorEl.setText(change.error ?? "");
+            errorEl.toggleClass("geode-hidden", change.error === undefined);
+            if (change.error === undefined) void commit(change.value);
           });
         });
       });
