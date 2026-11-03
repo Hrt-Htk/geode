@@ -99,8 +99,7 @@ export class GeodeSettingTab extends PluginSettingTab {
   private statusSection: SettingsStatusSection | null = null;
   private vaultSection: SettingsVaultSection | null = null;
   private logsSection: SettingsLogsSection | null = null;
-  private trashRefresh: (() => void) | null = null;
-  private trashHoldRefresh: (() => void) | null = null;
+  private trash: ReturnType<typeof trashSettingsRows> | null = null;
   // Scroll position to restore when the vault unlocks again within this tab session.
   private savedScrollTop = 0;
   private lastState: TabState | null = null;
@@ -126,7 +125,7 @@ export class GeodeSettingTab extends PluginSettingTab {
       this.statusSection?.updateStatusRow();
       this.logsSection?.refreshDetails();
       this.banners.update();
-      this.trashHoldRefresh?.();
+      this.trash?.syncHold();
       this.refreshDom();
     });
   }
@@ -141,7 +140,9 @@ export class GeodeSettingTab extends PluginSettingTab {
     return tabStateOf(isConfigured(this.plugin.pluginSettings), this.getUnlocked());
   }
 
-  /** #16: Obsidian 1.13+ renders these definitions and indexes them for settings search. */
+  /** #16: Obsidian 1.13+ renders these definitions and indexes them for settings search. A read:
+   * Obsidian re-reads them on every keystroke in the search field, and the live rows stay bound to
+   * the section objects the current DOM was rendered from. */
   getSettingDefinitions(): SettingDefinitionItem[] {
     return this.legacyForTest ? [] : definitionsOf(this.sections());
   }
@@ -155,6 +156,7 @@ export class GeodeSettingTab extends PluginSettingTab {
    * at its top: Leave runs from the Advanced page, which the new definitions no longer hold. */
   refresh(): void {
     if (requireApiVersion("1.13.0")) {
+      this.rebuild();
       this.update();
       const setting = (this.app as unknown as { setting?: SettingsModal }).setting;
       if (setting?.activeTab === this) setting.openTabById(this.plugin.manifest.id);
@@ -164,9 +166,20 @@ export class GeodeSettingTab extends PluginSettingTab {
   }
 
   private renderLegacy(): void {
+    this.rebuild();
     this.containerEl.empty();
     this.legacy.render(this.containerEl, this.sections());
     this.applyLockState();
+  }
+
+  /** A structural change: the tree and the scroll bookkeeping start over. */
+  private rebuild(): void {
+    this.savedScrollTop = 0;
+    this.lastState = null;
+    this.statusSection = null;
+    this.vaultSection = null;
+    this.logsSection = null;
+    this.trash = null;
   }
 
   /** Re-evaluate every `visible` in place, on whichever path rendered the tab. */
@@ -191,15 +204,10 @@ export class GeodeSettingTab extends PluginSettingTab {
     }
   }
 
-  /** The whole tab for the current state: fresh section objects whose rows render on demand. */
+  /** The whole tab for the current state. Section objects are built once and reused, so a re-read
+   * of the definitions (search indexing) cannot unbind the live rows; `rebuild()` starts over. */
   private sections(): TreeSection<SettingsRow>[] {
-    this.savedScrollTop = 0;
-    this.lastState = null;
-    this.vaultSection = null;
-    this.logsSection = null;
-    this.trashRefresh = null;
-    this.trashHoldRefresh = null;
-    this.statusSection = new SettingsStatusSection({
+    this.statusSection ??= new SettingsStatusSection({
       app: this.app,
       configured: () => isConfigured(this.plugin.pluginSettings),
       getUnlocked: () => this.getUnlocked(),
@@ -234,7 +242,7 @@ export class GeodeSettingTab extends PluginSettingTab {
   private configuredSections(): TreeSection<SettingsRow>[] {
     const shown = (id: SectionId) => () => tabVisibility(this.state()).sections.includes(id);
     const settings = () => this.plugin.pluginSettings;
-    this.vaultSection = new SettingsVaultSection({
+    this.vaultSection ??= new SettingsVaultSection({
       app: this.app,
       state: () => this.state(),
       settings,
@@ -243,7 +251,7 @@ export class GeodeSettingTab extends PluginSettingTab {
       openRekeyModal: (kind) => this.plugin.openRekeyModal(kind),
       rekeyPaused: () => this.plugin.rekeyPaused(),
     });
-    const trash = trashSettingsRows({
+    this.trash ??= trashSettingsRows({
       settings: this.plugin.pluginSettings,
       saveSettings: () => void this.plugin.saveSettings(),
       openTrashModal: () => this.plugin.openTrashModal(),
@@ -252,17 +260,18 @@ export class GeodeSettingTab extends PluginSettingTab {
       getUnlocked: () => this.getUnlocked(),
       trash: this.plugin.trash,
     });
-    this.trashRefresh = trash.refreshCount;
-    this.trashHoldRefresh = trash.syncHold;
-    this.logsSection = new SettingsLogsSection({
+    this.logsSection ??= new SettingsLogsSection({
       getTransportState: () => this.plugin.getTransportState(),
       getLastSeenSeq: () => this.plugin.getLastSeenSeq(),
       getPendingCount: () => this.plugin.getPendingCount(),
       getRecentLog: () => this.plugin.getRecentLog(),
       exportLog: () => this.plugin.exportLog(),
     });
+    const vaultSection = this.vaultSection;
+    const trash = this.trash;
+    const logsSection = this.logsSection;
     return [
-      { id: "vault", heading: "Vault", kind: "group", rows: this.vaultSection.rows() },
+      { id: "vault", heading: "Vault", kind: "group", rows: vaultSection.rows() },
       {
         id: "devices",
         heading: "Devices",
@@ -298,7 +307,7 @@ export class GeodeSettingTab extends PluginSettingTab {
         id: "logs",
         heading: "Logs",
         kind: "page",
-        rows: this.logsSection.rows(),
+        rows: logsSection.rows(),
         visible: () => shown("advanced")() && this.plugin.pluginSettings.debugLogging,
       },
     ];
@@ -352,15 +361,15 @@ export class GeodeSettingTab extends PluginSettingTab {
     this.statusSection?.setState(state);
     this.vaultSection?.setState(state);
     this.banners.update();
-    this.trashHoldRefresh?.();
+    this.trash?.syncHold();
     this.refreshDom();
     if (state === "unlocked" && prev === "locked") this.containerEl.scrollTop = this.savedScrollTop;
-    this.trashRefresh?.();
+    this.trash?.refreshCount();
   }
 
   /** #446: the TrashModal calls this after any trash change so the settings live count stays in sync. */
   refreshTrashCount(): void {
-    this.trashRefresh?.();
+    this.trash?.refreshCount();
   }
 
   /** A version change only rewrites the version rows; the state rows stay in place. */
