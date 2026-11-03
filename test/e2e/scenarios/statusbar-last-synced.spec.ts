@@ -4,6 +4,7 @@ import { startServer } from "../fixtures/server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { waitForUnlocked } from "../helpers/geode";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 // #135: the status bar's last-synced time refreshes without a reopen.
 
@@ -68,12 +69,9 @@ test("debug pane Status section updates without reopening", async () => {
       if (app.setting && typeof app.setting.close === "function") app.setting.close();
       app.setting.open();
       app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const logs = sections.find((s) =>
-        s.querySelector(".setting-item-heading")?.textContent?.trim() === "Logs");
-      if (logs) logs.querySelector(".geode-collapsible-heading")?.click();
       return true;
     `);
+    await openSettingsPage(obsidian, "Logs");
     await expect(obsidian.win.locator('[data-testid="geode-log-box"]')).toBeVisible({
       timeout: 15_000,
     });

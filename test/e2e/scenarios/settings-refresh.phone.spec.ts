@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { useRemoteServer } from "../fixtures/phone-server";
 import { connectPhone } from "../fixtures/phone-obsidian";
 import { waitForPluginLoaded, waitForUnlocked } from "../helpers/geode";
+import { shownSections } from "../helpers/settings-tab";
 
 // Regression for issue #47: after the setup flow completes, an already-open Settings tab
 // must re-render to the configured state, and the startup setup-wizard must be dismissed
@@ -56,17 +57,11 @@ test("settings tab refreshes to configured state after create", async () => {
     );
     expect(lockPresent).toBe(true);
 
-    // The configured tab also renders the collapsible sections + live sync-status row.
-    const sectionsRendered = await A.eval<boolean>(`
-      (() => {
-        const headings = Array.from(
-          document.querySelectorAll('.geode-section .setting-item-heading'),
-        ).map((h) => h.textContent ?? "");
-        const order = ["Status", "Vault", "Devices", "Sync scope", "Trash", "Advanced"];
-        return order.every((s, i) => headings[i]?.includes(s));
-      })()
-    `);
-    expect(sectionsRendered).toBe(true);
+    // The configured tab also renders every section + the live sync-status row. Logs follows
+    // Advanced only while Debug logging is on, which the phone vault keeps across specs.
+    const sections = await shownSections(A);
+    expect(sections.slice(0, 5)).toEqual(["Vault", "Devices", "Sync scope", "Trash", "Advanced"]);
+    expect(sections.slice(5).every((s) => s === "Logs")).toBe(true);
     expect(
       await A.eval<boolean>(
         `!!document.querySelector('[data-testid="geode-settings-sync-status"]')`,

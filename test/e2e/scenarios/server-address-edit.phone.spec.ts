@@ -4,6 +4,7 @@ import { useRemoteServer } from "../fixtures/phone-server";
 import { waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick, evalSetValue } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 // #424 (phone): the Advanced section shows read-only rows: Server address
 // with [Edit], Vault ID / Device token / Salt with [Copy]. The Edit modal
@@ -46,10 +47,7 @@ test("server address (phone): read-only advanced rows, modal open and cancel", a
       app.setting.openTabById("geode");
       return "ok";
     `);
-    await evalClick(obsidian, ".geode-advanced-heading");
-    await expect(obsidian.win.locator(".geode-advanced-fields:not(.geode-collapsed)")).toHaveCount(
-      1,
-    );
+    await openSettingsPage(obsidian, "Advanced");
 
     /* Read-only rows: values present, [Edit] on the server row, [Copy] on the rest. */
     const serverValue = obsidian.win.locator('[data-testid="geode-settings-adv-server"]');

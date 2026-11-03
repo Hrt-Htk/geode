@@ -5,6 +5,7 @@ import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 // #64: on-device: leave, then the vault's local state files are gone.
 
@@ -48,7 +49,7 @@ test("leave confirmed vault → unconfigured state, no errors (on-device)", asyn
     `);
 
     /* Expand the Advanced section. */
-    await evalClick(obsidian, ".geode-advanced-heading");
+    await openSettingsPage(obsidian, "Advanced");
 
     /* ---- Step 2: Assert "Leave Geode vault" button is present ---- */
     const leavePresent = await obsidian.eval<boolean>(

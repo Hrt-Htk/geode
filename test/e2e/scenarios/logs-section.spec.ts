@@ -5,46 +5,22 @@ import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
 import { openLogsSection, openSettingsTab } from "../helpers/logs";
+import {
+  closeSettingsPage,
+  openSettingsPage,
+  rowShown,
+  setRowControl,
+  shownSections,
+} from "../helpers/settings-tab";
 
 // #434/#453: the Logs section replaced the right-sidebar debug pane. Debug
-// logging on drives a Logs section after Advanced, live and in place (no tab
-// re-render, scroll survives): sync details line with real values, All /
-// Warnings / Errors filter tabs, a fixed-height scrollable monospace log box
-// fed by the real ring buffer, Copy logs, and Debug logging off removes the
-// section. Screenshot gate: expanded with real lines, Errors filter, off.
+// logging on shows the Logs rows (a sub-page after Advanced on Obsidian 1.13+, #16):
+// sync details line with real values, All / Warnings / Errors filter tabs, a
+// fixed-height scrollable monospace log box fed by the real ring buffer, Copy logs.
+// Debug logging off hides the Logs entry in place; on brings it back, still live.
+// Screenshot gate: the page with real lines, Errors filter, off.
 
 const PASSPHRASE = "logs-pass";
-
-const LOGS_HEADING = `.geode-section:has(.setting-item-heading:has-text("Logs"))`;
-
-async function readScroll(o: { eval: <T>(s: string) => Promise<T> }): Promise<number> {
-  return await o.eval<number>(`
-    (() => {
-      const candidates = [".vertical-tab-content", ".modal.mod-settings .modal-content"];
-      for (const sel of candidates) {
-        const el = document.querySelector(sel);
-        if (el && el.scrollTop > 0) return el.scrollTop;
-      }
-      return 0;
-    })()
-  `);
-}
-
-/** Toggle a settings checkbox without the native click's focus-scroll (#134 pattern). */
-async function toggleCheckbox(
-  o: { eval: <T>(s: string) => Promise<T> },
-  sel: string,
-): Promise<void> {
-  await o.eval(`
-    (() => {
-      const el = document.querySelector(${JSON.stringify(sel)});
-      if (!el) throw new Error("toggleCheckbox: no element for " + ${JSON.stringify(sel)});
-      el.checked = !el.checked;
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
-    })()
-  `);
-}
 
 test("logs section: real details/log, filters, in-place toggle, no re-render", async () => {
   test.slow();
@@ -68,19 +44,13 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
     await waitForStatusBar(o.win, "Geode: synced", 60_000);
     await openSettingsTab(o);
 
-    /* ---- 1. The Logs section sits after Advanced, collapsed by default ---- */
-    const headings = (await o.win
-      .locator(".vertical-tab-content .geode-section .setting-item-heading")
-      .allTextContents()).map((h) => h.trim());
-    expect(headings, "section order with Logs last").toEqual(
-      ["Status", "Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"],
-    );
-    await expect(o.win.locator(`${LOGS_HEADING} .geode-section-fields`)).toHaveClass(
-      /geode-collapsed/,
+    /* ---- 1. Logs sits after Advanced, a page entry while Debug logging is on ---- */
+    expect(await shownSections(o), "section order with Logs last").toEqual(
+      ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"],
     );
 
-    /* ---- 2. Expand: real details line, filter tabs, log box with ring lines ---- */
-    await o.win.locator(`${LOGS_HEADING} .geode-collapsible-heading`).click();
+    /* ---- 2. Open: real details line, filter tabs, log box with ring lines ---- */
+    await openSettingsPage(o, "Logs");
     await expect(o.win.locator('[data-testid="geode-log-box"]')).toBeVisible({ timeout: 10_000 });
 
     const details = o.win.locator('[data-testid="geode-log-details"]');
@@ -102,7 +72,7 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
       return true;
     `);
     await o.win.waitForTimeout(300);
-    await o.win.locator(".vertical-tab-content").screenshot({
+    await o.win.locator(".modal.mod-settings").screenshot({
       path: shotPath("434-01-logs-expanded.png"),
     });
 
@@ -148,61 +118,41 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
       return true;
     `);
     await o.win.waitForTimeout(300);
-    await o.win.locator(".vertical-tab-content").screenshot({
+    await o.win.locator(".modal.mod-settings").screenshot({
       path: shotPath("434-02-logs-errors.png"),
     });
 
-    /* ---- 4. In-place toggle: no re-render, scroll survives (#134 pattern) ---- */
-    // Mark Advanced so a full display() would destroy it; scroll to a fixed
-    // offset (not the bottom: removing the last section clamps scrollTop there).
+    /* ---- 4. Debug logging off hides the Logs entry in place; on brings it back ---- */
+    await closeSettingsPage(o);
+    await openSettingsPage(o, "Advanced");
+    await setRowControl(o, "Debug logging");
+    await closeSettingsPage(o);
+    await expect.poll(() => rowShown(o, "Logs"), { timeout: 10_000 }).toBe(false);
+    expect(await shownSections(o)).toEqual(["Vault", "Devices", "Sync scope", "Trash", "Advanced"]);
+
+    /* ---- Screenshot 3: Debug logging off = no Logs entry ---- */
     await o.eval(`
-      const adv = Array.from(document.querySelectorAll(".geode-section"))
-        .find((s) => s.querySelector(".setting-item-heading")?.textContent?.trim() === "Advanced");
-      if (adv) adv.dataset.e2eMarker = "no-rerender";
-      const el = document.querySelector(".vertical-tab-content");
-      if (el) el.scrollTop = 150;
+      document.querySelectorAll(".notice").forEach((n) => n.remove());
+      [...document.querySelectorAll(".modal.mod-settings .setting-item-name")]
+        .find((e) => e.textContent.trim() === "Advanced")?.scrollIntoView({ block: "end" });
       return true;
     `);
-    const markerPresent = (): Promise<boolean> =>
-      o.eval<boolean>(
-        `!!document.querySelector('.geode-section[data-e2e-marker="no-rerender"]')`,
-      );
-    const before = await readScroll(o);
-    expect(before, "settings pane should be scrollable").toBeGreaterThan(0);
-
-    // Off: the section is removed in place, marker + scroll survive.
-    await toggleCheckbox(o, '[data-testid="geode-settings-toggle-debug"]');
-    await expect(o.win.locator(LOGS_HEADING)).toHaveCount(0, { timeout: 10_000 });
-    await expect.poll(markerPresent, { timeout: 10_000 }).toBe(true);
-    const afterOff = await readScroll(o);
-    expect(Math.abs(afterOff - before), "scrollTop unchanged after removing Logs")
-      .toBeLessThanOrEqual(1);
-
-    /* ---- Screenshot 3: Debug logging off = no Logs section (scrolled to Advanced) ---- */
-    await o.eval(`
-      const adv = Array.from(document.querySelectorAll(".geode-section"))
-        .find((s) => s.querySelector(".setting-item-heading")?.textContent?.trim() === "Advanced");
-      const fields = adv?.querySelector(".geode-section-fields");
-      if (adv && fields?.classList.contains("geode-collapsed")) {
-        adv.querySelector(".geode-collapsible-heading")?.click();
-      }
-      adv?.scrollIntoView({ block: "start" });
-      return true;
-    `);
-    await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
     await o.win.waitForTimeout(300);
-    await o.win.locator(".vertical-tab-content").screenshot({
+    await o.win.locator(".modal.mod-settings").screenshot({
       path: shotPath("434-03-debug-off.png"),
     });
 
-    // On: the section comes back in place (still expanded: the session's open state survives).
-    const scrollBeforeOn = await readScroll(o);
-    await toggleCheckbox(o, '[data-testid="geode-settings-toggle-debug"]');
+    await openSettingsPage(o, "Advanced");
+    await setRowControl(o, "Debug logging");
+    await closeSettingsPage(o);
+    await expect.poll(() => rowShown(o, "Logs"), { timeout: 10_000 }).toBe(true);
+    await openSettingsPage(o, "Logs");
     await expect(o.win.locator('[data-testid="geode-log-box"]')).toBeVisible({ timeout: 10_000 });
-    await expect.poll(markerPresent, { timeout: 10_000 }).toBe(true);
-    const afterOn = await readScroll(o);
-    expect(Math.abs(afterOn - scrollBeforeOn), "scrollTop unchanged after re-adding Logs")
-      .toBeLessThanOrEqual(1);
+
+    // The Errors filter survives a hide/show of the section (same view instance), so go back
+    // to All before asserting the ring streams into the box again.
+    await o.win.locator('[data-testid="geode-log-filter-all"]').click();
+    await expect(o.win.locator('[data-testid="geode-log-filter-all"]')).toHaveClass(/is-active/);
 
     // The re-added section still streams the ring (live append).
     const countBefore = await lines.count();

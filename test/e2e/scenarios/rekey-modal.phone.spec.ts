@@ -6,6 +6,7 @@ import { upsertVaultFile } from "../helpers/geode";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick, evalSetValue } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
+import { closeSettingsPage, openSettingsPage } from "../helpers/settings-tab";
 
 // #559: the change-passphrase / re-key modal on the real phone: settings rows,
 // change form with the live mismatch hint, re-key form with the level dropdown,
@@ -104,12 +105,6 @@ test("rekey modal surfaces + real change-passphrase run (phone)", async () => {
     await expect(passphraseRow.locator('[data-testid="geode-settings-passphrase-change"]'))
       .toHaveText("Change…");
 
-    await evalClick(obsidian, ".geode-advanced-heading");
-    const strengthRow = obsidian.win.locator('[data-testid="geode-settings-encryption-strength"]');
-    await expect(strengthRow).toHaveCount(1, { timeout: 15_000 });
-    await expect(strengthRow.locator(".setting-item-name")).toHaveText("Encryption strength");
-    await expect(strengthRow.locator('[data-testid="geode-settings-rekey"]')).toHaveText("Rekey…");
-
     await obsidian.eval(`
       document.querySelector('[data-testid="geode-settings-passphrase"]')?.scrollIntoView({ block: "center" });
       document.querySelectorAll(".notice").forEach((n) => n.remove());
@@ -118,15 +113,7 @@ test("rekey modal surfaces + real change-passphrase run (phone)", async () => {
     await new Promise((r) => setTimeout(r, 400));
     await obsidian.screenshot(shotPath("559-phone-01-passphrase-row.png"));
 
-    await obsidian.eval(`
-      document.querySelector('[data-testid="geode-settings-encryption-strength"]')?.scrollIntoView({ block: "center" });
-      document.querySelectorAll(".notice").forEach((n) => n.remove());
-      return true;
-    `);
-    await new Promise((r) => setTimeout(r, 400));
-    await obsidian.screenshot(shotPath("559-phone-02-strength-row.png"));
-
-    /* ---- (b) Change form with the live mismatch hint ---- */
+    /* ---- (b) Change form with the live mismatch hint (opened from the Vault row) ---- */
     await evalClick(obsidian, '[data-testid="geode-settings-passphrase-change"]');
     const changeModal = obsidian.win.locator('.modal:has([data-testid="geode-rekey-current"])');
     await expect(changeModal).toBeVisible({ timeout: 15_000 });
@@ -152,10 +139,25 @@ test("rekey modal surfaces + real change-passphrase run (phone)", async () => {
         await obsidian.eval<boolean>(
           `!document.querySelector('[data-testid="geode-rekey-continue"]')?.disabled`,
         ), { timeout: 10_000 }).toBe(true);
-
-    /* ---- (c) Re-key form with the level dropdown ---- */
     await closeRekeyModal(obsidian);
     await new Promise((r) => setTimeout(r, 300));
+
+    // Encryption strength is a row of the Advanced sub-page (#16).
+    await openSettingsPage(obsidian, "Advanced");
+    const strengthRow = obsidian.win.locator('[data-testid="geode-settings-encryption-strength"]');
+    await expect(strengthRow).toHaveCount(1, { timeout: 15_000 });
+    await expect(strengthRow.locator(".setting-item-name")).toHaveText("Encryption strength");
+    await expect(strengthRow.locator('[data-testid="geode-settings-rekey"]')).toHaveText("Rekey…");
+
+    await obsidian.eval(`
+      document.querySelector('[data-testid="geode-settings-encryption-strength"]')?.scrollIntoView({ block: "center" });
+      document.querySelectorAll(".notice").forEach((n) => n.remove());
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 400));
+    await obsidian.screenshot(shotPath("559-phone-02-strength-row.png"));
+
+    /* ---- (c) Re-key form with the level dropdown ---- */
     await evalClick(obsidian, '[data-testid="geode-settings-rekey"]');
     const rekeyModal = obsidian.win.locator('.modal:has([data-testid="geode-rekey-strength"])');
     await expect(rekeyModal).toBeVisible({ timeout: 15_000 });
@@ -174,6 +176,7 @@ test("rekey modal surfaces + real change-passphrase run (phone)", async () => {
     await new Promise((r) => setTimeout(r, 300));
 
     /* ---- (d) Choose step: estimate + copy available ---- */
+    await closeSettingsPage(obsidian);
     await evalClick(obsidian, '[data-testid="geode-settings-passphrase-change"]');
     // Closed modals persist in the mobile DOM; the newest is last.
     const chooseModal = obsidian.win.locator('[data-testid="geode-rekey-modal"]').last();

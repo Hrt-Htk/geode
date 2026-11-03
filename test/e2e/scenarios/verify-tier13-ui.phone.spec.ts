@@ -36,7 +36,7 @@ test("verify tier1-3 UI (phone): #246 blocked status banner renders natively on 
       p.statusBar && p.statusBar.setVersionStatus(p.versionStatus);
       app.setting.open();
       app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
-      p.settingTab.display();
+      p.settingTab.refresh();
       return true;
     `);
 

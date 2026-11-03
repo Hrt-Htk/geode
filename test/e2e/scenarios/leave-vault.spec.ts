@@ -4,6 +4,7 @@ import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 // #64: "Leave Geode vault" returns the tab to the unconfigured state.
 
@@ -41,7 +42,7 @@ test("leave confirmed vault → unconfigured state, no errors", async () => {
     `);
 
     /* Expand the Advanced section by clicking the heading. */
-    await obsidian.win.locator(".geode-advanced-heading").click();
+    await openSettingsPage(obsidian, "Advanced");
 
     /* ---- Step 2: Assert "Leave Geode vault" button is visible ---- */
     const leaveBtn = obsidian.win.locator('[data-testid="geode-settings-leave"]');

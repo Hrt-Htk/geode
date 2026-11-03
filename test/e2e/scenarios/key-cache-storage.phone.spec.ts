@@ -4,6 +4,7 @@ import { useRemoteServer } from "../fixtures/phone-server";
 import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick } from "../helpers/mobile-ui";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 const PASSPHRASE = "key-cache-storage-pass";
 // #534: the cache now lives in Obsidian's per-device, vault-scoped local storage.
@@ -77,7 +78,7 @@ test("key cache lives in per-device storage, never in the vault (mobile)", async
       app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
       return "ok";
     `);
-    await evalClick(obsidian, ".geode-advanced-heading");
+    await openSettingsPage(obsidian, "Advanced");
     await expect(
       obsidian.win.locator('[data-testid="geode-settings-leave"]'),
     ).toBeVisible({ timeout: 10_000 });

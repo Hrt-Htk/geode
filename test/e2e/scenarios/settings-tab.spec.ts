@@ -4,6 +4,13 @@ import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import {
+  closeSettingsPage,
+  openSettingsPage,
+  rowShown,
+  setRowControl,
+  shownSections,
+} from "../helpers/settings-tab";
 
 // #29: the settings tab's buttons, toggles, auto-lock and advanced rows.
 
@@ -76,18 +83,11 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
       { timeout: 10_000 },
     ).toBe("Unlocked. Locking requires the passphrase to sync again.");
 
-    /* ---- Step 1.5: sections render in order; Advanced collapsed by default (#134) ---- */
-    const sectionHeadings = await obsidian.win
-      .locator(".vertical-tab-content .geode-section .setting-item-heading")
-      .allTextContents();
-    const expectedSections = ["Status", "Vault", "Devices", "Sync scope", "Trash", "Advanced"];
-    for (let i = 0; i < expectedSections.length; i++) {
-      expect(sectionHeadings[i], `section #${i} heading`).toContain(expectedSections[i]);
-    }
-    await expect(obsidian.win.locator(".geode-advanced-fields.geode-collapsed")).toHaveCount(1);
-    await expect(obsidian.win.locator(".geode-section-fields:not(.geode-collapsed)")).toHaveCount(
-      5,
+    /* ---- Step 1.5: sections render in order; Advanced is a sub-page (#16) ---- */
+    expect(await shownSections(obsidian)).toEqual(
+      ["Vault", "Devices", "Sync scope", "Trash", "Advanced"],
     );
+    await expect(obsidian.win.locator('[data-testid="geode-settings-resync"]')).toHaveCount(0);
 
     /* Sync status row: "Up to date. Last backup …" + green dot once a clean sync pass lands. */
     const syncStatusRow = obsidian.win.locator('[data-testid="geode-settings-sync-status"]');
@@ -114,8 +114,8 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     await expect(obsidian.win.locator('[data-testid="geode-settings-reconcile"]')).toBeVisible();
     await expect(obsidian.win.locator('[data-testid="geode-settings-push"]')).toBeVisible();
 
-    /* Resync + Debug logging live inside the collapsed Advanced section: expand it first. */
-    await obsidian.win.locator(".geode-advanced-heading").click();
+    /* Resync + Debug logging live on the Advanced page: open it first. */
+    await openSettingsPage(obsidian, "Advanced");
     await expect(obsidian.win.locator('[data-testid="geode-settings-resync"]')).toBeVisible();
 
     /* #233: pairing-code "Add a device" button is retired: must be absent. */
@@ -124,7 +124,7 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     ).toHaveCount(0);
 
     /* Durable UI gate: screenshot the Geode settings pane for visual review. */
-    await obsidian.win.locator(".vertical-tab-content").screenshot({
+    await obsidian.win.locator(".modal.mod-settings").screenshot({
       path: shotPath("settings-no-add-device.png"),
     })
       .catch(async () => {
@@ -132,95 +132,37 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
       });
 
     /* ---- Step 3: Toggle Debug logging ---- */
-    const debugToggle = obsidian.win.locator('[data-testid="geode-settings-toggle-debug"]');
+    const readSetting = <T>(key: string) =>
+      obsidian.eval<T>(`app.plugins.plugins.geode.pluginSettings.${key}`);
+    const originalDebugLogging = await readSetting<boolean>("debugLogging");
+    await setRowControl(obsidian, "Debug logging");
+    await expect.poll(() => readSetting<boolean>("debugLogging")).toBe(!originalDebugLogging);
+    await setRowControl(obsidian, "Debug logging");
+    await expect.poll(() => readSetting<boolean>("debugLogging")).toBe(originalDebugLogging);
 
-    const originalDebugLogging = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.pluginSettings.debugLogging",
-    );
+    /* Back to the tab: the next steps drive its groups. */
+    await closeSettingsPage(obsidian);
 
-    /* Flip it */
-    await debugToggle.click();
-    const flippedDebug = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.pluginSettings.debugLogging",
-    );
-    expect(flippedDebug).not.toBe(originalDebugLogging);
+    /* ---- Step 4: Toggle Sync config folder ---- */
+    const originalSyncObs = await readSetting<boolean>("syncObsidianConfig");
+    await setRowControl(obsidian, "Sync config folder");
+    await expect.poll(() => readSetting<boolean>("syncObsidianConfig")).toBe(!originalSyncObs);
+    await setRowControl(obsidian, "Sync config folder");
+    await expect.poll(() => readSetting<boolean>("syncObsidianConfig")).toBe(originalSyncObs);
 
-    /* Flip back */
-    await debugToggle.click();
-    const restoredDebug = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.pluginSettings.debugLogging",
-    );
-    expect(restoredDebug).toBe(originalDebugLogging);
-
-    /* Collapse Advanced again: the next steps drive the open sections only. */
-    await obsidian.win.locator(".geode-advanced-heading").click();
-
-    /* ---- Step 4: Toggle Sync .obsidian/ config ---- */
-    const syncObsToggle = obsidian.win.locator(
-      '[data-testid="geode-settings-toggle-sync-obsidian"]',
-    );
-
-    const originalSyncObs = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.pluginSettings.syncObsidianConfig",
-    );
-
-    await syncObsToggle.click();
-    const flippedSyncObs = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.pluginSettings.syncObsidianConfig",
-    );
-    expect(flippedSyncObs).not.toBe(originalSyncObs);
-
-    await syncObsToggle.click();
-    const restoredSyncObs = await obsidian.eval<boolean>(
-      "app.plugins.plugins.geode.pluginSettings.syncObsidianConfig",
-    );
-    expect(restoredSyncObs).toBe(originalSyncObs);
-
-    /* ---- Step 5: Change Auto-lock after (hours) ---- */
-    const autoLockInput = obsidian.win.locator('[data-testid="geode-settings-autolock"]');
-
-    const originalAutoLock = await obsidian.eval<number>(
-      "app.plugins.plugins.geode.pluginSettings.unlockTimeoutHours",
-    );
-
+    /* ---- Step 5: Change Auto lock after (hours) ---- */
+    const originalAutoLock = await readSetting<number>("unlockTimeoutHours");
     const newAutoLockValue = originalAutoLock === 24 ? 48 : 24;
-    await autoLockInput.clear();
-    await autoLockInput.fill(String(newAutoLockValue));
-    await autoLockInput.press("Enter");
+    await setRowControl(obsidian, "Auto lock after (hours)", String(newAutoLockValue));
+    await expect.poll(() => readSetting<number>("unlockTimeoutHours")).toBe(newAutoLockValue);
+    await setRowControl(obsidian, "Auto lock after (hours)", String(originalAutoLock));
+    await expect.poll(() => readSetting<number>("unlockTimeoutHours")).toBe(originalAutoLock);
 
-    const updatedAutoLock = await obsidian.eval<number>(
-      "app.plugins.plugins.geode.pluginSettings.unlockTimeoutHours",
-    );
-    expect(updatedAutoLock).toBe(newAutoLockValue);
-
-    /* Restore original */
-    await autoLockInput.clear();
-    await autoLockInput.fill(String(originalAutoLock));
-    await autoLockInput.press("Enter");
-
-    const restoredAutoLock = await obsidian.eval<number>(
-      "app.plugins.plugins.geode.pluginSettings.unlockTimeoutHours",
-    );
-    expect(restoredAutoLock).toBe(originalAutoLock);
-
-    /* ---- Step 6: Advanced section: collapsed → expanded → collapsed ---- */
-    /* Collapsed container has display:none, so assert existence, not visibility. */
-    await expect(obsidian.win.locator(".geode-advanced-fields.geode-collapsed")).toHaveCount(1);
-
-    const advancedHeading = obsidian.win.locator(".geode-advanced-heading");
-    await advancedHeading.click();
-
-    /* After click, geode-collapsed class should be removed */
-    await expect(obsidian.win.locator(".geode-advanced-fields:not(.geode-collapsed)")).toHaveCount(
-      1,
-    );
-
-    /* Server address input should be visible inside expanded fields */
+    /* ---- Step 6: the Advanced page opens and closes ---- */
+    await openSettingsPage(obsidian, "Advanced");
     await expect(obsidian.win.locator('[data-testid="geode-settings-adv-server"]')).toBeVisible();
-
-    /* Collapse again */
-    await advancedHeading.click();
-    await expect(obsidian.win.locator(".geode-advanced-fields.geode-collapsed")).toHaveCount(1);
+    await closeSettingsPage(obsidian);
+    await expect(obsidian.win.locator('[data-testid="geode-settings-adv-server"]')).toHaveCount(0);
 
     /* ---- Step 7: Click "Lock vault" → locked layout updates in place (#458, no re-render) ---- */
     await obsidian.win.locator('[data-testid="geode-settings-lock"]').click();
@@ -236,28 +178,17 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     await expect(
       obsidian.win.locator('[data-testid="geode-settings-vault-name"] .setting-item-description'),
     ).toHaveText(/· 127\.0\.0\.1:\d+$/);
-    await expect(obsidian.win.locator('[data-testid="geode-settings-vault-status"]')).toHaveClass(
-      /geode-hidden/,
-    );
+    await expect(obsidian.win.locator('[data-testid="geode-settings-vault-status"]')).toBeHidden();
     await expect(obsidian.win.locator('[data-testid="geode-settings-vault-rename"]')).toHaveCount(
       0,
     );
-    await expect(obsidian.win.locator('[data-testid="geode-settings-storage"]')).toHaveClass(
-      /geode-hidden/,
-    );
-    await expect(obsidian.win.locator('[data-testid="geode-settings-activity"]')).toHaveClass(
-      /geode-hidden/,
-    );
-    /* reconcile/push/autolock testids sit on the control (button/input): the row hides it. */
+    await expect(obsidian.win.locator('[data-testid="geode-settings-storage"]')).toBeHidden();
+    await expect(obsidian.win.locator('[data-testid="geode-settings-activity"]')).toBeHidden();
     await expect(obsidian.win.locator('[data-testid="geode-settings-reconcile"]')).not
       .toBeVisible();
     await expect(obsidian.win.locator('[data-testid="geode-settings-push"]')).not.toBeVisible();
-    await expect(obsidian.win.locator('[data-testid="geode-settings-autolock"]')).not.toBeVisible();
-    for (const name of ["Devices", "Sync scope", "Trash", "Advanced"]) {
-      await expect(
-        obsidian.win.locator(`.geode-section:has(.setting-item-heading:has-text('${name}'))`),
-      ).toHaveClass(/geode-hidden/);
-    }
+    expect(await rowShown(obsidian, "Auto lock after (hours)")).toBe(false);
+    expect(await shownSections(obsidian), "only Vault shows while locked").toEqual(["Vault"]);
 
     /* Status bar should show locked */
     await expect.poll(
@@ -289,11 +220,9 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
       { timeout: 10_000 },
     ).toBe("Unlocked. Locking requires the passphrase to sync again.");
     await expect(obsidian.win.locator('[data-testid="geode-settings-vault-rename"]')).toBeVisible();
-    for (const name of ["Devices", "Sync scope", "Trash", "Advanced"]) {
-      await expect(
-        obsidian.win.locator(`.geode-section:has(.setting-item-heading:has-text('${name}'))`),
-      ).not.toHaveClass(/geode-hidden/);
-    }
+    await expect.poll(() => shownSections(obsidian)).toEqual(
+      ["Vault", "Devices", "Sync scope", "Trash", "Advanced"],
+    );
 
     /* ---- Step 9: Click "Reconcile now" and "Push now": no error notice ---- */
     await obsidian.win.locator('[data-testid="geode-settings-reconcile"]').click();

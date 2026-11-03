@@ -5,6 +5,7 @@ import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick, evalSetValue } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage, rowInventory, rowShown, shownSections } from "../helpers/settings-tab";
 
 // #458 on-device: locked layout (status + vault-name rows only) + unlock restores in
 // place + leave → not-set-up layout. Screenshot via adb (screencap).
@@ -16,18 +17,17 @@ const HIDDEN_WHEN_LOCKED = [
   "geode-settings-push",
   "geode-settings-activity",
   "geode-settings-vault-status",
-  "geode-settings-autolock",
 ];
 
-/* reconcile/push/autolock testids sit on the control (button/input): check the row. */
+/* reconcile/push testids sit on the control (button): the row's display hides it. */
 const isHidden = `
   (id) => {
     const el = document.querySelector('[data-testid="' + id + '"]');
-    return !!el && el.closest(".setting-item")?.classList.contains("geode-hidden");
+    return !!el && el.offsetParent === null;
   }
 `;
 
-const HIDDEN_SECTIONS_WHEN_LOCKED = ["Devices", "Sync scope", "Trash", "Advanced"];
+const UNLOCKED_SECTIONS = ["Vault", "Devices", "Sync scope", "Trash", "Advanced"];
 
 test("tab states (phone): locked rows-only layout, unlock in place, leave → not set up", async () => {
   test.skip(process.env.GEODE_PHONE !== "1", "requires connected phone (GEODE_PHONE=1)");
@@ -77,36 +77,15 @@ test("tab states (phone): locked rows-only layout, unlock in place, leave → no
           .textContent(),
       { timeout: 10_000 },
     ).toMatch(/^Locked\. Nothing syncs until you unlock\. Last backup /);
-    const visibleRowCount = await obsidian.eval<number>(`
-      (() => {
-        let count = 0;
-        for (const s of document.querySelectorAll(".geode-section:not(.geode-hidden)")) {
-          for (const item of s.querySelectorAll(".setting-item")) {
-            if (item.classList.contains("setting-item-heading")) continue;
-            if (item.classList.contains("geode-hidden")) continue;
-            count++;
-          }
-        }
-        return count;
-      })()
-    `);
-    expect(visibleRowCount).toBe(3); // status + forgot link + vault-name
+    expect((await rowInventory(obsidian)).length).toBe(3); // status + forgot link + vault-name
     const lockedHiddenRows = await obsidian.eval<boolean>(`
       ${JSON.stringify(HIDDEN_WHEN_LOCKED)}.every(${isHidden})
     `);
     expect(lockedHiddenRows, "storage/actions/vault-lock/autolock rows hidden while locked").toBe(
       true,
     );
-    const lockedHiddenSections = await obsidian.eval<boolean>(`
-      ${JSON.stringify(HIDDEN_SECTIONS_WHEN_LOCKED)}.every((name) => {
-        const s = Array.from(document.querySelectorAll(".geode-section"))
-          .find((el) => el.querySelector(".setting-item-heading")?.textContent?.includes(name));
-        return s?.classList.contains("geode-hidden");
-      })
-    `);
-    expect(lockedHiddenSections, "Devices/Scope/Trash/Advanced sections hidden while locked").toBe(
-      true,
-    );
+    expect(await rowShown(obsidian, "Auto lock after (hours)")).toBe(false);
+    expect(await shownSections(obsidian), "only Vault shows while locked").toEqual(["Vault"]);
     const renameGone = await obsidian.eval<boolean>(
       `!document.querySelector('[data-testid="geode-settings-vault-rename"]')`,
     );
@@ -129,14 +108,8 @@ test("tab states (phone): locked rows-only layout, unlock in place, leave → no
           .textContent(),
       { timeout: 15_000 },
     ).toMatch(/^Unlocked\. /);
-    const sectionsBack = await obsidian.eval<boolean>(`
-      ${JSON.stringify(HIDDEN_SECTIONS_WHEN_LOCKED)}.every((name) => {
-        const s = Array.from(document.querySelectorAll(".geode-section"))
-          .find((el) => el.querySelector(".setting-item-heading")?.textContent?.includes(name));
-        return s && !s.classList.contains("geode-hidden");
-      })
-    `);
-    expect(sectionsBack, "Devices/Scope/Trash/Advanced restored on unlock").toBe(true);
+    await expect.poll(() => shownSections(obsidian), { message: "sections restored on unlock" })
+      .toEqual(UNLOCKED_SECTIONS);
     expect(
       await obsidian.eval<boolean>(
         `!!document.querySelector('[data-testid="geode-settings-vault-rename"]')`,
@@ -144,7 +117,7 @@ test("tab states (phone): locked rows-only layout, unlock in place, leave → no
     ).toBe(true);
 
     /* ---- Leave → not set up: only status + Set up rows ---- */
-    await evalClick(obsidian, ".geode-advanced-heading");
+    await openSettingsPage(obsidian, "Advanced");
     await obsidian.win.locator('[data-testid="geode-settings-leave"]').waitFor({ timeout: 10_000 });
     await evalClick(obsidian, '[data-testid="geode-settings-leave"]');
     await expect(obsidian.win.locator(".geode-confirm-modal")).toBeVisible({ timeout: 10_000 });
@@ -158,10 +131,7 @@ test("tab states (phone): locked rows-only layout, unlock in place, leave → no
       `document.querySelector('[data-testid="geode-settings-sync-status"] .setting-item-description')?.textContent ?? ""`,
     );
     expect(notsetStatus).toBe("Not set up. No vault connected on this device.");
-    const sectionCount = await obsidian.eval<number>(
-      `document.querySelectorAll(".geode-section").length`,
-    );
-    expect(sectionCount, "only the Status section after leave").toBe(1);
+    expect(await shownSections(obsidian), "only the Status rows after leave").toEqual([]);
   } finally {
     await obsidian.close();
     await server.stop().catch(() => {});

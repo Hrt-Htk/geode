@@ -5,6 +5,7 @@ import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 const PASSPHRASE = "ui-surfaces-pass";
 const VARIANT = process.env.GATE387_VARIANT ?? "after";
@@ -181,12 +182,9 @@ test("UI surfaces unchanged by #387 type/promise edits", async () => {
       if (app.setting && typeof app.setting.close === "function") app.setting.close();
       app.setting.open();
       app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const logs = sections.find((s) =>
-        s.querySelector(".setting-item-heading")?.textContent?.trim() === "Logs");
-      if (logs) logs.querySelector(".geode-collapsible-heading")?.click();
       return true;
     `);
+    await openSettingsPage(o, "Logs");
     await expect.poll(
       async () =>
         await o.eval<number>(`

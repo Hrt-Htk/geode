@@ -129,15 +129,22 @@ test("601 root row: a held root file gets its own last row, off then selected", 
       o.win.locator('[data-testid="geode-settings-hold-banner"]'),
     ).toHaveCount(1);
     await expect(o.win.locator(".geode-version-warning-icon")).toBeVisible();
+    // #16: the order comes from the definitions tree (version refusal, hold, error, pause,
+    // hint), so read the rendered rows rather than a DOM order attribute.
     const bannerOrder = await o.eval<string[]>(
-      `[...document.querySelectorAll("[data-banner-order]")].map((el) => el.dataset.bannerOrder + ":" + (el.dataset.testid ?? ""))`,
+      `[...document.querySelectorAll(".modal.mod-settings .setting-item")]
+        .filter((el) => el.offsetParent !== null)
+        .filter((el) => el.dataset.testid?.endsWith("-banner") || el.querySelector(".geode-version-warning-icon"))
+        .map((el) => el.dataset.testid || "version-refused")`,
     );
-    expect(bannerOrder[0].startsWith("0:")).toBe(true);
-    expect(bannerOrder.indexOf("1:geode-settings-hold-banner")).toBeGreaterThan(0);
+    expect(bannerOrder[0], "the version refusal is the first banner").toBe("version-refused");
+    expect(bannerOrder[1]).toBe("geode-settings-hold-banner");
     await o.eval(
       `app.plugins.plugins.geode.onServerVersion(app.plugins.plugins.geode.manifest.version); return true;`,
     );
-    await expect(o.win.locator(".geode-version-warning-icon")).toHaveCount(0);
+    // The version row stays in the definitions and hides itself (#16), so it leaves no icon
+    // on screen rather than leaving the DOM.
+    await expect(o.win.locator(".geode-version-warning-icon")).toBeHidden();
     expect(await o.eval<unknown>(HOLD)).not.toBe(null);
   } finally {
     await o.close().catch(() => {});
@@ -171,7 +178,7 @@ test("601 banners: the outage and pause rows render through BannerRow", async ()
 
     // Resume, then simulate an outage: after the 10 s grace the row appears with Retry.
     await o.eval("await app.plugins.plugins.geode.resumeSync(); return true;");
-    await expect(pause).toHaveCount(0, { timeout: 30_000 });
+    await expect(pause).toBeHidden({ timeout: 30_000 });
     await o.eval("app.plugins.plugins.geode.transport.stop(); return true;");
     const outage = o.win.locator('[data-testid="geode-settings-error-banner"]');
     await expect(outage).toBeVisible({ timeout: 30_000 });

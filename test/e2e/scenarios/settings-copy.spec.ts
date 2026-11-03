@@ -3,36 +3,25 @@ import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
-import { expandLogsSection, openSettingsTab } from "../helpers/logs";
+import { openSettingsTab } from "../helpers/logs";
+import { closeSettingsPage, openSettingsPage } from "../helpers/settings-tab";
 import { shotPath } from "../helpers/shots";
 
 // #479: the owner copy rule: every settings row description fits on ONE line at
 // the default desktop settings width, plain and without dashes. This spec opens
 // the configured, unlocked settings tab with every section expanded (Advanced +
-// Logs included, Sync config folder on) and asserts no description wraps, then
+// Logs pages included, Sync config folder on) and asserts no description wraps, then
 // captures the tab for visual review. The phone counterpart (settings-copy.phone)
 // allows a two-line wrap but rejects three-plus-line blocks.
 const PASSPHRASE = "settings-copy-pass";
-
-/** Expand every collapsible Geode section (Advanced and Logs start collapsed). */
-async function expandAllSections(o: { eval: <T>(s: string) => Promise<T> }): Promise<void> {
-  await o.eval(`
-    (() => {
-      document.querySelectorAll(".geode-collapsible-heading").forEach((h) => {
-        const fields = h.closest(".geode-section")?.querySelector(".geode-section-fields");
-        if (fields?.classList.contains("geode-collapsed")) h.click();
-      });
-      return true;
-    })()
-  `);
-}
 
 /** Collect every settings-row description's height vs its line height. */
 async function wrappedDescriptions(o: { eval: <T>(s: string) => Promise<T> }): Promise<string[]> {
   return await o.eval<string[]>(`
     (() => {
       const out = [];
-      for (const desc of document.querySelectorAll(".vertical-tab-content .setting-item-description")) {
+      for (const desc of document.querySelectorAll(".modal.mod-settings .setting-item-description")) {
+        if (desc.offsetParent === null) continue;
         const lh = parseFloat(getComputedStyle(desc).lineHeight) || 20;
         const h = desc.getBoundingClientRect().height;
         if (h > lh * 1.6) {
@@ -100,20 +89,23 @@ test("copy: every settings description is one line, no dashes", async () => {
     await waitForStatusBar(o.win, "Geode: synced", 60_000);
 
     await openSettingsTab(o);
-    await expandLogsSection(o);
-    await expandAllSections(o);
-    const collapsedCount = await o.eval<number>(
-      `document.querySelectorAll(".geode-section-fields.geode-collapsed").length`,
-    );
-    expect(collapsedCount, "every section must be expanded for the one-line check").toBe(0);
     await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
     // Let live rows (trash count, storage, devices summary, sync status) settle.
     await o.win.waitForTimeout(2_000);
 
+    // The tab, then its Advanced and Logs pages (#16): every row is checked once.
     const wrapped = await wrappedDescriptions(o);
-    expect(wrapped, "no settings description may wrap to a second line on desktop").toEqual([]);
-
     await captureSettingsSegments(o, o.win, "479-01-settings-all-sections");
+    for (const page of ["Advanced", "Logs"] as const) {
+      await openSettingsPage(o, page);
+      await o.win.waitForTimeout(500);
+      wrapped.push(...await wrappedDescriptions(o));
+      await o.win.locator(".modal.mod-settings").screenshot({
+        path: shotPath(`479-02-settings-${page.toLowerCase()}.png`),
+      });
+      await closeSettingsPage(o);
+    }
+    expect(wrapped, "no settings description may wrap to a second line on desktop").toEqual([]);
   } finally {
     await o.close();
     await server.stop?.();

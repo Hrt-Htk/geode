@@ -1,9 +1,10 @@
 import { expect } from "@playwright/test";
 import type { Evaluatable } from "./device-abstraction";
+import { openSettingsPage } from "./settings-tab";
 
 // #434: shared Logs-section driving for specs that read the debug output.
-// The Logs section lives in the settings tab after Advanced, only while
-// Advanced → Debug logging is on, collapsed by default.
+// The Logs rows show only while Advanced → Debug logging is on: a sub-page on
+// Obsidian 1.13+, a collapsed section after Advanced on display() (#16).
 
 /** Open the Geode settings tab. Desktop closes first; mobile must NOT (it prevents the tab from rendering). */
 export async function openSettingsTab(instance: Evaluatable, mobile = false): Promise<void> {
@@ -26,22 +27,10 @@ export async function openSettingsTab(instance: Evaluatable, mobile = false): Pr
     .toBe(true);
 }
 
-/** Expand the Logs section (no-op when already open). Throws when it is absent (Debug logging off). */
+/** Show the Logs rows (the sub-page on 1.13+, the section on display()). Throws when Debug
+ * logging is off. */
 export async function expandLogsSection(instance: Evaluatable): Promise<void> {
-  const present = await instance.eval<boolean>(`
-    (() => {
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const logs = sections.find((s) =>
-        s.querySelector(".setting-item-heading")?.textContent?.trim() === "Logs");
-      if (!logs) return false;
-      const fields = logs.querySelector(".geode-section-fields");
-      if (fields?.classList.contains("geode-collapsed")) {
-        logs.querySelector(".geode-collapsible-heading")?.click();
-      }
-      return true;
-    })()
-  `);
-  if (!present) throw new Error("expandLogsSection: Logs section not present (Debug logging off?)");
+  await openSettingsPage(instance, "Logs");
   await expect
     .poll(
       async () =>

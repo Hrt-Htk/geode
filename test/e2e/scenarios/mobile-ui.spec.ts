@@ -4,6 +4,7 @@ import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { closeSettingsPage, openSettingsPage } from "../helpers/settings-tab";
 
 // #173: desktop: the mobile UI's Logs section and settings-button feedback.
 
@@ -68,21 +69,14 @@ test("mobile UI: Logs section and settings button feedback", async () => {
       if (app.setting && typeof app.setting.close === "function") app.setting.close();
       app.setting.open();
       app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const logs = sections.find((s) =>
-        s.querySelector(".setting-item-heading")?.textContent?.trim() === "Logs");
-      if (logs) logs.querySelector(".geode-collapsible-heading")?.click();
       return true;
     `);
+    await openSettingsPage(obsidian, "Logs");
 
     /* Give the section a moment to render. */
     await new Promise((r) => setTimeout(r, 1_500));
 
     /* Assert the Logs section and its log box exist. */
-    const logsSection = obsidian.win.locator(
-      '.geode-section:has(.setting-item-heading:has-text("Logs"))',
-    );
-    await expect(logsSection).toHaveCount(1, { timeout: 10_000 });
     await expect(obsidian.win.locator('[data-testid="geode-log-box"]')).toBeVisible({
       timeout: 10_000,
     });
@@ -116,8 +110,9 @@ test("mobile UI: Logs section and settings button feedback", async () => {
       timeout: 10_000,
     });
     await expect(obsidian.win.locator('[data-testid="geode-settings-push"]')).toBeVisible();
-    await obsidian.win.locator(".geode-advanced-heading").click();
+    await openSettingsPage(obsidian, "Advanced");
     await expect(obsidian.win.locator('[data-testid="geode-settings-resync"]')).toBeVisible();
+    await closeSettingsPage(obsidian);
 
     /* Click "Reconcile now" and wait for success Notice. */
     await obsidian.win.locator('[data-testid="geode-settings-reconcile"]').click();
