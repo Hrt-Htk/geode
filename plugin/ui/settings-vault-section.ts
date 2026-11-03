@@ -7,6 +7,7 @@ import { type TabState, tabVisibility, type VaultRowId } from "./tab-state.ts";
 import type { SettingsRow } from "./settings-legacy.ts";
 import { setDestructive } from "./api-compat.ts";
 import { wholeAtLeastOne } from "./settings-tree.ts";
+import { AUTO_LOCK_ROW } from "./settings-row-names.ts";
 import {
   CHANGE_ROW_BUTTON,
   PASSPHRASE_ROW_DESC,
@@ -69,7 +70,7 @@ export class SettingsVaultSection {
         this.syncLockRow(this.host.state() === "locked");
       },
     }, {
-      name: "Auto lock after (hours)",
+      name: AUTO_LOCK_ROW,
       desc: "Locks after this many idle hours.",
       aliases: ["auto-lock", "autolock"],
       visible: this.shows("autolock"),

@@ -5,11 +5,14 @@ import { startServer } from "../fixtures/server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
 import {
+  AUTO_LOCK_ROW,
   closeSettingsPage,
+  DEBUG_LOGGING_ROW,
   openSettingsPage,
   rowShown,
   setRowControl,
   shownSections,
+  SYNC_CONFIG_ROW,
 } from "../helpers/settings-tab";
 
 // #29: the settings tab's buttons, toggles, auto-lock and advanced rows.
@@ -135,9 +138,9 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     const readSetting = <T>(key: string) =>
       obsidian.eval<T>(`app.plugins.plugins.geode.pluginSettings.${key}`);
     const originalDebugLogging = await readSetting<boolean>("debugLogging");
-    await setRowControl(obsidian, "Debug logging");
+    await setRowControl(obsidian, DEBUG_LOGGING_ROW);
     await expect.poll(() => readSetting<boolean>("debugLogging")).toBe(!originalDebugLogging);
-    await setRowControl(obsidian, "Debug logging");
+    await setRowControl(obsidian, DEBUG_LOGGING_ROW);
     await expect.poll(() => readSetting<boolean>("debugLogging")).toBe(originalDebugLogging);
 
     /* Back to the tab: the next steps drive its groups. */
@@ -145,17 +148,17 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
 
     /* ---- Step 4: Toggle Sync config folder ---- */
     const originalSyncObs = await readSetting<boolean>("syncObsidianConfig");
-    await setRowControl(obsidian, "Sync config folder");
+    await setRowControl(obsidian, SYNC_CONFIG_ROW);
     await expect.poll(() => readSetting<boolean>("syncObsidianConfig")).toBe(!originalSyncObs);
-    await setRowControl(obsidian, "Sync config folder");
+    await setRowControl(obsidian, SYNC_CONFIG_ROW);
     await expect.poll(() => readSetting<boolean>("syncObsidianConfig")).toBe(originalSyncObs);
 
     /* ---- Step 5: Change Auto lock after (hours) ---- */
     const originalAutoLock = await readSetting<number>("unlockTimeoutHours");
     const newAutoLockValue = originalAutoLock === 24 ? 48 : 24;
-    await setRowControl(obsidian, "Auto lock after (hours)", String(newAutoLockValue));
+    await setRowControl(obsidian, AUTO_LOCK_ROW, String(newAutoLockValue));
     await expect.poll(() => readSetting<number>("unlockTimeoutHours")).toBe(newAutoLockValue);
-    await setRowControl(obsidian, "Auto lock after (hours)", String(originalAutoLock));
+    await setRowControl(obsidian, AUTO_LOCK_ROW, String(originalAutoLock));
     await expect.poll(() => readSetting<number>("unlockTimeoutHours")).toBe(originalAutoLock);
 
     /* ---- Step 6: the Advanced page opens and closes ---- */
@@ -187,7 +190,7 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     await expect(obsidian.win.locator('[data-testid="geode-settings-reconcile"]')).not
       .toBeVisible();
     await expect(obsidian.win.locator('[data-testid="geode-settings-push"]')).not.toBeVisible();
-    expect(await rowShown(obsidian, "Auto lock after (hours)")).toBe(false);
+    expect(await rowShown(obsidian, AUTO_LOCK_ROW)).toBe(false);
     expect(await shownSections(obsidian), "only Vault shows while locked").toEqual(["Vault"]);
 
     /* Status bar should show locked */

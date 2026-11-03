@@ -7,10 +7,15 @@ import { shotPath } from "../helpers/shots";
 import { openLogsSection, openSettingsTab } from "../helpers/logs";
 import {
   closeSettingsPage,
+  DEBUG_LOGGING_ROW,
+  isDisplayPath,
+  markNoRerender,
   openSettingsPage,
+  readScroll,
   rowShown,
   setRowControl,
   shownSections,
+  useDisplayPath,
 } from "../helpers/settings-tab";
 
 // #434/#453: the Logs section replaced the right-sidebar debug pane. Debug
@@ -125,7 +130,7 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
     /* ---- 4. Debug logging off hides the Logs entry in place; on brings it back ---- */
     await closeSettingsPage(o);
     await openSettingsPage(o, "Advanced");
-    await setRowControl(o, "Debug logging");
+    await setRowControl(o, DEBUG_LOGGING_ROW);
     await closeSettingsPage(o);
     await expect.poll(() => rowShown(o, "Logs"), { timeout: 10_000 }).toBe(false);
     expect(await shownSections(o)).toEqual(["Vault", "Devices", "Sync scope", "Trash", "Advanced"]);
@@ -143,7 +148,7 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
     });
 
     await openSettingsPage(o, "Advanced");
-    await setRowControl(o, "Debug logging");
+    await setRowControl(o, DEBUG_LOGGING_ROW);
     await closeSettingsPage(o);
     await expect.poll(() => rowShown(o, "Logs"), { timeout: 10_000 }).toBe(true);
     await openSettingsPage(o, "Logs");
@@ -163,6 +168,42 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
     await expect
       .poll(async () => await lines.count(), { timeout: 15_000 })
       .toBeGreaterThan(countBefore);
+
+    /* ---- 5. display() hides and re-shows the section in place: no tab re-render ---- */
+    // Obsidian < 1.13 renders this whole tab through display(), where a re-render would wipe and
+    // rebuild every row. The marker on the sync-status dot survives only an in-place update.
+    await closeSettingsPage(o);
+    await useDisplayPath(o);
+    await expect.poll(() => isDisplayPath(o)).toBe(true);
+    await openSettingsPage(o, "Advanced");
+    // On this path Logs is a collapsible section (a heading), not a page entry.
+    const logsSectionShown = () =>
+      o.eval<boolean>(`(() => {
+        const heading = [...document.querySelectorAll(
+          ".modal.mod-settings .geode-collapsible-heading"
+        )].find((h) => h.textContent.trim() === "Logs");
+        return !!heading && heading.offsetParent !== null;
+      })()`);
+    expect(await logsSectionShown(), "Logs section shown while Debug logging is on").toBe(true);
+    // One flip first: clicking a control focuses it, which scrolls the row into view, and the
+    // re-added section moves the pane the way browser scroll anchoring keeps the last content
+    // still. Neither is a re-render: what a re-render destroys is the marker (display() rebuilds
+    // every row) and the pane's depth (it would land back at the top).
+    await setRowControl(o, DEBUG_LOGGING_ROW);
+    await expect.poll(logsSectionShown, { timeout: 10_000 }).toBe(false);
+    const markerPresent = await markNoRerender(o);
+    const deepInTab = 1000;
+    expect(await readScroll(o), "the pane sits deep in the tab").toBeGreaterThan(deepInTab);
+    await setRowControl(o, DEBUG_LOGGING_ROW);
+    await expect.poll(logsSectionShown, { timeout: 10_000 }).toBe(true);
+    await expect.poll(markerPresent, { timeout: 10_000 }).toBe(true);
+    expect(await readScroll(o), "Debug logging on: still in place").toBeGreaterThan(deepInTab);
+    await setRowControl(o, DEBUG_LOGGING_ROW);
+    await expect.poll(logsSectionShown, { timeout: 10_000 }).toBe(false);
+    await expect.poll(markerPresent, { timeout: 10_000 }).toBe(true);
+    expect(await readScroll(o), "Debug logging off: still in place").toBeGreaterThan(deepInTab);
+    await useDisplayPath(o, false);
+    await expect.poll(() => isDisplayPath(o)).toBe(false);
   } finally {
     await o.close();
     await server.stop().catch(() => {});

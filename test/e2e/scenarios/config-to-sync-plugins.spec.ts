@@ -4,7 +4,7 @@ import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
-import { setRowControl } from "../helpers/settings-tab";
+import { setRowControl, SYNC_CONFIG_ROW } from "../helpers/settings-tab";
 
 // #184: the config-to-sync modal lists and toggles community plugins.
 
@@ -80,7 +80,7 @@ test("config-to-sync modal lists and toggles plugins", async () => {
       });
 
     /* ---- Turn the master toggle ON → the row appears ---- */
-    await setRowControl(obsidian, "Sync config folder");
+    await setRowControl(obsidian, SYNC_CONFIG_ROW);
     await expect(obsidian.win.locator('[data-testid="geode-settings-config-row"]')).toBeVisible();
 
     /* ---- Manage opens the modal: Settings + Community plugins, both open ---- */

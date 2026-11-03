@@ -6,14 +6,21 @@ import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
 import { openSettingsTab } from "../helpers/logs";
 import {
+  AUTO_LOCK_ROW,
+  clearNotices,
   closeSettingsPage,
+  DEBUG_LOGGING_ROW,
+  expectSameRows,
   isDisplayPath,
   openSettingsPage,
   readRowControl,
   rowInventory,
   rowShown,
+  scrollToHeading,
   searchSettings,
   setRowControl,
+  SYNC_CONFIG_ROW,
+  TRASH_RETENTION_ROW,
   useDisplayPath,
 } from "../helpers/settings-tab";
 
@@ -23,9 +30,7 @@ import {
 // paths on the installed Obsidian and asserts the same rows and testids, so they cannot drift.
 
 const PASSPHRASE = "settings-definitions-pass";
-
-const clearNotices =
-  `document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`;
+const WHOLE_NUMBER_COPY = "Enter a whole number, 1 or more.";
 
 test("settings tab: definitions and display() render the same rows; search finds Geode", async () => {
   test.slow();
@@ -49,16 +54,9 @@ test("settings tab: definitions and display() render the same rows; search finds
     const modal = o.win.locator(".modal.mod-settings");
     const shot = async (name: string) => {
       await o.win.waitForTimeout(500);
-      await o.eval(clearNotices);
+      await clearNotices(o);
       await modal.screenshot({ path: shotPath(name) });
     };
-    const scrollTo = (name: string) =>
-      o.eval(`(() => {
-        const el = [...document.querySelectorAll(".modal.mod-settings .setting-item-heading, .modal.mod-settings .setting-group-heading, .modal.mod-settings .setting-item-name")]
-          .find((e) => e.textContent.trim() === ${JSON.stringify(name)});
-        el?.scrollIntoView({ block: "start" });
-        return !!el;
-      })()`);
 
     /* ---- Definitions path (Obsidian 1.13+) ---- */
     await openSettingsTab(o);
@@ -73,8 +71,13 @@ test("settings tab: definitions and display() render the same rows; search finds
     await o.win.waitForTimeout(1000);
     await shot("defs-01-top.png");
     for (const [i, group] of ["Vault", "Devices", "Sync scope", "Trash"].entries()) {
-      expect(await scrollTo(group)).toBe(true);
+      // The Trash group is the last one: at the full window height the pane clamps at its bottom
+      // and the frame repeats the Sync scope shot, so shoot it in a shorter window.
+      const trash = group === "Trash";
+      if (trash) await o.win.setViewportSize({ width: 1200, height: 560 });
+      expect(await scrollToHeading(o, group)).toBe(true);
       await shot(`defs-0${i + 2}-${group.toLowerCase().replace(" ", "-")}.png`);
+      if (trash) await o.win.setViewportSize({ width: 1200, height: 900 });
     }
     const defsMain = await rowInventory(o);
     await openSettingsPage(o, "Advanced");
@@ -87,44 +90,61 @@ test("settings tab: definitions and display() render the same rows; search finds
     await closeSettingsPage(o);
 
     /* Real controls write Geode's settings (and their side effects) through setControlValue. */
-    await setRowControl(o, "Trash retention (days)", "45");
+    await setRowControl(o, TRASH_RETENTION_ROW, "45");
     await expect.poll(() =>
       o.eval<number>(`app.plugins.plugins.geode.pluginSettings.trashRetentionDays`)
     )
       .toBe(45);
-    await setRowControl(o, "Auto lock after (hours)", "0");
+    await setRowControl(o, AUTO_LOCK_ROW, "0");
     await o.win.waitForTimeout(300);
     expect(
       await o.eval<number>(`app.plugins.plugins.geode.pluginSettings.unlockTimeoutHours`),
       "0 is rejected",
     )
       .toBe(24);
-    expect(await readRowControl(o, "Sync config folder")).toBe("on");
+    expect(await readRowControl(o, SYNC_CONFIG_ROW)).toBe("on");
     expect(await rowShown(o, "Config to sync")).toBe(true);
-    await setRowControl(o, "Sync config folder");
+    await setRowControl(o, SYNC_CONFIG_ROW);
     await expect.poll(() => rowShown(o, "Config to sync")).toBe(false);
     expect(await o.eval<boolean>(`app.plugins.plugins.geode.pluginSettings.syncObsidianConfig`))
       .toBe(false);
-    await setRowControl(o, "Sync config folder");
+    await setRowControl(o, SYNC_CONFIG_ROW);
     await expect.poll(() => rowShown(o, "Config to sync")).toBe(true);
     await openSettingsPage(o, "Advanced");
-    await setRowControl(o, "Debug logging");
+    await setRowControl(o, DEBUG_LOGGING_ROW);
     await closeSettingsPage(o);
     await expect.poll(() => rowShown(o, "Logs"), { message: "Logs page entry follows the toggle" })
       .toBe(false);
     await openSettingsPage(o, "Advanced");
-    await setRowControl(o, "Debug logging");
+    await setRowControl(o, DEBUG_LOGGING_ROW);
     await closeSettingsPage(o);
     await expect.poll(() => rowShown(o, "Logs")).toBe(true);
 
     /* ---- Settings search: Geode's rows are indexed ---- */
     const retention = await searchSettings(o, "retention");
-    expect(retention.join("\n")).toContain("Trash retention (days)");
+    expect(retention.join("\n")).toContain(TRASH_RETENTION_ROW);
     await shot("defs-08-search-retention.png");
     const autolock = await searchSettings(o, "auto-lock");
-    expect(autolock.join("\n")).toContain("Auto lock after (hours)");
+    expect(autolock.join("\n")).toContain(AUTO_LOCK_ROW);
     await shot("defs-09-search-autolock.png");
     await searchSettings(o, "");
+
+    /* ---- A re-read of the definitions keeps the live rows bound ---- */
+    // Obsidian re-reads them while it indexes settings search; a read must not swap out the
+    // objects the rendered status row updates through.
+    await o.eval(`
+      const tab = app.plugins.plugins.geode.settingTab;
+      tab.getSettingDefinitions();
+      tab.getSettingDefinitions();
+      return true;
+    `);
+    const syncStatusDesc = () =>
+      o.win.locator('[data-testid="geode-settings-sync-status"] .setting-item-description')
+        .textContent();
+    await o.eval(`app.plugins.plugins.geode.statusBar.updateState("syncing"); return true;`);
+    await expect.poll(syncStatusDesc, { timeout: 10_000 }).toMatch(/^Catching up/);
+    await o.eval(`app.plugins.plugins.geode.statusBar.updateState("live"); return true;`);
+    await expect.poll(syncStatusDesc, { timeout: 10_000 }).toMatch(/^Up to date\. Last backup /);
 
     /* ---- display() path: same rows, collapsible sections ---- */
     await useDisplayPath(o);
@@ -134,14 +154,22 @@ test("settings tab: definitions and display() render the same rows; search finds
     await openSettingsPage(o, "Advanced");
     await openSettingsPage(o, "Logs");
     await shot("display-02-logs.png");
-    const display = await rowInventory(o);
-    const pageEntries = ["Advanced | ", "Logs | "];
-    expect(defsMain).toEqual(expect.arrayContaining(pageEntries));
-    const defsRows = [...defsMain, ...defsAdvanced, ...defsLogs]
-      .filter((r) => !pageEntries.includes(r));
-    expect([...display].sort()).toEqual(defsRows.sort());
-    expect(await readRowControl(o, "Trash retention (days)")).toBe("45");
-    await setRowControl(o, "Debug logging");
+    expectSameRows(await rowInventory(o), {
+      main: defsMain,
+      advanced: defsAdvanced,
+      logs: defsLogs,
+    });
+    expect(await readRowControl(o, TRASH_RETENTION_ROW)).toBe("45");
+    // A rejected value shows the reason and puts the stored one back (as Obsidian does on 1.13+).
+    await setRowControl(o, TRASH_RETENTION_ROW, "0");
+    await expect.poll(() => readRowControl(o, TRASH_RETENTION_ROW)).toBe("45");
+    expect(
+      await o.eval<string>(`[...document.querySelectorAll(".modal.mod-settings .geode-error")]
+        .map((e) => e.textContent).filter((s) => s).join(" ")`),
+    ).toContain(WHOLE_NUMBER_COPY);
+    expect(await o.eval<number>(`app.plugins.plugins.geode.pluginSettings.trashRetentionDays`))
+      .toBe(45);
+    await setRowControl(o, DEBUG_LOGGING_ROW);
     await expect.poll(() => rowShown(o, "Copy logs"), { message: "display(): Logs hides in place" })
       .toBe(false);
     await useDisplayPath(o, false);

@@ -1,5 +1,6 @@
 import { App as ObsidianApp, Notice, Setting } from "obsidian";
 import type { SettingsRow } from "./settings-legacy.ts";
+import { SYNC_CONFIG_ROW } from "./settings-row-names.ts";
 import type { ConfigCategory, PluginSettings } from "../plumbing/settings-types.ts";
 import { configCategoryScopePrefixes } from "../plumbing/settings-types.ts";
 import {
@@ -43,7 +44,7 @@ export class SettingsScopeSection {
     return [
       { name: "Sync folders", render: (s) => this.renderFoldersRow(s) },
       {
-        name: "Sync config folder",
+        name: SYNC_CONFIG_ROW,
         desc: createFragment((f) => {
           f.appendText("Include the vault's config folder (");
           f.createEl("code", { text: `${this.host.configDir}/` });

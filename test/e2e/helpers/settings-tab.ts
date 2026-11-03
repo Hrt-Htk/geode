@@ -1,6 +1,15 @@
 import { expect } from "@playwright/test";
 import type { Evaluatable } from "./device-abstraction";
 
+// The four control rows the specs drive by name (#16): renamed in one place, they break the E2E at
+// compile time instead of silently mis-targeting a row.
+export {
+  AUTO_LOCK_ROW,
+  DEBUG_LOGGING_ROW,
+  SYNC_CONFIG_ROW,
+  TRASH_RETENTION_ROW,
+} from "../../../plugin/ui/settings-row-names.ts";
+
 // #16: Obsidian 1.13+ renders the Geode tab from setting definitions: headed groups, with
 // Advanced and Logs as sub-pages. display() (Obsidian < 1.13, or useDisplayPath below) renders
 // the same rows in collapsible sections. Every helper here works on both paths, desktop and
@@ -24,6 +33,71 @@ export async function useDisplayPath(o: Evaluatable, on = true): Promise<void> {
 /** True when the open tab was rendered by display() (collapsible sections). */
 export function isDisplayPath(o: Evaluatable): Promise<boolean> {
   return o.eval<boolean>(`!!document.querySelector(".modal.mod-settings .geode-section")`);
+}
+
+/** Drop the transient Notice overlays before a screenshot. */
+export async function clearNotices(o: Evaluatable): Promise<void> {
+  await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
+}
+
+/** Scroll the named heading to the top of the pane (a phone's translucent header needs a
+ * `margin`), and say whether it was there. */
+export function scrollToHeading(o: Evaluatable, name: string, margin = 0): Promise<boolean> {
+  return o.eval<boolean>(`(() => {
+    const el = [...document.querySelectorAll(
+      ".modal.mod-settings .setting-item-heading, .modal.mod-settings .setting-group-heading, .modal.mod-settings .setting-item-name"
+    )].find((e) => e.textContent.trim() === ${JSON.stringify(name)});
+    if (el) {
+      ${margin ? `el.style.scrollMarginTop = "${margin}px";` : ""}
+      el.scrollIntoView({ block: "start" });
+    }
+    return !!el;
+  })()`);
+}
+
+/** The two paths render the same rows: display() against the definitions pages. */
+export function expectSameRows(
+  display: string[],
+  defs: { main: string[]; advanced: string[]; logs: string[] },
+): void {
+  const pageEntries = ["Advanced | ", "Logs | "];
+  expect(defs.main, "Advanced and Logs are page entries").toEqual(
+    expect.arrayContaining(pageEntries),
+  );
+  const defsRows = [...defs.main, ...defs.advanced, ...defs.logs]
+    .filter((r) => !pageEntries.includes(r));
+  expect([...display].sort()).toEqual(defsRows.sort());
+}
+
+/** Scroll whichever settings pane is scrollable to `to`, and return the offset it took. */
+export async function scrollSettings(o: Evaluatable, to: number): Promise<number> {
+  return await o.eval<number>(`
+    (() => {
+      const candidates = [".vertical-tab-content", ".modal.mod-settings .modal-content"];
+      for (const sel of candidates) {
+        const el = document.querySelector(sel);
+        if (el) {
+          el.scrollTop = ${to};
+          if (el.scrollTop > 0) return el.scrollTop;
+        }
+      }
+      return 0;
+    })()
+  `);
+}
+
+/** The settings pane's scroll offset, 0 when it sits at the top. */
+export function readScroll(o: Evaluatable): Promise<number> {
+  return o.eval<number>(`
+    (() => {
+      const candidates = [".vertical-tab-content", ".modal.mod-settings .modal-content"];
+      for (const sel of candidates) {
+        const el = document.querySelector(sel);
+        if (el && el.scrollTop > 0) return el.scrollTop;
+      }
+      return 0;
+    })()
+  `);
 }
 
 /** Show the Advanced or Logs rows: open the sub-page, or expand the section on display(). */

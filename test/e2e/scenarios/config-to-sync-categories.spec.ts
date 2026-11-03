@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { launchPair } from "../fixtures/pair";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
-import { scrollRowIntoView, setRowControl } from "../helpers/settings-tab";
+import { scrollRowIntoView, setRowControl, SYNC_CONFIG_ROW } from "../helpers/settings-tab";
 
 const PASSPHRASE = "config-to-sync-categories-pass";
 
@@ -84,13 +84,13 @@ test("config to sync row + modal (two devices)", async () => {
     await B.win.locator('[data-testid="geode-settings-config-row"]').waitFor({ timeout: 10_000 });
     // Centre the toggle first (the same scroll setRowControl does), so a full re-render would
     // be visible as a scroll reset.
-    await scrollRowIntoView(B, "Sync config folder");
+    await scrollRowIntoView(B, SYNC_CONFIG_ROW);
     const scrollBefore = await B.eval<number>(
       `document.querySelector(".vertical-tab-content")?.scrollTop ?? 0`,
     );
     expect(scrollBefore, "the pane sits away from the top").toBeGreaterThan(0);
     // Turn the folder toggle off → row disappears (change event, no focus-scroll).
-    await setRowControl(B, "Sync config folder");
+    await setRowControl(B, SYNC_CONFIG_ROW);
     await expect(B.win.locator('[data-testid="geode-settings-config-row"]')).toBeHidden({
       timeout: 10_000,
     });
@@ -100,7 +100,7 @@ test("config to sync row + modal (two devices)", async () => {
     )
       .toBe(scrollBefore);
     // Turn it back on → the row reappears in place (no full settings re-render).
-    await setRowControl(B, "Sync config folder");
+    await setRowControl(B, SYNC_CONFIG_ROW);
     await expect(B.win.locator('[data-testid="geode-settings-config-row"]')).toBeVisible({
       timeout: 10_000,
     });

@@ -5,10 +5,13 @@ import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
 import {
+  AUTO_LOCK_ROW,
   markNoRerender,
   openSettingsPage,
+  readScroll,
   rowInventory,
   rowShown,
+  scrollSettings,
   shownSections,
 } from "../helpers/settings-tab";
 
@@ -28,38 +31,6 @@ const HIDDEN_WHEN_LOCKED = [
 ];
 
 const UNLOCKED_SECTIONS = ["Vault", "Devices", "Sync scope", "Trash", "Advanced"];
-
-async function scrollSettings(
-  o: { eval: <T>(s: string) => Promise<T> },
-  to: number,
-): Promise<number> {
-  return await o.eval<number>(`
-    (() => {
-      const candidates = [".vertical-tab-content", ".modal.mod-settings .modal-content"];
-      for (const sel of candidates) {
-        const el = document.querySelector(sel);
-        if (el) {
-          el.scrollTop = ${to};
-          if (el.scrollTop > 0) return el.scrollTop;
-        }
-      }
-      return 0;
-    })()
-  `);
-}
-
-async function readScroll(o: { eval: <T>(s: string) => Promise<T> }): Promise<number> {
-  return await o.eval<number>(`
-    (() => {
-      const candidates = [".vertical-tab-content", ".modal.mod-settings .modal-content"];
-      for (const sel of candidates) {
-        const el = document.querySelector(sel);
-        if (el && el.scrollTop > 0) return el.scrollTop;
-      }
-      return 0;
-    })()
-  `);
-}
 
 /** Shown non-heading rows (locked = 3 incl. the forgot link, notset = 2). */
 async function countVisibleRows(o: { eval: <T>(s: string) => Promise<T> }): Promise<number> {
@@ -143,7 +114,7 @@ test("tab states: locked shows only status+vault rows; unlock restores in place;
     for (const sel of HIDDEN_WHEN_LOCKED) {
       await expect(o.win.locator(sel), `hidden while locked: ${sel}`).toBeHidden();
     }
-    expect(await rowShown(o, "Auto lock after (hours)")).toBe(false);
+    expect(await rowShown(o, AUTO_LOCK_ROW)).toBe(false);
     expect(await shownSections(o), "only Vault shows while locked").toEqual(["Vault"]);
     await expect.poll(markerPresent, { timeout: 10_000 }).toBe(true);
 

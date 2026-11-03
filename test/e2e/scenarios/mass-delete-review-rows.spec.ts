@@ -128,7 +128,8 @@ test("601 root row: a held root file gets its own last row, off then selected", 
     await expect(
       o.win.locator('[data-testid="geode-settings-hold-banner"]'),
     ).toHaveCount(1);
-    await expect(o.win.locator(".geode-version-warning-icon")).toBeVisible();
+    // Both version rows carry an icon span; only the refusal's is drawn (`mod-error`).
+    await expect(o.win.locator(".geode-version-warning-icon.mod-error")).toBeVisible();
     // #16: the order comes from the definitions tree (version refusal, hold, error, pause,
     // hint), so read the rendered rows rather than a DOM order attribute.
     const bannerOrder = await o.eval<string[]>(
@@ -144,7 +145,7 @@ test("601 root row: a held root file gets its own last row, off then selected", 
     );
     // The version row stays in the definitions and hides itself (#16), so it leaves no icon
     // on screen rather than leaving the DOM.
-    await expect(o.win.locator(".geode-version-warning-icon")).toBeHidden();
+    await expect(o.win.locator(".geode-version-warning-icon.mod-error")).toBeHidden();
     expect(await o.eval<unknown>(HOLD)).not.toBe(null);
   } finally {
     await o.close().catch(() => {});

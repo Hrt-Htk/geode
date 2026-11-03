@@ -5,7 +5,13 @@ import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick, evalSetValue } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
-import { openSettingsPage, rowInventory, rowShown, shownSections } from "../helpers/settings-tab";
+import {
+  AUTO_LOCK_ROW,
+  openSettingsPage,
+  rowInventory,
+  rowShown,
+  shownSections,
+} from "../helpers/settings-tab";
 
 // #458 on-device: locked layout (status + vault-name rows only) + unlock restores in
 // place + leave → not-set-up layout. Screenshot via adb (screencap).
@@ -84,7 +90,7 @@ test("tab states (phone): locked rows-only layout, unlock in place, leave → no
     expect(lockedHiddenRows, "storage/actions/vault-lock/autolock rows hidden while locked").toBe(
       true,
     );
-    expect(await rowShown(obsidian, "Auto lock after (hours)")).toBe(false);
+    expect(await rowShown(obsidian, AUTO_LOCK_ROW)).toBe(false);
     expect(await shownSections(obsidian), "only Vault shows while locked").toEqual(["Vault"]);
     const renameGone = await obsidian.eval<boolean>(
       `!document.querySelector('[data-testid="geode-settings-vault-rename"]')`,

@@ -7,13 +7,17 @@ import { dismissModals } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
 import { openSettingsTab } from "../helpers/logs";
 import {
+  AUTO_LOCK_ROW,
   closeSettingsPage,
+  expectSameRows,
   isDisplayPath,
   openSettingsPage,
   rowInventory,
   rowShown,
+  scrollToHeading,
   searchSettings,
   shownSections,
+  TRASH_RETENTION_ROW,
   useDisplayPath,
 } from "../helpers/settings-tab";
 
@@ -63,15 +67,6 @@ test("settings tab (phone): definitions and display() render the same rows; sear
       await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
       await o.screenshot(shotPath(name));
     };
-    const scrollTo = (name: string) =>
-      o.eval<boolean>(`(() => {
-        const el = [...document.querySelectorAll(".modal.mod-settings .setting-item-heading")]
-          .find((e) => e.textContent.trim() === ${JSON.stringify(name)});
-        // Leave the translucent header room, or the heading lands under it.
-        if (el) el.style.scrollMarginTop = "72px";
-        el?.scrollIntoView({ block: "start" });
-        return !!el;
-      })()`);
 
     /* ---- Definitions path ---- */
     await openSettingsTab(o, true);
@@ -81,7 +76,7 @@ test("settings tab (phone): definitions and display() render the same rows; sear
     );
     await shot("defs-phone-01-top.png");
     for (const [i, group] of ["Vault", "Devices", "Sync scope", "Trash"].entries()) {
-      expect(await scrollTo(group)).toBe(true);
+      expect(await scrollToHeading(o, group, 72)).toBe(true);
       await shot(`defs-phone-0${i + 2}-${group.toLowerCase().replace(" ", "-")}.png`);
     }
     const defsMain = await rowInventory(o);
@@ -97,9 +92,9 @@ test("settings tab (phone): definitions and display() render the same rows; sear
     /* ---- Settings search (the tab list holds the search field on a phone) ---- */
     await o.eval(`app.setting.closeActiveTab(); return true;`);
     await new Promise((r) => setTimeout(r, 800));
-    expect((await searchSettings(o, "retention")).join("\n")).toContain("Trash retention (days)");
+    expect((await searchSettings(o, "retention")).join("\n")).toContain(TRASH_RETENTION_ROW);
     await shot("defs-phone-08-search-retention.png");
-    expect((await searchSettings(o, "auto-lock")).join("\n")).toContain("Auto lock after (hours)");
+    expect((await searchSettings(o, "auto-lock")).join("\n")).toContain(AUTO_LOCK_ROW);
     await shot("defs-phone-09-search-autolock.png");
     await searchSettings(o, "");
 
@@ -111,10 +106,11 @@ test("settings tab (phone): definitions and display() render the same rows; sear
     await openSettingsPage(o, "Advanced");
     await openSettingsPage(o, "Logs");
     await shot("display-phone-02-logs.png");
-    const pageEntries = ["Advanced | ", "Logs | "];
-    const defsRows = [...defsMain, ...defsAdvanced, ...defsLogs]
-      .filter((r) => !pageEntries.includes(r));
-    expect([...await rowInventory(o)].sort()).toEqual(defsRows.sort());
+    expectSameRows(await rowInventory(o), {
+      main: defsMain,
+      advanced: defsAdvanced,
+      logs: defsLogs,
+    });
     expect(await rowShown(o, "Copy logs")).toBe(true);
     await useDisplayPath(o, false);
     await expect.poll(() => isDisplayPath(o)).toBe(false);

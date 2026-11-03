@@ -24,7 +24,7 @@ import {
 import { openSettingsTab } from "../helpers/logs";
 import { restartHeld } from "../helpers/mass-delete-seed";
 import { waitForStatusBar } from "../helpers/waits";
-import { setRowControl } from "../helpers/settings-tab";
+import { setRowControl, SYNC_CONFIG_ROW } from "../helpers/settings-tab";
 
 // #8: the desktop half of the docs images; `deno task docs:screenshots` runs it.
 
@@ -231,7 +231,7 @@ Frost on Thursday night. Bring the fig in and cover the trough with the old shee
     // to sync row. A taller window so the whole list, plugins included, fits in the image.
     await openSettingsTab(o);
     await fixWindow(o, 1000);
-    await setRowControl(o, "Sync config folder");
+    await setRowControl(o, SYNC_CONFIG_ROW);
     // The modal lists installed community plugins; the demo vault ships with Geode alone, so two
     // manifests stand in for the plugins a real vault would have (as config-to-sync-plugins.spec.ts
     // does), and the shot shows both halves of the list.

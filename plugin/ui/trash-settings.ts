@@ -1,6 +1,7 @@
 import type { Setting } from "obsidian";
 import type { SettingsRow } from "./settings-legacy.ts";
 import { wholeAtLeastOne } from "./settings-tree.ts";
+import { TRASH_RETENTION_ROW } from "./settings-row-names.ts";
 import type { TrashEntry } from "../plumbing/trash-client.ts";
 import { trashCountLabel } from "./trash-format.ts";
 import { type MassDeleteHold, thresholdFromInput } from "../sync/mass-delete-hold.ts";
@@ -53,7 +54,7 @@ export function trashSettingsRows(
       refreshCount();
     },
   }, {
-    name: "Trash retention (days)",
+    name: TRASH_RETENTION_ROW,
     desc: "Days to keep deleted files before they can be purged.",
     control: { type: "number", key: "trashRetentionDays", min: 1, validate: wholeAtLeastOne },
   }, {

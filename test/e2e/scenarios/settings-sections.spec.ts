@@ -10,9 +10,12 @@ import {
   closeSettingsPage,
   markNoRerender,
   openSettingsPage,
+  readScroll,
   scrollRowIntoView,
+  scrollSettings,
   setRowControl,
   shownSections,
+  SYNC_CONFIG_ROW,
 } from "../helpers/settings-tab";
 
 // #134: the settings tab is a set of sections (on Obsidian 1.13+ headed groups with
@@ -23,39 +26,6 @@ import {
 const PASSPHRASE = "settings-sections-pass";
 
 const SECTION_ORDER = ["Vault", "Devices", "Sync scope", "Trash", "Advanced"];
-
-/** Scroll whichever settings pane element is actually scrollable to a small non-zero offset. */
-async function scrollSettings(
-  o: { eval: <T>(s: string) => Promise<T> },
-  to: number,
-): Promise<number> {
-  return await o.eval<number>(`
-    (() => {
-      const candidates = [".vertical-tab-content", ".modal.mod-settings .modal-content"];
-      for (const sel of candidates) {
-        const el = document.querySelector(sel);
-        if (el) {
-          el.scrollTop = ${to};
-          if (el.scrollTop > 0) return el.scrollTop;
-        }
-      }
-      return 0;
-    })()
-  `);
-}
-
-async function readScroll(o: { eval: <T>(s: string) => Promise<T> }): Promise<number> {
-  return await o.eval<number>(`
-    (() => {
-      const candidates = [".vertical-tab-content", ".modal.mod-settings .modal-content"];
-      for (const sel of candidates) {
-        const el = document.querySelector(sel);
-        if (el && el.scrollTop > 0) return el.scrollTop;
-      }
-      return 0;
-    })()
-  `);
-}
 
 /**
  * Click a settings button without the native focus-scroll: dispatch an untrusted
@@ -161,14 +131,14 @@ test("settings sections: order, live rows, no full re-render, last-backup persis
 
     // 4b. Sync config toggle on+off shows/hides the Config to sync row in place, not a tab re-render.
     // Centre the toggle first (setRowControl does the same), so nothing scrolls on focus.
-    await scrollRowIntoView(o, "Sync config folder");
+    await scrollRowIntoView(o, SYNC_CONFIG_ROW);
     const scrollAfterToggle = await readScroll(o);
-    await setRowControl(o, "Sync config folder");
+    await setRowControl(o, SYNC_CONFIG_ROW);
     await expect(o.win.locator('[data-testid="geode-settings-config-row"]')).toBeVisible({
       timeout: 10_000,
     });
     await assertNoRerender("sync toggle on", scrollAfterToggle);
-    await setRowControl(o, "Sync config folder");
+    await setRowControl(o, SYNC_CONFIG_ROW);
     await expect(o.win.locator('[data-testid="geode-settings-config-row"]')).toBeHidden({
       timeout: 10_000,
     });
