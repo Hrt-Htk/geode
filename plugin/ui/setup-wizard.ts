@@ -347,7 +347,11 @@ export class SetupWizardModal extends Modal {
     );
     // #440: forgot link on the Join passphrase step; the wizard is the entry
     // point, so no "try again" target.
-    createForgotLink(contentEl, "geode-join-forgot", () => openForgotModal(this.plugin));
+    createForgotLink(
+      new Setting(contentEl),
+      "geode-join-forgot",
+      () => openForgotModal(this.plugin),
+    );
     const errorEl = this.errorEl(contentEl, "geode-join-error");
     this.buttons(contentEl, "Join", "geode-join-submit", async () => {
       errorEl.empty();

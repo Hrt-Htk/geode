@@ -35,6 +35,7 @@ import {
 } from "./trash-select.ts";
 import { PreviewModal } from "./trash-preview.ts";
 import { type AdminTokenHost, withAdminToken } from "./admin-token-modal.ts";
+import { setDestructive } from "./api-compat.ts";
 
 // #446: trash as a modal (owner's choice over the side panel), ported 1:1
 // from the mockup (minus the Mockup-only Trash-state control). Opened from
@@ -199,7 +200,7 @@ export class TrashModal extends Modal {
   ): void {
     const btn = new ButtonComponent(parent).setButtonText(label);
     if (cta) btn.setCta();
-    else btn.setWarning();
+    else setDestructive(btn);
     if (!enabled) btn.setDisabled(true);
     if (testid) btn.buttonEl.dataset.testid = testid;
     btn.onClick(onClick);
@@ -298,7 +299,7 @@ export class TrashModal extends Modal {
       });
     });
     s.addButton((b) => {
-      b.setWarning().setButtonText("Purge");
+      setDestructive(b).setButtonText("Purge");
       b.buttonEl.dataset.testid = "geode-trash-purge";
       b.buttonEl.dataset.pathHash = entry.path_hash;
       b.onClick(() => this.openPurgeFile(entry));

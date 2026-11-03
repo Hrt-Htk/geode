@@ -1,4 +1,5 @@
 import { App, Modal, Setting } from "obsidian";
+import { setDestructive } from "./api-compat.ts";
 
 export interface ConfirmModalOptions {
   title: string;
@@ -31,9 +32,7 @@ export class ConfirmModal extends Modal {
       btn.buttonEl.dataset.testid = "geode-confirm-cancel";
       btn.onClick(() => this.close());
     }).addButton((btn) => {
-      // setDestructive() is @since Obsidian 1.13 while the plugin supports 1.8.7; the
-      // deprecated setWarning() is the compatible red destructive, so keep it here.
-      if (this.opts.warning !== false) btn.setWarning();
+      if (this.opts.warning !== false) setDestructive(btn);
       btn.setButtonText(this.opts.confirmText);
       btn.buttonEl.dataset.testid = "geode-confirm-yes";
       btn.onClick(async () => {

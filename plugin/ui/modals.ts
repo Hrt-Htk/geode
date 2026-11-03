@@ -59,7 +59,7 @@ type ModalsHost = {
     }
     | null;
   notify: (message: string) => void;
-  settingTab: { display(): void; refreshTrashCount(): void } | null;
+  settingTab: { refresh(): void; refreshTrashCount(): void } | null;
   trash: TrashApi;
   registerInterval(id: number): unknown;
   saveSettings(): Promise<void>;
@@ -292,7 +292,7 @@ export async function joinWithAdminFlow(
 
 function afterSetupFlow(host: ModalsHost, keepWizardOpen: boolean): void {
   if (keepWizardOpen) {
-    host.settingTab?.display();
+    host.settingTab?.refresh();
   } else {
     onVaultConfigured(host);
   }
@@ -301,5 +301,5 @@ function afterSetupFlow(host: ModalsHost, keepWizardOpen: boolean): void {
 function onVaultConfigured(host: ModalsHost): void {
   host.setupWizardModal?.close();
   host.setupWizardModal = null;
-  host.settingTab?.display();
+  host.settingTab?.refresh();
 }
