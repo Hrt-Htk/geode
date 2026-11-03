@@ -1,4 +1,5 @@
-import { Notice, Setting } from "obsidian";
+import { Notice } from "obsidian";
+import type { SettingsRow } from "./settings-legacy.ts";
 import { type LogEntry, subscribeLog } from "../plumbing/log.ts";
 import {
   connectionLabel,
@@ -19,26 +20,55 @@ export type LogsSectionHost = {
   exportLog: () => string;
 };
 
-/** #453/#434: Logs section fields: details line, filter tabs, ring-buffer log box, Copy logs. */
+/** #453/#434: Logs section rows: the log view (details line, filter tabs, ring-buffer log
+ * box) and Copy logs. The view follows the log while it is shown. */
 export class SettingsLogsSection {
   private filter: LogFilter = "all";
-  private detailsEl!: HTMLElement;
+  private detailsEl: HTMLElement | null = null;
   private boxEl!: HTMLElement;
   private tabs: HTMLElement[] = [];
-  private unsubscribe: () => void;
+  private unsubscribe: (() => void) | null = null;
 
-  constructor(private fields: HTMLElement, private host: LogsSectionHost) {
-    this.render();
-    this.unsubscribe = subscribeLog((entry) => this.appendLine(entry));
+  constructor(private host: LogsSectionHost) {}
+
+  rows(): SettingsRow[] {
+    return [{
+      name: "Sync log",
+      aliases: ["logs", "debug"],
+      render: (row) => {
+        row.settingEl.empty();
+        row.settingEl.addClass("geode-log-view");
+        this.renderView(row.settingEl);
+        this.unsubscribe = subscribeLog((entry) => this.appendLine(entry));
+        return () => this.destroy();
+      },
+    }, {
+      name: "Copy logs",
+      desc: "Copy the recent Geode log to share in a bug report.",
+      render: (row) => {
+        row.addButton((btn) => {
+          btn.setButtonText("Copy logs").setTooltip("Copy log to clipboard");
+          btn.buttonEl.dataset.testid = "geode-log-copy";
+          btn.onClick(async () => {
+            try {
+              await navigator.clipboard.writeText(this.host.exportLog());
+              new Notice("Logs copied");
+            } catch {
+              new Notice("Failed to copy logs");
+            }
+          });
+        });
+      },
+    }];
   }
 
-  private render(): void {
-    this.fields.empty();
-    this.detailsEl = this.fields.createDiv({ cls: "geode-log-details" });
+  private renderView(el: HTMLElement): void {
+    this.detailsEl = el.createDiv({ cls: "geode-log-details" });
     this.detailsEl.dataset.testid = "geode-log-details";
     this.refreshDetails();
 
-    const tabsEl = this.fields.createDiv({ cls: "geode-activity-tabs geode-log-tabs" });
+    const tabsEl = el.createDiv({ cls: "geode-activity-tabs geode-log-tabs" });
+    this.tabs = [];
     for (const f of LOG_FILTERS) {
       const tab = tabsEl.createDiv({
         cls: "geode-activity-tab" + (this.filter === f.id ? " is-active" : ""),
@@ -53,29 +83,14 @@ export class SettingsLogsSection {
       this.tabs.push(tab);
     }
 
-    this.boxEl = this.fields.createDiv({ cls: "geode-log-box" });
+    this.boxEl = el.createDiv({ cls: "geode-log-box" });
     this.boxEl.dataset.testid = "geode-log-box";
     this.renderBox();
-
-    new Setting(this.fields)
-      .setName("Copy logs")
-      .setDesc("Copy the recent Geode log to share in a bug report.")
-      .addButton((btn) => {
-        btn.setButtonText("Copy logs").setTooltip("Copy log to clipboard");
-        btn.buttonEl.dataset.testid = "geode-log-copy";
-        btn.onClick(async () => {
-          try {
-            await navigator.clipboard.writeText(this.host.exportLog());
-            new Notice("Logs copied");
-          } catch {
-            new Notice("Failed to copy logs");
-          }
-        });
-      });
   }
 
   /** In-place details-line update; called on the settings tab's status tick. */
   refreshDetails(): void {
+    if (!this.detailsEl) return;
     const text = logDetailsText({
       state: connectionLabel(this.host.getTransportState()),
       seq: this.host.getLastSeenSeq(),
@@ -105,7 +120,9 @@ export class SettingsLogsSection {
     line.setText(formatLogLine(entry));
   }
 
-  destroy(): void {
-    this.unsubscribe();
+  private destroy(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    this.detailsEl = null;
   }
 }

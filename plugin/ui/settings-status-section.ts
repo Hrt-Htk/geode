@@ -5,11 +5,15 @@ import { getServerStorage } from "../plumbing/storage-client.ts";
 import { PassphraseModal } from "./passphrase-modal.ts";
 import { runWithFeedback } from "./button-feedback.ts";
 import { createForgotLink } from "./forgot-modal.ts";
+import { FORGOT_TITLE } from "./passphrase-copy.ts";
+import type { SettingsRow } from "./settings-legacy.ts";
 import {
   NOT_SET_UP_SETUP_DESC,
   NOT_SET_UP_SETUP_NAME,
   NOT_SET_UP_STATUS_TEXT,
+  type StatusRowId,
   type TabState,
+  tabStateOf,
   tabVisibility,
 } from "./tab-state.ts";
 
@@ -41,62 +45,76 @@ export class SettingsStatusSection {
   private conflictTextEl: HTMLElement | null = null;
   private unlockBtn: ButtonComponent | null = null;
   private rowActionBtn: ButtonComponent | null = null;
-  private storageRowEl: HTMLElement | null = null;
   private storageTextEl: HTMLElement | null = null;
   private storageMeterEl: HTMLElement | null = null;
-  private actionRowEls: HTMLElement[] = [];
-  private forgotRowEl: HTMLElement | null = null;
   private storageState: StorageState = { kind: "loading" };
 
-  constructor(private fields: HTMLElement, private host: StatusSectionHost) {
-    if (this.host.configured()) {
-      this.renderStatusRow();
-      this.renderForgotLink();
-      this.renderStorageRow();
-      this.renderSyncActions();
-    } else {
-      this.renderNotSetUp();
-    }
+  constructor(private host: StatusSectionHost) {}
+
+  private state(): TabState {
+    return tabStateOf(this.host.configured(), this.host.getUnlocked());
   }
 
-  /** #440: "Forgot your passphrase?" link row, visible only while locked. */
-  private renderForgotLink(): void {
-    this.forgotRowEl = createForgotLink(
-      this.fields,
-      "geode-settings-forgot",
-      () => this.host.openForgotModal(),
-    );
-    this.forgotRowEl.addClass("geode-hidden");
+  private shows(row: StatusRowId): () => boolean {
+    return () => tabVisibility(this.state()).statusRows.includes(row);
+  }
+
+  rows(): SettingsRow[] {
+    if (!this.host.configured()) return this.notSetUpRows();
+    return [
+      { name: "Sync status", render: (s) => this.renderStatusRow(s) },
+      {
+        // #440: "Forgot your passphrase?" link row, visible only while locked.
+        name: FORGOT_TITLE,
+        visible: () => this.state() === "locked",
+        render: (s) => {
+          createForgotLink(s, "geode-settings-forgot", () => this.host.openForgotModal());
+        },
+      },
+      {
+        name: "Server storage",
+        visible: this.shows("storage"),
+        render: (s) => this.renderStorageRow(s),
+      },
+      ...this.syncActionRows(),
+    ];
   }
 
   /** Not-set-up state (#458): grey-dot status row + Set up row with the wizard CTA. */
-  private renderNotSetUp(): void {
-    const status = new Setting(this.fields).setName("Sync status");
-    status.settingEl.dataset.testid = "geode-settings-sync-status";
-    status.descEl.createSpan({ cls: "geode-sync-dot geode-sync-dot-grey" });
-    status.descEl.createSpan({ text: NOT_SET_UP_STATUS_TEXT });
-    new Setting(this.fields)
-      .setName(NOT_SET_UP_SETUP_NAME)
-      .setDesc(NOT_SET_UP_SETUP_DESC)
-      .addButton((btn) => {
-        btn.buttonEl.dataset.testid = "geode-settings-run-wizard";
-        btn.setCta().setButtonText("Run setup wizard").onClick(() => this.host.runSetupWizard());
-      });
+  private notSetUpRows(): SettingsRow[] {
+    return [{
+      name: "Sync status",
+      render: (s) => {
+        s.settingEl.dataset.testid = "geode-settings-sync-status";
+        s.descEl.createSpan({ cls: "geode-sync-dot geode-sync-dot-grey" });
+        s.descEl.createSpan({ text: NOT_SET_UP_STATUS_TEXT });
+      },
+    }, {
+      name: NOT_SET_UP_SETUP_NAME,
+      desc: NOT_SET_UP_SETUP_DESC,
+      render: (s) => {
+        s.addButton((btn) => {
+          btn.buttonEl.dataset.testid = "geode-settings-run-wizard";
+          btn.setCta().setButtonText("Run setup wizard").onClick(() => this.host.runSetupWizard());
+        });
+      },
+    }];
   }
 
-  private renderStatusRow(): void {
-    const row = new Setting(this.fields).setName("Sync status");
+  private renderStatusRow(row: Setting): void {
     row.settingEl.dataset.testid = "geode-settings-sync-status";
     this.statusRow = row;
+    this.unlockBtn = null;
+    this.rowActionBtn = null;
     this.dotEl = row.descEl.createSpan({ cls: "geode-sync-dot geode-sync-dot-hidden" });
     this.textEl = row.descEl.createSpan();
     this.conflictTextEl = row.descEl.createDiv({ cls: "geode-pause-conflicts geode-hidden" });
+    this.syncStatusButton(this.state() === "locked");
+    this.updateStatusRow();
   }
 
-  private renderStorageRow(): void {
-    const row = new Setting(this.fields).setName("Server storage");
+  private renderStorageRow(row: Setting): void {
     row.settingEl.dataset.testid = "geode-settings-storage";
-    this.storageRowEl = row.settingEl;
     this.storageTextEl = row.descEl.createSpan();
     this.storageMeterEl = row.controlEl.createDiv({ cls: "geode-storage-meter" });
     this.storageMeterEl.createSpan({ cls: "geode-storage-meter-vault" });
@@ -141,52 +159,71 @@ export class SettingsStatusSection {
     (meter.lastChild as HTMLElement).style.width = `${d.otherPct ?? 0}%`;
   }
 
-  private renderSyncActions(): void {
-    const reconcile = new Setting(this.fields)
-      .setName("Reconcile now")
-      .setDesc("Compare local and remote state and resolve differences.")
-      .addButton((btn) => {
-        btn.setButtonText("Reconcile now");
-        btn.buttonEl.dataset.testid = "geode-settings-reconcile";
-        btn.onClick(() => {
-          void runWithFeedback(
-            btn,
-            "Reconciling…",
-            "Geode: reconcile complete",
-            () => this.host.reconcileNow(),
-          );
+  private syncActionRows(): SettingsRow[] {
+    const visible = this.shows("actions");
+    return [{
+      name: "Reconcile now",
+      desc: "Compare local and remote state and resolve differences.",
+      visible,
+      render: (s) => {
+        s.addButton((btn) => {
+          btn.setButtonText("Reconcile now");
+          btn.buttonEl.dataset.testid = "geode-settings-reconcile";
+          btn.onClick(() => {
+            void runWithFeedback(
+              btn,
+              "Reconciling…",
+              "Geode: reconcile complete",
+              () => this.host.reconcileNow(),
+            );
+          });
         });
-      });
-    this.actionRowEls.push(reconcile.settingEl);
-    const push = new Setting(this.fields)
-      .setName("Push now")
-      .setDesc("Push local changes to the server immediately.")
-      .addButton((btn) => {
-        btn.setButtonText("Push now");
-        btn.buttonEl.dataset.testid = "geode-settings-push";
-        btn.onClick(() => {
-          void runWithFeedback(btn, "Pushing…", "Geode: push complete", () => this.host.pushNow());
+      },
+    }, {
+      name: "Push now",
+      desc: "Push local changes to the server immediately.",
+      visible,
+      render: (s) => {
+        s.addButton((btn) => {
+          btn.setButtonText("Push now");
+          btn.buttonEl.dataset.testid = "geode-settings-push";
+          btn.onClick(() => {
+            void runWithFeedback(
+              btn,
+              "Pushing…",
+              "Geode: push complete",
+              () => this.host.pushNow(),
+            );
+          });
         });
-      });
-    this.actionRowEls.push(push.settingEl);
-    const activity = new Setting(this.fields)
-      .setName("Sync activity")
-      .setDesc("Recent uploads, downloads, conflicts and errors, one line per file.");
-    activity.settingEl.dataset.testid = "geode-settings-activity";
-    activity.addButton((btn) => {
-      btn.setButtonText("View");
-      btn.buttonEl.dataset.testid = "geode-settings-activity-view";
-      btn.onClick(() => this.host.openActivityModal());
-    });
-    this.actionRowEls.push(activity.settingEl);
+      },
+    }, {
+      name: "Sync activity",
+      desc: "Recent uploads, downloads, conflicts and errors, one line per file.",
+      visible,
+      render: (s) => {
+        s.settingEl.dataset.testid = "geode-settings-activity";
+        s.addButton((btn) => {
+          btn.setButtonText("View");
+          btn.buttonEl.dataset.testid = "geode-settings-activity-view";
+          btn.onClick(() => this.host.openActivityModal());
+        });
+      },
+    }];
   }
 
-  /** Swap the sync-status row's [Unlock]/[Pause] control, hide storage/action rows, re-describe in place (#458). */
+  /** Swap the sync-status row's [Unlock]/[Pause] control and re-describe it in place (#458);
+   * the rows that hide while locked follow their `visible`. */
   setState(state: TabState): void {
-    const locked = state === "locked";
-    this.forgotRowEl?.classList.toggle("geode-hidden", !locked);
+    this.syncStatusButton(state === "locked");
+    this.updateStatusRow();
+    if (state !== "locked") void this.fetchStorage();
+  }
+
+  private syncStatusButton(locked: boolean): void {
     const row = this.statusRow;
-    if (row && locked && !this.unlockBtn) {
+    if (!row) return;
+    if (locked && !this.unlockBtn) {
       this.removePauseBtn();
       row.addButton((btn) => {
         this.unlockBtn = btn;
@@ -200,17 +237,11 @@ export class SettingsStatusSection {
           ).open();
         });
       });
-    } else if (row && !locked && this.unlockBtn) {
+    } else if (!locked && this.unlockBtn) {
       this.unlockBtn.buttonEl.remove();
       this.unlockBtn = null;
     }
-    if (row && !locked && !this.rowActionBtn) this.addPauseBtn();
-    const { statusRows } = tabVisibility(state);
-    this.storageRowEl?.classList.toggle("geode-hidden", !statusRows.includes("storage"));
-    const showActions = statusRows.includes("actions");
-    for (const el of this.actionRowEls) el.classList.toggle("geode-hidden", !showActions);
-    this.updateStatusRow();
-    if (!locked) void this.fetchStorage();
+    if (!locked && !this.rowActionBtn) this.addPauseBtn();
   }
 
   private addPauseBtn(): void {

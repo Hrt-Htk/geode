@@ -158,6 +158,10 @@
 
 /* #453/#434: Logs section: details line, level tabs (activity tab style),
    fixed-height scrollable monospace box, warn orange / error red (CSS vars). */
+.geode-log-view {
+  display: block;
+}
+
 .geode-log-details {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);

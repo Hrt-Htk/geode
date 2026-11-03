@@ -1,4 +1,5 @@
-import { Setting } from "obsidian";
+import type { Setting } from "obsidian";
+import type { SettingsRow } from "./settings-legacy.ts";
 import { listDeviceStatus } from "../plumbing/provisioning-client.ts";
 import {
   devicesSummaryText,
@@ -14,11 +15,22 @@ import { windowGlobal } from "../plumbing/window.ts";
 
 const REFRESH_INTERVAL_MS = 30_000;
 
-export function renderSettingsDevicesSection(
-  fields: HTMLElement,
-  host: DevicesViewHost,
-): { dispose: () => void } {
-  const row = new Setting(fields).setName("Devices");
+export function settingsDevicesRows(host: DevicesViewHost): SettingsRow[] {
+  return [{
+    name: "Devices",
+    render: (row) => renderDevicesSummary(row, host),
+  }, {
+    // #526: help row only (no button): the admin token is rotated server-side.
+    name: ROTATE_ADMIN_TOKEN_NAME,
+    desc: ROTATE_ADMIN_TOKEN_DESC,
+    render: (row) => {
+      row.settingEl.dataset.testid = "geode-settings-rotate-admin-token";
+    },
+  }];
+}
+
+/** The summary row polls while shown; its cleanup stops the poll (#502). */
+function renderDevicesSummary(row: Setting, host: DevicesViewHost): () => void {
   row.settingEl.dataset.testid = "geode-settings-devices-summary";
   const descEl = row.descEl.createSpan({ text: "Loading…" });
   row.addButton((btn) => {
@@ -26,12 +38,6 @@ export function renderSettingsDevicesSection(
     btn.buttonEl.dataset.testid = "geode-settings-devices-manage";
     btn.onClick(() => openDevicesView(host));
   });
-
-  // #526: help row only (no button): the admin token is rotated server-side.
-  const rotateRow = new Setting(fields).setName(ROTATE_ADMIN_TOKEN_NAME).setDesc(
-    ROTATE_ADMIN_TOKEN_DESC,
-  );
-  rotateRow.settingEl.dataset.testid = "geode-settings-rotate-admin-token";
 
   const refresh = async (): Promise<void> => {
     try {
@@ -51,5 +57,5 @@ export function renderSettingsDevicesSection(
   // #502: register with the plugin so a disable/unload (BRAT reload) clears the timer
   const timer = windowGlobal.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
   host.registerInterval(timer);
-  return { dispose: () => windowGlobal.clearInterval(timer) };
+  return () => windowGlobal.clearInterval(timer);
 }

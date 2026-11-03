@@ -34,9 +34,6 @@ export default defineConfig(
             enforceCamelCaseLower: true,
             brands: ["Geode", "Obsidian", "iOS", "iPadOS", "Android", "Windows", "macOS", "Linux"],
           }],
-          // #16: the settings tab renders in display(); it moves to
-          // getSettingDefinitions().
-          "obsidianmd/settings-tab/prefer-setting-definitions": "off",
         },
       },
     ],
