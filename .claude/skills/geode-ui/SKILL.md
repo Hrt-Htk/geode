@@ -70,9 +70,17 @@ and `border-top: none`. Group with headings, not indented rows.
 
 ### Collapse optional groups
 
-Use the settings tab's section pattern: clickable heading toggles a class on a fields container + a
-rotating chevron. Default collapsed for secondary content: see `createCollapsibleSection()` in
-`plugin/ui/collapsible-section.ts`.
+In modals, and in the settings tab's `display()` fallback (Obsidian < 1.13): a clickable heading
+toggles a class on a fields container + a rotating chevron, secondary content collapsed by default:
+`createCollapsibleSection()` in `plugin/ui/collapsible-section.ts`.
+
+### Settings tab rows are definitions
+
+On Obsidian 1.13+ the settings tab renders from `getSettingDefinitions()`: no collapsing. Add a row
+to its section's `rows()` (a `render` row or a real control), never to one path only: both paths
+render the same tree (`docs/architecture/plugin.md` §9). Rarely used sections are sub-pages
+(Advanced, Logs). E2E: drive rows by name with `test/e2e/helpers/settings-tab.ts`; a control row
+has no testid on 1.13+.
 
 ### Reuse native components and CSS variables
 

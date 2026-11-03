@@ -18,7 +18,7 @@ files, the dev loop, and the checks that prove the setup works. Design docs desc
 | Obsidian | `1.8.7` or newer | `minAppVersion` in the root `manifest.json` |
 | esbuild | `^0.25.5` | `package.json` devDependency; `scripts/plugin-build.ts` imports `npm:esbuild` |
 | TypeScript | `^6.0.3` | `package.json` devDependency; the gate is `tsc -p tsconfig.plugin.json` |
-| `obsidian` typings | `^1.8.9` | `package.json`, resolved through `package-lock.json` |
+| `obsidian` typings | `^1.14.4` | `package.json`, resolved through `package-lock.json` |
 | Playwright | `^1.54.0` | `package.json` devDependency |
 | jscpd, eslint, ts-unused-exports | current | `package.json`, run by `deno task standards` |
 | eslint-plugin-obsidianmd | `0.4.2` | `package.json`; its `recommended` config is the community scanner ruleset |
