@@ -20,14 +20,17 @@ export type BannersHost = {
   resumeSync: () => Promise<void>;
 };
 
+type VersionRow = { setting: Setting; name: HTMLElement; icon: HTMLElement };
+
 /** The banners above the Status rows, in a fixed order: a version refusal (a hard stop), the
- * held mass delete, the sync error, the pause, then an update hint (advisory). Each is its
- * own headless block, so a hidden one leaves no gap; all update in place. */
+ * held mass delete, the sync error, the pause, then an update hint (advisory). One headless
+ * section whose array order is that order; each row hides itself, so a hidden one leaves no gap.
+ * All update in place. */
 export class SettingsBanners {
   private hold: BannerRow;
   private error: BannerRow;
   private pause: BannerRow;
-  private versionRows: { blocked: Setting | null; hint: Setting | null } = {
+  private versionRows: { blocked: VersionRow | null; hint: VersionRow | null } = {
     blocked: null,
     hint: null,
   };
@@ -74,7 +77,7 @@ export class SettingsBanners {
       this.pause.row(),
       this.versionRow("hint"),
     ];
-    return rows.map((row, i) => ({ id: `banner-${i}`, heading: "", kind: "lead", rows: [row] }));
+    return [{ id: "banners", heading: "", kind: "lead", rows }];
   }
 
   /** Re-describe the state banners (status tick); the caller re-evaluates `visible`. */
@@ -123,27 +126,31 @@ export class SettingsBanners {
       searchable: false,
       visible: () => this.host.versionStatus().kind === kind,
       render: (setting) => {
-        this.versionRows[kind] = setting;
+        // The icon and the name live in their own spans: setName()/setDesc() would replace
+        // them on every update (BannerRow keeps its name the same way).
+        setting.nameEl.empty();
+        const name = setting.nameEl.createSpan();
+        const icon = setting.nameEl.createSpan({ cls: "geode-version-warning-icon" });
+        this.versionRows[kind] = { setting, name, icon };
         this.describeVersion(kind);
       },
     };
   }
 
   private describeVersion(kind: "blocked" | "hint"): void {
-    const setting = this.versionRows[kind];
+    const row = this.versionRows[kind];
     const vs = this.host.versionStatus();
-    if (!setting || vs.kind !== kind) return;
+    if (!row || vs.kind !== kind) return;
     const copy = vs.kind === "blocked" ? blockedCopy(vs.side) : null;
-    setting.setName(copy ? copy.title : "Update available");
-    setting.setDesc(
+    row.name.setText(copy ? copy.title : "Update available");
+    row.setting.setDesc(
       copy
         ? copy.bannerDesc
         : vs.kind === "hint"
         ? describeVersionHint(vs.own, vs.server) ?? ""
         : "",
     );
-    const iconSpan = setting.nameEl.createSpan({ cls: "geode-version-warning-icon" });
-    if (copy) iconSpan.addClass("mod-error");
-    setIcon(iconSpan, copy ? "triangle-alert" : "info");
+    row.icon.toggleClass("mod-error", copy !== null);
+    setIcon(row.icon, copy ? "triangle-alert" : "info");
   }
 }
