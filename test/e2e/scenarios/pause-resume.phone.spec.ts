@@ -164,7 +164,7 @@ test("pause/resume (phone): pause → banner → resume", async () => {
 
     /* ---- Banner [Resume]: held edit uploads, row back to Up to date ---- */
     await evalClick(obsidian, RESUME);
-    await expect(banner).toHaveCount(0, { timeout: 30_000 });
+    await expect(banner).toBeHidden({ timeout: 30_000 });
     await expect.poll(
       async () => (await readHeadsRaw(server, device, baselineSeq)).trim().length > 0,
       { timeout: 60_000 },

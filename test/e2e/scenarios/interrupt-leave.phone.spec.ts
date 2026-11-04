@@ -6,6 +6,7 @@ import { serverDeviceCount, unlockIfLocked, waitForServerState } from "../helper
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 // #493 flow b (phone): EXPECTED: the phone is force-stopped mid leave, once the server-side
 // revoke has landed but the local settings/state files are not yet cleared (the only possible
@@ -50,7 +51,7 @@ test("issue493 (phone): force-stop mid leave → relaunch → honest offline sta
       app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
       return true;
     `);
-    await evalClick(obsidian, ".geode-advanced-heading");
+    await openSettingsPage(obsidian, "Advanced");
     await evalClick(obsidian, '[data-testid="geode-settings-leave"]');
     await expect(obsidian.win.locator(".geode-confirm-modal")).toBeVisible({ timeout: 10_000 });
     await evalClick(obsidian, '[data-testid="geode-confirm-yes"]');
@@ -83,7 +84,7 @@ test("issue493 (phone): force-stop mid leave → relaunch → honest offline sta
           app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
           return true;
         `);
-        await evalClick(obsidian2, ".geode-advanced-heading");
+        await openSettingsPage(obsidian2, "Advanced");
         await evalClick(obsidian2, '[data-testid="geode-settings-leave"]');
         await expect(obsidian2.win.locator(".geode-confirm-modal")).toBeVisible({
           timeout: 10_000,

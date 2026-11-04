@@ -60,14 +60,14 @@ test("verify tier1-3 UI: #246 blocked version warning, #169 lock feedback, #168 
     /* ───────── #246: blocked version-awareness (statusbar icon + settings banner) ─────────
        Drive the new strict-gate model: a refused plugin version is "blocked" (sync disabled),
        not "outdated". Set versionStatus, push it to the status bar, and re-render settings. This
-       renders the real StatusBar.resolveIcon() blocked branch and settings renderVersionWarning()
+       renders the real StatusBar.resolveIcon() blocked branch and the settings version
        banner (heading "Update required" + the update copy, #625). */
     await openSettings(obsidian);
     await obsidian.eval(`
       const p = app.plugins.plugins.geode;
       p.versionStatus = { kind: "blocked", side: "plugin" };
       p.statusBar.setVersionStatus(p.versionStatus);
-      p.settingTab.display();
+      p.settingTab.refresh();
       return true;
     `);
 

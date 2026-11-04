@@ -110,7 +110,7 @@ test("601 phone shots: the review at real scale on the 1,850 of 2,400 set", asyn
       .poll(
         () =>
           pair.A.eval<boolean>(
-            `!!document.querySelector('[data-testid="geode-settings-hold-banner"]')`,
+            `document.querySelector('[data-testid="geode-settings-hold-banner"]')?.offsetParent != null`,
           ),
         { timeout: 30_000 },
       )
@@ -242,7 +242,7 @@ test("601 phone decision: delete all lands on both devices with trash entries", 
       .poll(
         () =>
           pair.A.eval<boolean>(
-            `!!document.querySelector('[data-testid="geode-settings-hold-banner"]')`,
+            `document.querySelector('[data-testid="geode-settings-hold-banner"]')?.offsetParent != null`,
           ),
         { timeout: 30_000 },
       )

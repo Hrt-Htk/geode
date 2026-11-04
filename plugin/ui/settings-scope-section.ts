@@ -1,4 +1,6 @@
 import { App as ObsidianApp, Notice, Setting } from "obsidian";
+import type { SettingsRow } from "./settings-legacy.ts";
+import { SYNC_CONFIG_ROW } from "./settings-row-names.ts";
 import type { ConfigCategory, PluginSettings } from "../plumbing/settings-types.ts";
 import { configCategoryScopePrefixes } from "../plumbing/settings-types.ts";
 import {
@@ -25,30 +27,42 @@ export type ScopeSectionHost = {
   /** #454: the vault's config dir (vault.configDir), passed to the category scope. */
   configDir: string;
   saveSettings: () => Promise<void>;
-  setSyncObsidianConfig: (value: boolean) => void;
   reconcileNow: () => Promise<void>;
   /** #342: fetch server heads for folders just switched back on. */
   catchUpFolders: (folders: string[]) => Promise<void>;
 };
 
 /** Sync scope section: folder scope row + config-folder toggle + the
- * "Config to sync" row with its Manage modal (shown/hidden in place). */
+ * "Config to sync" row with its Manage modal (shown only while the toggle is on). */
 export class SettingsScopeSection {
-  private listWrap: HTMLElement | null = null;
   private foldersDesc: HTMLElement | null = null;
   private configDesc: HTMLElement | null = null;
 
-  constructor(private fields: HTMLElement, private host: ScopeSectionHost) {
-    this.renderFoldersRow();
-    this.renderConfigToggle();
-    this.listWrap = this.fields.createDiv();
-    this.renderConfigRow();
+  constructor(private host: ScopeSectionHost) {}
+
+  rows(): SettingsRow[] {
+    return [
+      { name: "Sync folders", render: (s) => this.renderFoldersRow(s) },
+      {
+        name: SYNC_CONFIG_ROW,
+        desc: createFragment((f) => {
+          f.appendText("Include the vault's config folder (");
+          f.createEl("code", { text: `${this.host.configDir}/` });
+          f.appendText(") in sync.");
+        }),
+        control: { type: "toggle", key: "syncObsidianConfig" },
+      },
+      {
+        name: "Config to sync",
+        visible: () => this.host.settings().syncObsidianConfig,
+        render: (s) => this.renderConfigRow(s),
+      },
+    ];
   }
 
   /** The "Sync folders" row: one-line summary + [Manage]. The summary updates in
    * place (no tab re-render) when the Manage modal changes the scope. */
-  private renderFoldersRow(): void {
-    const row = new Setting(this.fields).setName("Sync folders");
+  private renderFoldersRow(row: Setting): void {
     row.settingEl.dataset.testid = "geode-settings-folders-row";
     this.foldersDesc = row.descEl;
     this.renderFoldersDesc();
@@ -136,24 +150,6 @@ export class SettingsScopeSection {
     }
   }
 
-  private renderConfigToggle(): void {
-    const syncConfigSetting = new Setting(this.fields).setName("Sync config folder");
-    syncConfigSetting.setDesc("");
-    syncConfigSetting.descEl.appendText("Include the vault's config folder (");
-    syncConfigSetting.descEl.createEl("code", { text: `${this.host.configDir}/` });
-    syncConfigSetting.descEl.appendText(") in sync.");
-    syncConfigSetting.addToggle((t) => {
-      t.toggleEl.dataset.testid = "geode-settings-toggle-sync-obsidian";
-      t.setValue(this.host.settings().syncObsidianConfig).onChange((v) => {
-        this.host.settings().syncObsidianConfig = v;
-        void this.host.saveSettings();
-        this.host.setSyncObsidianConfig(v);
-        void this.host.reconcileNow();
-        this.renderConfigRow();
-      });
-    });
-  }
-
   private manifests(): Record<string, { id: string; name: string }> {
     return (this.host.app as unknown as {
       plugins?: { manifests?: Record<string, { id: string; name: string }> };
@@ -161,13 +157,8 @@ export class SettingsScopeSection {
       .plugins?.manifests ?? {};
   }
 
-  /** The "Config to sync" row: one-line summary + [Manage] → ConfigModal.
-   * Hidden while the config-folder toggle is off; appears in place when on. */
-  private renderConfigRow(): void {
-    if (!this.listWrap) return;
-    this.listWrap.empty();
-    if (!this.host.settings().syncObsidianConfig) return;
-    const row = new Setting(this.listWrap).setName("Config to sync");
+  /** The "Config to sync" row: one-line summary + [Manage] → ConfigModal. */
+  private renderConfigRow(row: Setting): void {
     row.settingEl.dataset.testid = "geode-settings-config-row";
     this.configDesc = row.descEl;
     this.renderConfigDesc();

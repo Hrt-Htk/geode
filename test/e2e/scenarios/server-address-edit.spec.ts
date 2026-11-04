@@ -4,6 +4,7 @@ import { type E2EServer, startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { closeSettingsPage, openSettingsPage } from "../helpers/settings-tab";
 
 // #424: the server address is read-only with an [Edit] modal that checks the
 // server (reachable AND vault exists for this device token) before committing;
@@ -38,10 +39,7 @@ async function openAdvanced(o: ObsidianInstance): Promise<void> {
     app.setting.openTabById("geode");
     return "ok";
   `);
-  const advancedFields = o.win.locator(".geode-advanced-fields");
-  if ((await advancedFields.getAttribute("class"))?.includes("geode-collapsed")) {
-    await o.win.locator(".geode-advanced-heading").click();
-  }
+  await openSettingsPage(o, "Advanced");
   await o.win.locator(ADV_SERVER).waitFor({ timeout: 15_000 });
 }
 
@@ -85,20 +83,17 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
       .locator(`.setting-item:has(${ADV_SERVER}) .setting-item-description`);
     await expect(serverRowDesc).toHaveText("Applies to this device only.");
     await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
-    await o.win.locator(".vertical-tab-content").screenshot({
+    await o.win.locator(".modal.mod-settings").screenshot({
       path: shotPath("424-01-advanced.png"),
     });
 
-    /* Marker on the Advanced section: a full re-render would recreate it. */
+    /* Marker on the server value: a full re-render would recreate it. */
     await o.eval(`
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const adv = sections.find((s) => s.querySelector(".setting-item-heading")?.textContent?.includes("Advanced"));
-      if (!adv) throw new Error("Advanced section not found");
-      adv.dataset.e2eMarker = "no-rerender";
+      document.querySelector('code[data-testid="geode-settings-adv-server"]').dataset.e2eMarker = "no-rerender";
       return true;
     `);
     const markerPresent = (): Promise<boolean> =>
-      o.eval<boolean>(`!!document.querySelector('.geode-section[data-e2e-marker="no-rerender"]')`);
+      o.eval<boolean>(`!!document.querySelector('code[data-e2e-marker="no-rerender"]')`);
 
     const oldServerUrl = await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl");
 
@@ -155,7 +150,10 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
     expect(await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl"))
       .toBe(`http://localhost:${port}`);
 
-    /* The transport reconnected live: status row back to "Up to date". */
+    /* The transport reconnected live: status row back to "Up to date". The sync-status row
+       sits on the tab itself, so leave the Advanced page to read it. */
+    expect(await markerPresent(), "Advanced row survives the live apply").toBe(true);
+    await closeSettingsPage(o);
     await expect
       .poll(
         async () =>
@@ -172,9 +170,10 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
       .poll(async () => await countHeads(server, device.token), { timeout: 60_000 })
       .toBe(headsBefore + 1);
     await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
-    await o.win.locator(".vertical-tab-content").screenshot({ path: shotPath("424-03-saved.png") });
+    await o.win.locator(".modal.mod-settings").screenshot({ path: shotPath("424-03-saved.png") });
 
     /* ---- 4. Copy buttons fire the "Copied to clipboard." Notice ---- */
+    await openSettingsPage(o, "Advanced");
     await o.eval(`document.querySelectorAll(".notice").forEach((n) => n.remove()); return true;`);
     await o.win.locator('[data-testid="geode-settings-adv-vault-id-copy"]').click();
     await expect(o.win.locator(".notice", { hasText: "Copied to clipboard." }))
@@ -206,9 +205,6 @@ test("server address: read-only rows, check-gated Edit with live apply, no re-re
     await expect(modal).not.toBeVisible({ timeout: 10_000 });
     await setDeviceToken(liveToken);
     expect(await o.eval<string>("app.plugins.plugins.geode.pluginSettings.serverUrl")).toBe(altUrl);
-
-    /* The tab was not re-rendered at any point. */
-    expect(await markerPresent(), "Advanced section marker must survive the live apply").toBe(true);
   } finally {
     await o.close();
     await server.stop().catch(() => {});

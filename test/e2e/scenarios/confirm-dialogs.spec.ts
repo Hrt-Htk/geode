@@ -4,6 +4,7 @@ import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { closeSettingsPage, openSettingsPage } from "../helpers/settings-tab";
 
 // #460: confirm dialogs + rename-vault validation. Ports the #445 mockup:
 // destructive actions ask first (Resync, Leave), the Leave dialog names the
@@ -73,7 +74,7 @@ test("confirms: destructive actions ask first, cancel is a no-op, rename validat
     );
 
     await openGeodeSettings(obsidian);
-    await obsidian.win.locator(".geode-advanced-heading").click();
+    await openSettingsPage(obsidian, "Advanced");
     const leaveBtn = obsidian.win.locator('[data-testid="geode-settings-leave"]');
     const resyncBtn = obsidian.win.locator('[data-testid="geode-settings-resync"]');
     await expect(leaveBtn).toBeVisible({ timeout: 10_000 });
@@ -127,6 +128,8 @@ test("confirms: destructive actions ask first, cancel is a no-op, rename validat
     await expect(obsidian.win.locator('[data-testid="geode-settings-run-wizard"]')).toHaveCount(0);
 
     /* ---- 3. Rename: empty + 65 chars show inline errors, valid name updates the row ---- */
+    // The rename row is on the tab itself, not on the Advanced page Leave and Resync live on.
+    await closeSettingsPage(obsidian);
     const renameBtn = obsidian.win.locator('[data-testid="geode-settings-vault-rename"]');
     await renameBtn.click();
     const renameInput = obsidian.win.locator('[data-testid="geode-vault-rename-input"]');

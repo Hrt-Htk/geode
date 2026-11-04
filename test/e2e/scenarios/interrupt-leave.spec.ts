@@ -11,6 +11,7 @@ import {
 } from "../helpers/interrupt";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 // #493 flow b (desktop): EXPECTED: the app is SIGKILLed mid leave, once the server-side
 // revoke has landed but the local settings/state files are not yet cleared (the only possible
@@ -50,7 +51,7 @@ test("issue493: kill mid leave → relaunch → honest offline state, finishing 
       app.setting.openTabById("geode");
       return true;
     `);
-    await a.win.locator(".geode-advanced-heading").click();
+    await openSettingsPage(a, "Advanced");
     await a.win.locator('[data-testid="geode-settings-leave"]').click();
     await expect(a.win.locator(".geode-confirm-modal")).toBeVisible({ timeout: 10_000 });
     await a.win.locator('[data-testid="geode-confirm-yes"]').click();
@@ -86,7 +87,7 @@ test("issue493: kill mid leave → relaunch → honest offline state, finishing 
           app.setting.openTabById("geode");
           return true;
         `);
-        await a2.win.locator(".geode-advanced-heading").click();
+        await openSettingsPage(a2, "Advanced");
         await a2.win.locator('[data-testid="geode-settings-leave"]').click();
         await expect(a2.win.locator(".geode-confirm-modal")).toBeVisible({ timeout: 10_000 });
         await a2.win.locator('[data-testid="geode-confirm-yes"]').click();

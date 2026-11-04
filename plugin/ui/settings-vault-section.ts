@@ -3,7 +3,11 @@ import type { PluginSettings } from "../plumbing/settings-types.ts";
 import { RenameVaultModal } from "./rename-vault-modal.ts";
 import { runWithFeedback } from "./button-feedback.ts";
 import { serverHost } from "./server-host.ts";
-import { type TabState, tabVisibility } from "./tab-state.ts";
+import { type TabState, tabVisibility, type VaultRowId } from "./tab-state.ts";
+import type { SettingsRow } from "./settings-legacy.ts";
+import { setDestructive } from "./api-compat.ts";
+import { wholeAtLeastOne } from "./settings-tree.ts";
+import { AUTO_LOCK_ROW } from "./settings-row-names.ts";
 import {
   CHANGE_ROW_BUTTON,
   PASSPHRASE_ROW_DESC,
@@ -15,9 +19,9 @@ import {
 
 export type VaultSectionHost = {
   app: ObsidianApp;
+  state: () => TabState;
   settings: () => PluginSettings;
   saveSettings: () => Promise<void>;
-  getUnlocked: () => boolean;
   lockVault: () => void;
   openRekeyModal: (kind: RekeyKind) => void;
   rekeyPaused: () => boolean;
@@ -29,73 +33,80 @@ export function vaultDisplayName(s: { vaultName: string; vaultId: string }): str
   return s.vaultName || s.vaultId;
 }
 
-/** Vault section rows: vault name/desc + lock row + auto-lock; lock state updates in place. */
+/** Vault section rows: vault name/desc + lock row + auto lock; lock state updates in place. */
 export class SettingsVaultSection {
   private vaultDescEl: HTMLElement | null = null;
-  private vaultRow!: Setting;
-  private vaultLockSetting!: Setting;
-  private autolockSetting!: Setting;
-  private passphraseSetting!: Setting;
+  private vaultRow: Setting | null = null;
+  private vaultLockSetting: Setting | null = null;
+  private passphraseSetting: Setting | null = null;
   private lockBtn: ButtonComponent | null = null;
   private renameBtn: ButtonComponent | null = null;
   private passphraseBtn: ButtonComponent | null = null;
 
-  constructor(private fields: HTMLElement, private host: VaultSectionHost) {
-    this.render();
+  constructor(private host: VaultSectionHost) {}
+
+  private shows(row: VaultRowId): () => boolean {
+    return () => tabVisibility(this.host.state()).vaultRows.includes(row);
   }
 
-  private render(): void {
-    const vaultRow = new Setting(this.fields).setName("Geode vault");
-    vaultRow.settingEl.dataset.testid = "geode-settings-vault-name";
-    this.vaultRow = vaultRow;
-    this.vaultDescEl = vaultRow.descEl;
-    this.updateVaultDesc();
-    this.setRenameBtn(true);
-
-    this.vaultLockSetting = new Setting(this.fields).setName("Vault lock");
-    this.vaultLockSetting.settingEl.dataset.testid = "geode-settings-vault-status";
-    this.setLockBtn(!this.host.getUnlocked());
-
-    this.autolockSetting = new Setting(this.fields)
-      .setName("Auto-lock after (hours)")
-      .setDesc("Locks after this many idle hours.")
-      .addText((t) => {
-        t.inputEl.type = "number";
-        t.inputEl.min = "1";
-        t.inputEl.dataset.testid = "geode-settings-autolock";
-        t.inputEl.value = String(this.host.settings().unlockTimeoutHours);
-        t.inputEl.addEventListener("change", () => {
-          const v = parseInt(t.inputEl.value, 10);
-          if (!isNaN(v) && v > 0) {
-            this.host.settings().unlockTimeoutHours = v;
-            void this.host.saveSettings();
-          }
+  rows(): SettingsRow[] {
+    return [{
+      name: "Geode vault",
+      render: (s) => {
+        s.settingEl.dataset.testid = "geode-settings-vault-name";
+        this.vaultRow = s;
+        this.vaultDescEl = s.descEl;
+        this.renameBtn = null;
+        this.updateVaultDesc();
+        this.setRenameBtn(this.host.state() !== "locked");
+      },
+    }, {
+      name: "Vault lock",
+      visible: this.shows("vault-lock"),
+      render: (s) => {
+        s.settingEl.dataset.testid = "geode-settings-vault-status";
+        this.vaultLockSetting = s;
+        this.lockBtn = null;
+        this.syncLockRow(this.host.state() === "locked");
+      },
+    }, {
+      name: AUTO_LOCK_ROW,
+      desc: "Locks after this many idle hours.",
+      aliases: ["auto-lock", "autolock"],
+      visible: this.shows("autolock"),
+      control: { type: "number", key: "unlockTimeoutHours", min: 1, validate: wholeAtLeastOne },
+    }, {
+      // #559: passphrase row; an open rekey cursor shows the paused state.
+      name: PASSPHRASE_ROW_NAME,
+      visible: this.shows("passphrase"),
+      render: (s) => {
+        s.settingEl.dataset.testid = "geode-settings-passphrase";
+        this.passphraseSetting = s;
+        s.addButton((btn) => {
+          this.passphraseBtn = btn;
+          btn.buttonEl.dataset.testid = "geode-settings-passphrase-change";
+          btn.onClick(() => this.host.openRekeyModal("change"));
         });
-      });
-
-    // #559: passphrase row; an open rekey cursor shows the paused state.
-    this.passphraseSetting = new Setting(this.fields).setName(PASSPHRASE_ROW_NAME);
-    this.passphraseSetting.settingEl.dataset.testid = "geode-settings-passphrase";
-    this.passphraseSetting.addButton((btn) => {
-      this.passphraseBtn = btn;
-      btn.buttonEl.dataset.testid = "geode-settings-passphrase-change";
-      btn.onClick(() => this.host.openRekeyModal("change"));
-    });
-    this.updatePassphraseRow();
+        this.updatePassphraseRow();
+      },
+    }];
   }
 
   private updatePassphraseRow(): void {
     const paused = this.host.rekeyPaused();
-    this.passphraseSetting.setDesc(paused ? RESUME_ROW_DESC : PASSPHRASE_ROW_DESC);
+    this.passphraseSetting?.setDesc(paused ? RESUME_ROW_DESC : PASSPHRASE_ROW_DESC);
     this.passphraseBtn?.setButtonText(paused ? RESUME_ROW_BUTTON : CHANGE_ROW_BUTTON);
   }
 
-  private setLockBtn(locked: boolean): void {
+  private syncLockRow(locked: boolean): void {
+    const row = this.vaultLockSetting;
+    if (!row) return;
+    row.setDesc(locked ? "Locked." : VAULT_LOCK_DESC);
     if (!locked) {
       if (!this.lockBtn) {
-        this.vaultLockSetting.addButton((btn) => {
+        row.addButton((btn) => {
           this.lockBtn = btn;
-          btn.setWarning().setButtonText("Lock vault");
+          setDestructive(btn).setButtonText("Lock vault");
           btn.buttonEl.dataset.testid = "geode-settings-lock";
           btn.onClick(() => {
             void runWithFeedback(
@@ -116,7 +127,7 @@ export class SettingsVaultSection {
   private setRenameBtn(show: boolean): void {
     if (show && !this.renameBtn) {
       const s = this.host.settings();
-      this.vaultRow.addButton((btn) => {
+      this.vaultRow?.addButton((btn) => {
         this.renameBtn = btn;
         btn.setButtonText("Rename");
         btn.buttonEl.dataset.testid = "geode-settings-vault-rename";
@@ -140,24 +151,10 @@ export class SettingsVaultSection {
     }
   }
 
-  /** Hide vault-lock/auto-lock rows + Rename while locked; lock-row desc/button swap: all in place (#458). */
+  /** Lock-row desc/button and Rename swap in place (#458); the rows that hide follow `visible`. */
   setState(state: TabState): void {
     const locked = state === "locked";
-    this.vaultLockSetting.setDesc(locked ? "Locked." : VAULT_LOCK_DESC);
-    this.setLockBtn(locked);
-    const { vaultRows } = tabVisibility(state);
-    this.vaultLockSetting.settingEl.classList.toggle(
-      "geode-hidden",
-      !vaultRows.includes("vault-lock"),
-    );
-    this.autolockSetting.settingEl.classList.toggle(
-      "geode-hidden",
-      !vaultRows.includes("autolock"),
-    );
-    this.passphraseSetting.settingEl.classList.toggle(
-      "geode-hidden",
-      !vaultRows.includes("passphrase"),
-    );
+    this.syncLockRow(locked);
     this.setRenameBtn(!locked);
     this.updatePassphraseRow();
   }

@@ -44,7 +44,7 @@ export type VaultLockHost = SyncSessionHost & {
   rekeyCursor: RekeyCursor | null;
   /** #560: the vault's passphrase changed on another device: locked until re-unlocked. */
   rekeyElsewhere: boolean;
-  settingTab: { applyLockState(): void; display(): void } | null;
+  settingTab: { applyLockState(): void; refresh(): void } | null;
   statusBar:
     | (SyncSessionHost["statusBar"] & { setVersionStatus(status: VersionStatus): void })
     | null;
@@ -166,7 +166,7 @@ export async function leaveVault(host: VaultLockHost): Promise<void> {
   host.pluginSettings = clearedVaultSettings(host.pluginSettings);
   await host.saveSettings();
   host.lastBackupAt = 0;
-  host.settingTab?.display();
+  host.settingTab?.refresh();
 }
 
 function clearKeyStore(host: VaultLockHost): void {

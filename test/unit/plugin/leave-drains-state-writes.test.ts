@@ -53,7 +53,7 @@ function makeHost(files: Map<string, Uint8Array>): Host {
     blockedNoticeShown: false,
     rekeyCursor: null,
     rekeyElsewhere: false,
-    settingTab: { applyLockState: () => {}, display: () => {} },
+    settingTab: { applyLockState: () => {}, refresh: () => {} },
     statusBar: null,
     activity: null,
     transport: null,

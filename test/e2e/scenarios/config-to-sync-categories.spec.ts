@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { launchPair } from "../fixtures/pair";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { scrollRowIntoView, setRowControl, SYNC_CONFIG_ROW } from "../helpers/settings-tab";
 
 const PASSPHRASE = "config-to-sync-categories-pass";
 
@@ -81,27 +82,16 @@ test("config to sync row + modal (two devices)", async () => {
     /* ---- Row hidden while Sync config folder is off, appears in place when on ---- */
     await openSettings(B);
     await B.win.locator('[data-testid="geode-settings-config-row"]').waitFor({ timeout: 10_000 });
-    // Scroll the settings pane so a full re-render would be visible as a scroll reset.
-    await B.eval(`
-      (() => {
-        const el = document.querySelector(".vertical-tab-content");
-        if (el) el.scrollTop = 120;
-        return true;
-      })()
-    `);
+    // Centre the toggle first (the same scroll setRowControl does), so a full re-render would
+    // be visible as a scroll reset.
+    await scrollRowIntoView(B, SYNC_CONFIG_ROW);
     const scrollBefore = await B.eval<number>(
       `document.querySelector(".vertical-tab-content")?.scrollTop ?? 0`,
     );
+    expect(scrollBefore, "the pane sits away from the top").toBeGreaterThan(0);
     // Turn the folder toggle off → row disappears (change event, no focus-scroll).
-    await B.eval(`
-      (() => {
-        const el = document.querySelector('[data-testid="geode-settings-toggle-sync-obsidian"]');
-        el.checked = !el.checked;
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
-      })()
-    `);
-    await expect(B.win.locator('[data-testid="geode-settings-config-row"]')).toHaveCount(0, {
+    await setRowControl(B, SYNC_CONFIG_ROW);
+    await expect(B.win.locator('[data-testid="geode-settings-config-row"]')).toBeHidden({
       timeout: 10_000,
     });
     expect(
@@ -110,15 +100,8 @@ test("config to sync row + modal (two devices)", async () => {
     )
       .toBe(scrollBefore);
     // Turn it back on → the row reappears in place (no full settings re-render).
-    await B.eval(`
-      (() => {
-        const el = document.querySelector('[data-testid="geode-settings-toggle-sync-obsidian"]');
-        el.checked = !el.checked;
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
-      })()
-    `);
-    await expect(B.win.locator('[data-testid="geode-settings-config-row"]')).toHaveCount(1, {
+    await setRowControl(B, SYNC_CONFIG_ROW);
+    await expect(B.win.locator('[data-testid="geode-settings-config-row"]')).toBeVisible({
       timeout: 10_000,
     });
     expect(

@@ -4,6 +4,7 @@ import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { setRowControl, SYNC_CONFIG_ROW } from "../helpers/settings-tab";
 
 // #184: the config-to-sync modal lists and toggles community plugins.
 
@@ -72,15 +73,15 @@ test("config-to-sync modal lists and toggles plugins", async () => {
     `);
 
     /* ---- OFF state: the Config to sync row must be absent ---- */
-    await expect(obsidian.win.locator('[data-testid="geode-settings-config-row"]')).toHaveCount(0);
+    await expect(obsidian.win.locator('[data-testid="geode-settings-config-row"]')).toBeHidden();
     await obsidian.win.locator(".modal.mod-settings").screenshot({ path: shotPath(SHOT_OFF) })
       .catch(async () => {
         await obsidian.win.screenshot({ path: shotPath(SHOT_OFF) });
       });
 
     /* ---- Turn the master toggle ON → the row appears ---- */
-    await obsidian.win.locator('[data-testid="geode-settings-toggle-sync-obsidian"]').click();
-    await expect(obsidian.win.locator('[data-testid="geode-settings-config-row"]')).toHaveCount(1);
+    await setRowControl(obsidian, SYNC_CONFIG_ROW);
+    await expect(obsidian.win.locator('[data-testid="geode-settings-config-row"]')).toBeVisible();
 
     /* ---- Manage opens the modal: Settings + Community plugins, both open ---- */
     await obsidian.win.locator('[data-testid="geode-settings-config-manage"]').click();

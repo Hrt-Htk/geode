@@ -4,6 +4,7 @@ import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { markNoRerender } from "../helpers/settings-tab";
 
 // #341/#553: the settings Status section shows this vault's size first, then
 // the server's free space: "This vault X · Y free" with a two-segment meter
@@ -63,16 +64,8 @@ test("server storage: used/free row + meter, unavailable on dead server, no re-r
     await expect(o.win.locator(METER)).toBeVisible();
     await expect(o.win.locator(METER)).not.toHaveClass(/geode-storage-meter-hidden/);
 
-    /* Marker on the Status section: a full re-render would recreate it. */
-    await o.eval(`
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const st = sections.find((s) => s.querySelector(".setting-item-heading")?.textContent?.includes("Status"));
-      if (!st) throw new Error("Status section not found");
-      st.dataset.e2eMarker = "no-rerender";
-      return true;
-    `);
-    const markerPresent = (): Promise<boolean> =>
-      o.eval<boolean>(`!!document.querySelector('.geode-section[data-e2e-marker="no-rerender"]')`);
+    /* Marker on the sync-status row: a full re-render would recreate it. */
+    const markerPresent = await markNoRerender(o);
 
     /* Screenshot 1: the real server-answered state (normal line or warning,
        machine-dependent; on this machine /tmp has < 5 GB free → warning). */

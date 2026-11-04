@@ -54,13 +54,11 @@
 }
 
 /* Collapsible settings sections (#134) */
-.geode-collapsible-heading,
-.geode-advanced-heading {
+.geode-collapsible-heading {
   cursor: pointer;
   user-select: none;
 }
 
-.geode-advanced-fields.geode-collapsed,
 .geode-section-fields.geode-collapsed {
   display: none;
 }
@@ -158,6 +156,10 @@
 
 /* #453/#434: Logs section: details line, level tabs (activity tab style),
    fixed-height scrollable monospace box, warn orange / error red (CSS vars). */
+.geode-log-view {
+  display: block;
+}
+
 .geode-log-details {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);

@@ -496,7 +496,7 @@ export default class GeodePlugin extends Plugin {
           // and the flag must not trigger a second session restart.
           this.rekeyInProgress = false;
           this.rekeyCursor = null;
-          this.settingTab?.display();
+          this.settingTab?.refresh();
         },
       },
       kind,

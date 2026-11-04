@@ -22,7 +22,7 @@ export const NOT_SET_UP_SETUP_NAME = "Set up";
 // One line on desktop (the full sentence wraps); the short line keeps the CTA row tidy.
 export const NOT_SET_UP_SETUP_DESC = "Connect this device to a Geode vault.";
 
-/** Rows for notset are built by renderNotSetUp, not this map. */
+/** The not-set-up rows come from notSetUpRows(), not from this map. */
 export function tabVisibility(state: TabState): TabVisibility {
   switch (state) {
     case "notset":

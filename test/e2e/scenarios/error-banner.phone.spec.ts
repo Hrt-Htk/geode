@@ -70,7 +70,7 @@ test("error banner (phone): unreachable → retry → recovered", async () => {
     const bannerDesc = banner.locator(".setting-item-description");
 
     /* Synced: no error banner. */
-    await expect(banner).toHaveCount(0);
+    await expect(banner).toBeHidden();
 
     /* ---- 2. Server unreachable: banner appears within ~25 s ---- */
     await server.shutdown();
@@ -92,7 +92,7 @@ test("error banner (phone): unreachable → retry → recovered", async () => {
     /* ---- 3. Server back + [Retry]: banner gone, status row recovered ---- */
     await server.restart();
     await evalClick(obsidian, RETRY);
-    await expect(banner).toHaveCount(0, { timeout: 30_000 });
+    await expect(banner).toBeHidden({ timeout: 30_000 });
     await expect
       .poll(async () => await statusRow.locator(".setting-item-description").textContent(), {
         timeout: 60_000,

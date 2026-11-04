@@ -11,6 +11,7 @@ import {
   FORGOT_TITLE,
   FORGOT_TRY_AGAIN,
 } from "./passphrase-copy.ts";
+import { setDestructive } from "./api-compat.ts";
 
 type ForgotModalOptions = {
   /** Back to the unlock pop-up; omitted when the caller is already the entry point (wizard). */
@@ -21,19 +22,14 @@ type ForgotModalOptions = {
 
 // #440: the "Forgot your passphrase?" link row, shared by the unlock pop-up,
 // the locked settings tab, and the wizard Join step.
-export function createForgotLink(
-  parent: HTMLElement,
-  testid: string,
-  onClick: () => void,
-): HTMLElement {
-  const row = new Setting(parent);
+export function createForgotLink(row: Setting, testid: string, onClick: () => void): void {
+  row.nameEl.empty();
   const link = row.nameEl.createEl("a", { text: FORGOT_TITLE, href: "#" });
   link.dataset.testid = testid;
   link.onClickEvent((e) => {
     e.preventDefault();
     onClick();
   });
-  return row.settingEl;
 }
 
 // #440: honest forgot-passphrase modal: no one can reset it, check other
@@ -78,7 +74,7 @@ class ForgotModal extends Modal {
       });
 
     new Setting(contentEl).addButton((b) => {
-      b.setWarning().setButtonText(FORGOT_NEW_VAULT);
+      setDestructive(b).setButtonText(FORGOT_NEW_VAULT);
       b.buttonEl.dataset.testid = "geode-forgot-new-vault";
       b.onClick(() => {
         new ConfirmModal(this.app, {

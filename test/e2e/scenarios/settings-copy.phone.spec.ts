@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import { connectPhone } from "../fixtures/phone-obsidian";
 import { useRemoteServer } from "../fixtures/phone-server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
-import { expandLogsSection, openSettingsTab } from "../helpers/logs";
+import { openSettingsTab } from "../helpers/logs";
+import { closeSettingsPage, openSettingsPage } from "../helpers/settings-tab";
 import { dismissModals } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
 
@@ -17,6 +18,25 @@ async function clearNotices(obsidian: { eval: (s: string) => Promise<unknown> })
   await obsidian.eval(`
     document.querySelectorAll('.notice').forEach((n) => n.remove());
     return true;
+  `);
+}
+
+/** Shown descriptions taller than two lines, as "name = text (n lines)". */
+function tallDescriptions(o: { eval: <T>(s: string) => Promise<T> }): Promise<string[]> {
+  return o.eval<string[]>(`
+    (() => {
+      const out = [];
+      for (const desc of document.querySelectorAll(".modal.mod-settings .setting-item-description")) {
+        if (desc.offsetParent === null) continue;
+        const lh = parseFloat(getComputedStyle(desc).lineHeight) || 20;
+        const lines = desc.getBoundingClientRect().height / lh;
+        if (lines > 2.6) {
+          const name = desc.closest(".setting-item")?.querySelector(".setting-item-name")?.textContent?.trim() ?? "?";
+          out.push(name + " = " + desc.textContent.trim().replace(/\\s+/g, " ") + " (" + Math.round(lines) + " lines)");
+        }
+      }
+      return out;
+    })()
   `);
 }
 
@@ -52,38 +72,19 @@ test("phone copy: no settings description runs three or more lines", async () =>
     await dismissModals(obsidian);
 
     await openSettingsTab(obsidian, true);
-    await expandLogsSection(obsidian, true);
-    await obsidian.eval(`
-      (() => {
-        document.querySelectorAll(".geode-collapsible-heading").forEach((h) => {
-          const fields = h.closest(".geode-section")?.querySelector(".geode-section-fields");
-          if (fields?.classList.contains("geode-collapsed")) h.click();
-        });
-        return true;
-      })()
-    `);
-    const collapsedCount = await obsidian.eval<number>(
-      `document.querySelectorAll(".geode-section-fields.geode-collapsed").length`,
-    );
-    expect(collapsedCount, "every section must be expanded for the line check").toBe(0);
     await clearNotices(obsidian);
     await new Promise((r) => setTimeout(r, 1_500));
 
-    const tall = await obsidian.eval<string[]>(`
-      (() => {
-        const out = [];
-        for (const desc of document.querySelectorAll(".vertical-tab-content .setting-item-description")) {
-          if (desc.offsetParent === null) continue; // hidden inside a collapsed section
-          const lh = parseFloat(getComputedStyle(desc).lineHeight) || 20;
-          const lines = desc.getBoundingClientRect().height / lh;
-          if (lines > 2.6) {
-            const name = desc.closest(".setting-item")?.querySelector(".setting-item-name")?.textContent?.trim() ?? "?";
-            out.push(name + " = " + desc.textContent.trim().replace(/\\s+/g, " ") + " (" + Math.round(lines) + " lines)");
-          }
-        }
-        return out;
-      })()
-    `);
+    // The tab, then its Advanced and Logs pages (#16): every row is checked once.
+    const tall = await tallDescriptions(obsidian);
+    for (const page of ["Advanced", "Logs"] as const) {
+      await openSettingsPage(obsidian, page);
+      await new Promise((r) => setTimeout(r, 800));
+      tall.push(...await tallDescriptions(obsidian));
+      await clearNotices(obsidian);
+      await obsidian.screenshot(shotPath(`479-02-phone-${page.toLowerCase()}.png`));
+      await closeSettingsPage(obsidian);
+    }
     expect(tall, "no phone settings description may run three or more lines").toEqual([]);
 
     await clearNotices(obsidian);

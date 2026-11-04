@@ -154,7 +154,7 @@ test("601 UI shots: the large set (1,850 of 2,400) across notice, status icon, m
     await expect(trashHold).toBeVisible();
     await expect(trashHold).toContainText("1,850 files missing");
     await expect(trashHold).toContainText("Sync is on hold");
-    await expect(o.win.locator('[data-testid="geode-settings-error-banner"]')).toHaveCount(0);
+    await expect(o.win.locator('[data-testid="geode-settings-error-banner"]')).toBeHidden();
     // A version refresh used to empty the banner container and drop the hold row with it.
     await o.eval(`app.plugins.plugins.geode.onServerVersion("0.0.1"); return true;`);
     await expect(holdRow).toBeVisible();
@@ -394,7 +394,7 @@ test("601 UI shots: the small set (22 of 60), and delete all resumes sync", asyn
     await expect(o.win.locator('[data-testid="geode-statusbar"]')).toHaveClass(
       /geode-statusbar-ok/,
     );
-    await expect(o.win.locator('[data-testid="geode-settings-hold-banner"]')).toHaveCount(0);
+    await expect(o.win.locator('[data-testid="geode-settings-hold-banner"]')).toBeHidden();
     await clearNotices(o);
 
     const errors = await o.eval<{ level: string; msg: string }[]>(

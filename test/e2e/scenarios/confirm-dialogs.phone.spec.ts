@@ -5,6 +5,7 @@ import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { dismissModals, evalClick } from "../helpers/mobile-ui";
 import { shotPath } from "../helpers/shots";
+import { openSettingsPage } from "../helpers/settings-tab";
 
 // #460: the Leave confirm dialog on-device: it names the vault, and Cancel
 // keeps the vault configured. (Phone counterpart of confirm-dialogs.spec.ts.)
@@ -50,7 +51,7 @@ test("confirms: leave confirm names the vault, cancel keeps configured (on-devic
       app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
       return "ok";
     `);
-    await evalClick(obsidian, ".geode-advanced-heading");
+    await openSettingsPage(obsidian, "Advanced");
 
     /* ---- Open the Leave confirm dialog ---- */
     await evalClick(obsidian, '[data-testid="geode-settings-leave"]');

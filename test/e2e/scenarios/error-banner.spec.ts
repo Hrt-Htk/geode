@@ -4,6 +4,7 @@ import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
 import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { markNoRerender } from "../helpers/settings-tab";
 
 // #339: the settings tab shows a degraded-sync banner: "Cannot reach your
 // Geode server" after ~10 s offline (with [Retry] that reconnects now) and
@@ -50,23 +51,15 @@ test("error banner: unreachable → retry → recovered → dropped variant, no 
       })
       .toMatch(/^Up to date\. Last backup /);
 
-    /* Marker on the Status section: a full re-render would recreate it. */
-    await o.eval(`
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const st = sections.find((s) => s.querySelector(".setting-item-heading")?.textContent?.includes("Status"));
-      if (!st) throw new Error("Status section not found");
-      st.dataset.e2eMarker = "no-rerender";
-      return true;
-    `);
-    const markerPresent = (): Promise<boolean> =>
-      o.eval<boolean>(`!!document.querySelector('.geode-section[data-e2e-marker="no-rerender"]')`);
+    /* Marker on the sync-status row: a full re-render would recreate it. */
+    const markerPresent = await markNoRerender(o);
 
     const banner = o.win.locator(BANNER);
     const bannerName = banner.locator(".geode-banner-name");
     const bannerDesc = banner.locator(".setting-item-description");
 
     /* ---- 1. Synced: no error banner ---- */
-    await expect(banner).toHaveCount(0);
+    await expect(banner).toBeHidden();
 
     /* ---- 2. Server unreachable: banner appears within ~25 s ---- */
     await server.shutdown();
@@ -88,7 +81,7 @@ test("error banner: unreachable → retry → recovered → dropped variant, no 
     /* ---- 3. Server back + [Retry]: banner gone, status row recovered ---- */
     await server.restart();
     await o.win.locator(RETRY).click();
-    await expect(banner).toHaveCount(0, { timeout: 30_000 });
+    await expect(banner).toBeHidden({ timeout: 30_000 });
     await expect
       .poll(async () => await statusRow.locator(".setting-item-description").textContent(), {
         timeout: 60_000,
@@ -111,7 +104,7 @@ test("error banner: unreachable → retry → recovered → dropped variant, no 
     });
 
     await o.eval(`app.plugins.plugins.geode.statusBar.updateDropped(0); return true;`);
-    await expect(banner).toHaveCount(0, { timeout: 10_000 });
+    await expect(banner).toBeHidden({ timeout: 10_000 });
 
     /* The tab was not re-rendered at any point. */
     expect(await markerPresent(), "Status section marker must survive all banner updates").toBe(

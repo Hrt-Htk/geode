@@ -497,8 +497,38 @@ Anything importing `obsidian` lives here. The logic it needs is extracted into `
 (`statusbar-icon.ts`, `sync-status.ts`, `tab-state.ts`, …) and unit-tested there.
 
 **Settings tab** (`settings-tab.ts` plus one module per section): Status, Vault, Devices, Sync scope,
-Trash, Advanced, and Logs (only while debug logging is on). Banners above and below the state rows carry
-a held mass delete, a sync error, a pause, and the version hint or refusal.
+Trash, Advanced, and Logs (only while debug logging is on). Banners (`settings-banners.ts`) above the
+Status rows carry a version refusal, a held mass delete, a sync error, a pause, and the update hint:
+one headless section whose row order is that fixed order, each row shown only while its state holds.
+
+Each section yields rows (`settings-legacy.ts` `SettingsRow`): a `render` row decorating the
+`Setting` it is handed, or a real control. The tab composes them into one tree of sections
+(`settings-tree.ts`, `obsidian`-free) that both Obsidian paths render, so no row exists twice:
+
+- **Obsidian 1.13+**: `getSettingDefinitions()` returns `definitionsOf(tree)`. One page: the
+  banners and Status rows without a heading, then the Vault, Devices, Sync scope and Trash groups,
+  then Advanced and Logs as sub-pages. Obsidian indexes every row for settings search (banners
+  are `searchable: false`) and re-reads the definitions while it does, so the read is pure: section
+  objects are built once and `refresh()` is the only thing that rebuilds them, or the rendered rows
+  would end up bound to objects the status tick no longer updates. Obsidian runs a render row's
+  cleanup when it tears the row down: the Devices poll and the Logs subscription stop there.
+- **Obsidian < 1.13**: `display()` hands the same tree to `LegacySettingsView`, which renders each
+  section collapsible (Advanced and Logs start collapsed) and supports the subset the tree uses:
+  render rows, number and toggle controls, `visible`, cleanups (run on `hide()`).
+
+Four rows are real controls, searchable and bound through `getControlValue`/`setControlValue` onto
+`pluginSettings` + `saveSettings()`: Auto lock after (hours), Trash retention (days), Debug logging
+(also sets the log level; the Logs page follows `visible`) and Sync config folder (also calls
+`setSyncObsidianConfig` and reconciles; Config to sync follows `visible`). Their names live in
+`settings-row-names.ts` because the E2E drives the rows by name (a control row cannot carry a testid
+on 1.13+), and a refused number puts the stored value back and shows the reason on both paths
+(`numberControlChange`). State changes never re-render: rows that hide while locked carry `visible`,
+and the tab re-evaluates them in place
+(`refreshDomState()` on 1.13+, `refreshVisibility()` before). A structural change (set up, leave,
+re-key) calls the tab's `refresh()`: `update()` on 1.13+, a fresh `display()` before. Every
+1.13-only call sits behind `requireApiVersion("1.13.0")` (`api-compat.ts` holds `setDestructive`);
+`minAppVersion` stays 1.8.7. The E2E hook `legacyForTest` makes 1.13+ render through `display()`, so
+one spec (`settings-definitions.spec.ts`) checks both paths show the same rows.
 
 **Server address** (`ui/server-address-modal.ts`, logic in `plumbing/server-address.ts`): the Advanced
 row's Edit modal checks the server before committing and keeps the old address on any failure. The

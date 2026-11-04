@@ -4,6 +4,7 @@ import { type E2EServer, type ProvisionedDevice, startServer } from "../fixtures
 import { upsertVaultFile, waitForUnlocked } from "../helpers/geode";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { markNoRerender } from "../helpers/settings-tab";
 
 // #338: pause stops the transport + reconciler and gates the commit queue, so a
 // local edit while paused is held and counted ("N changes waiting") but never
@@ -114,16 +115,8 @@ test("pause/resume: pause holds edits, survives reload, resume uploads", async (
       })
       .toMatch(/^Up to date\. Last backup /);
 
-    /* Marker on the Status section: a full re-render would recreate it. */
-    await o.eval(`
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const st = sections.find((s) => s.querySelector(".setting-item-heading")?.textContent?.includes("Status"));
-      if (!st) throw new Error("Status section not found");
-      st.dataset.e2eMarker = "no-rerender";
-      return true;
-    `);
-    const markerPresent = (): Promise<boolean> =>
-      o.eval<boolean>(`!!document.querySelector('.geode-section[data-e2e-marker="no-rerender"]')`);
+    /* Marker on the sync-status row: a full re-render would recreate it. */
+    let markerPresent = await markNoRerender(o);
 
     const banner = o.win.locator(BANNER);
     const bannerName = banner.locator(".geode-banner-name");
@@ -191,18 +184,12 @@ test("pause/resume: pause holds edits, survives reload, resume uploads", async (
       .toMatch(/^Paused\. /);
 
     /* Re-arm the marker on the rebuilt tab; resume must not re-render it. */
-    await o.eval(`
-      const sections = Array.from(document.querySelectorAll(".geode-section"));
-      const st = sections.find((s) => s.querySelector(".setting-item-heading")?.textContent?.includes("Status"));
-      if (!st) throw new Error("Status section not found");
-      st.dataset.e2eMarker = "no-rerender";
-      return true;
-    `);
+    markerPresent = await markNoRerender(o);
     expect(await markerPresent(), "marker must be present after reload + reopen").toBe(true);
 
     /* ---- 4. Banner [Resume]: banner gone, held edit uploads, row back to Up to date ---- */
     await o.win.locator(RESUME).click();
-    await expect(banner).toHaveCount(0, { timeout: 30_000 });
+    await expect(banner).toBeHidden({ timeout: 30_000 });
     await expect.poll(
       async () => (await readHeadsRaw(server, device, baselineSeq)).trim().length > 0,
       { timeout: 60_000 },
@@ -231,7 +218,7 @@ test("pause/resume: pause holds edits, survives reload, resume uploads", async (
     await o.eval(
       `document.querySelector('[data-testid="geode-settings-lock"]').click(); return true;`,
     );
-    await expect(banner).toHaveCount(0, { timeout: 15_000 });
+    await expect(banner).toBeHidden({ timeout: 15_000 });
     await expect
       .poll(async () => await statusRow.locator(".setting-item-description").textContent(), {
         timeout: 15_000,

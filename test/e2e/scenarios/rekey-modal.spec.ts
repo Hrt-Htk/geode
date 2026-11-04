@@ -8,6 +8,7 @@ import { startServer } from "../fixtures/server";
 import { upsertVaultFile, waitForUnlocked } from "../helpers/geode";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { closeSettingsPage, openSettingsPage } from "../helpers/settings-tab";
 
 // #559: the change-passphrase / re-key modal, driven through the real UI
 // (settings rows → buttons → modal phases) in real Obsidian. Test 1 runs a
@@ -114,15 +115,6 @@ test("rekey modal surfaces + real change-passphrase run", async () => {
     await expect(passphraseRow.locator('[data-testid="geode-settings-passphrase-change"]'))
       .toHaveText("Change…");
 
-    // Advanced is collapsed by default; expand it for the strength row.
-    await o.win.locator(".geode-advanced-heading").click();
-    const strengthRow = o.win.locator('[data-testid="geode-settings-encryption-strength"]');
-    await expect(strengthRow).toBeVisible({ timeout: 15_000 });
-    await expect(strengthRow.locator(".setting-item-name")).toHaveText("Encryption strength");
-    // The test vault's argon2 params (ops 1, 8 MB) are not a wizard level: "Custom".
-    await expect(strengthRow.locator(".setting-item-description")).toHaveText("Custom");
-    await expect(strengthRow.locator('[data-testid="geode-settings-rekey"]')).toHaveText("Rekey…");
-
     await o.win.locator('[data-testid="geode-settings-passphrase"]').evaluate((el) =>
       el.scrollIntoView({ block: "center" })
     );
@@ -132,6 +124,15 @@ test("rekey modal surfaces + real change-passphrase run", async () => {
       path: shotPath("559-01-passphrase-row.png"),
     });
 
+    // Encryption strength is a row of the Advanced sub-page (#16).
+    await openSettingsPage(o, "Advanced");
+    const strengthRow = o.win.locator('[data-testid="geode-settings-encryption-strength"]');
+    await expect(strengthRow).toBeVisible({ timeout: 15_000 });
+    await expect(strengthRow.locator(".setting-item-name")).toHaveText("Encryption strength");
+    // The test vault's argon2 params (ops 1, 8 MB) are not a wizard level: "Custom".
+    await expect(strengthRow.locator(".setting-item-description")).toHaveText("Custom");
+    await expect(strengthRow.locator('[data-testid="geode-settings-rekey"]')).toHaveText("Rekey…");
+
     await o.win.locator('[data-testid="geode-settings-encryption-strength"]').evaluate((el) =>
       el.scrollIntoView({ block: "center" })
     );
@@ -140,7 +141,8 @@ test("rekey modal surfaces + real change-passphrase run", async () => {
       path: shotPath("559-02-strength-row.png"),
     });
 
-    /* ---- (b) Change form with the live mismatch hint ---- */
+    /* ---- (b) Change form with the live mismatch hint (opened from the Vault row) ---- */
+    await closeSettingsPage(o);
     await o.win.locator('[data-testid="geode-settings-passphrase-change"]').click();
     const changeModal = o.win.locator('.modal:has([data-testid="geode-rekey-current"])');
     await expect(changeModal).toBeVisible({ timeout: 10_000 });
@@ -162,9 +164,10 @@ test("rekey modal surfaces + real change-passphrase run", async () => {
     await expect(formError).toHaveText("");
     await expect(continueBtn).toBeEnabled();
 
-    /* ---- (c) Re-key form with the level dropdown ---- */
+    /* ---- (c) Re-key form with the level dropdown (the Rekey row is on Advanced) ---- */
     await o.win.keyboard.press("Escape");
     await expect(changeModal).not.toBeVisible({ timeout: 10_000 });
+    await openSettingsPage(o, "Advanced");
     await o.win.locator('[data-testid="geode-settings-rekey"]').click();
     const rekeyModal = o.win.locator('.modal:has([data-testid="geode-rekey-strength"])');
     await expect(rekeyModal).toBeVisible({ timeout: 10_000 });
@@ -179,6 +182,7 @@ test("rekey modal surfaces + real change-passphrase run", async () => {
     await expect(rekeyModal).not.toBeVisible({ timeout: 10_000 });
 
     /* ---- (d) Choose step: estimate + copy available ---- */
+    await closeSettingsPage(o);
     await o.win.locator('[data-testid="geode-settings-passphrase-change"]').click();
     const chooseModal = o.win.locator('[data-testid="geode-rekey-modal"]');
     await expect(chooseModal).toBeVisible({ timeout: 10_000 });

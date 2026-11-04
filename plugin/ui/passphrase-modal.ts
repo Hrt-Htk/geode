@@ -37,7 +37,7 @@ export class PassphraseModal extends Modal {
       });
 
     // #440: forgot link under the field, above the CTA row.
-    createForgotLink(contentEl, "geode-passphrase-forgot", () => {
+    createForgotLink(new Setting(contentEl), "geode-passphrase-forgot", () => {
       this.close();
       this.onForgot();
     });

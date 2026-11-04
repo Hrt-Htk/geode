@@ -150,9 +150,9 @@ setDebugLogging(enabled): void                  // also mirror to the console
 formatError(error): string                      // stable error text
 ```
 
-Surfaced in the settings tab's **Logs** section (`plugin/ui/settings-logs-section.ts`, present only
-while debug logging is on): a filter per level, a details line per entry, and a copy button for bug
-reports.
+Surfaced in the settings tab's **Logs** page (`plugin/ui/settings-logs-section.ts`, present only
+while debug logging is on; a collapsible section before Obsidian 1.13): a filter per level, a
+details line per entry, and a copy button for bug reports.
 
 ### Status bar feedback loop
 

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { startServer } from "../fixtures/server";
 import { launchUnconfigured } from "../fixtures/fresh";
 import { waitForPluginLoaded, waitForUnlocked } from "../helpers/geode";
+import { shownSections } from "../helpers/settings-tab";
 
 // Regression for issue #47: after the setup flow completes, an already-open Settings tab
 // must re-render to the configured state, and the startup setup-wizard must be dismissed
@@ -46,17 +47,8 @@ test("settings tab refreshes to configured state after create", async () => {
     );
     expect(lockPresent).toBe(true);
 
-    // The configured tab also renders the collapsible sections + live sync-status row.
-    const sectionsRendered = await A.eval<boolean>(`
-      (() => {
-        const headings = Array.from(
-          document.querySelectorAll('.vertical-tab-content .geode-section .setting-item-heading'),
-        ).map((h) => h.textContent ?? "");
-        const order = ["Status", "Vault", "Devices", "Sync scope", "Trash", "Advanced"];
-        return order.every((s, i) => headings[i]?.includes(s));
-      })()
-    `);
-    expect(sectionsRendered).toBe(true);
+    // The configured tab also renders every section + the live sync-status row.
+    expect(await shownSections(A)).toEqual(["Vault", "Devices", "Sync scope", "Trash", "Advanced"]);
     expect(
       await A.eval<boolean>(
         `!!document.querySelector('[data-testid="geode-settings-sync-status"]')`,
