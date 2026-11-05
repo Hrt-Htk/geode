@@ -228,7 +228,11 @@ server CLIs.
 - `db.ts` reads `_meta.schema_version` on startup and applies any migration with a higher number, in
   order.
 - Never edit a committed migration. Add a new one.
-- Back up before deploying a migration to prod: `cp data/geode.db data/geode.db.bak-$(date +%s)`.
+- Before the first pending migration of a start, `db.ts` copies the database to
+  `data/before-migration.sqlite` (`VACUUM INTO`, same mode, replaced by the next migrating start) so a
+  migration that turns out wrong can be rolled back straight after an update
+  (`../architecture/server.md` §3). No pending migration, no copy, and a copy that cannot be written
+  stops the start. It does not replace a backup: a later restore of it loses what synced since.
 
 ### Plugin local state
 

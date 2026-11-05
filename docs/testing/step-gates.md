@@ -27,7 +27,10 @@ Each gate has three parts: tests, manual checks, pass criteria.
 
 - `test/unit/server/migrations.test.ts`: a fresh DB applies every migration and sets
   `_meta.schema_version` to the newest number; re-running is a no-op; WAL is on; a failing migration
-  rolls back and leaves no partial state.
+  rolls back and leaves no partial state. A pending migration first copies the database to
+  `before-migration.sqlite`, holding the pre-migration schema and `geode.db`'s mode; nothing pending,
+  a fresh database and a non-migrating start write no copy; the next migrating start replaces it; a
+  copy that cannot be written throws with the database unmigrated.
 - `test/unit/server/blobs.test.ts`: `putBlob` writes the file and returns `{ ok: true }`, rejects a
   malformed hash and a body over `MAX_BLOB_SIZE` (4 MiB), treats a second put of the same hash as a
   dedup hit (and refreshes its mtime), keeps concurrent puts of one hash to one valid file, keeps

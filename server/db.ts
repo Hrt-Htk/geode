@@ -1,7 +1,11 @@
 export type { Database } from "@db/sqlite";
 import { Database } from "@db/sqlite";
+import { log } from "./log.ts";
 
 const MIGRATION_RE = /^(\d{3})_/;
+/** Copy of the database taken before a pending migration runs (#45). Not `geode.db*`:
+ * the README backup rsync excludes that pattern. */
+const PRE_MIGRATION_COPY = "before-migration.sqlite";
 
 function readMigrations(migrationsDir: string): Array<{ num: number; path: string }> {
   const migrations: Array<{ num: number; path: string }> = [];
@@ -15,7 +19,46 @@ function readMigrations(migrationsDir: string): Array<{ num: number; path: strin
   return migrations;
 }
 
-function runMigrations(db: Database, migrationsDir: string): void {
+/** VACUUM INTO a copy of the database, so a migration that turns out wrong can be
+ * rolled back straight after an update. Written beside the database with its mode,
+ * then renamed over the previous copy: device tokens are in this file, and a crash
+ * mid-copy must not destroy the copy from the last migrating start. */
+function copyBeforeMigration(db: Database, dbPath: string): void {
+  const dir = dbPath.slice(0, dbPath.lastIndexOf("/"));
+  const copy = `${dir}/${PRE_MIGRATION_COPY}`;
+  const tmp = `${copy}.tmp`;
+  // A start that died mid-copy leaves a temp file, and VACUUM INTO refuses an
+  // existing target.
+  try {
+    Deno.removeSync(tmp);
+  } catch {
+    // nothing stranded
+  }
+  const started = performance.now();
+  try {
+    db.prepare("VACUUM INTO ?").run(tmp);
+    Deno.chmodSync(tmp, (Deno.statSync(dbPath).mode ?? 0o600) & 0o777);
+    Deno.renameSync(tmp, copy);
+  } catch (e) {
+    try {
+      Deno.removeSync(tmp);
+    } catch {
+      // never written
+    }
+    log.error("database copy before migration failed, refusing to migrate", {
+      file: PRE_MIGRATION_COPY,
+      error: String(e),
+    });
+    throw e;
+  }
+  log.info("copied the database before migrating", {
+    file: PRE_MIGRATION_COPY,
+    bytes: Deno.statSync(copy).size,
+    ms: Math.round(performance.now() - started),
+  });
+}
+
+function runMigrations(db: Database, migrationsDir: string, dbPath: string): void {
   const migrations = readMigrations(migrationsDir);
   let current = 0;
   try {
@@ -29,8 +72,11 @@ function runMigrations(db: Database, migrationsDir: string): void {
     if (!(e instanceof Error && e.message.includes("no such table"))) throw e;
   }
 
-  for (const mig of migrations) {
-    if (mig.num <= current) continue;
+  const pending = migrations.filter((m) => m.num > current);
+  // A fresh database holds nothing worth keeping.
+  if (pending.length > 0 && current > 0) copyBeforeMigration(db, dbPath);
+
+  for (const mig of pending) {
     const sql = Deno.readTextFileSync(mig.path);
     // Apply the migration and its version bump atomically so a failure rolls
     // back both the DDL and the bump: no partial schema or version state.
@@ -49,7 +95,7 @@ export function openDb(
   const db = new Database(dbPath);
   db.exec("PRAGMA journal_mode=WAL");
   db.exec("PRAGMA foreign_keys=ON");
-  runMigrations(db, migrationsDir);
+  runMigrations(db, migrationsDir, dbPath);
   return db;
 }
 // ── Prepared query helpers ────────────────────────────────────────────

@@ -293,12 +293,19 @@ Back up regularly with a consistent copy of the database plus the blobs:
 sudo apt install sqlite3 rsync   # once, for the database copy and the blobs
 sudo mkdir -p /srv/geode-backup
 sudo sqlite3 /opt/geode/data/geode.db ".backup /srv/geode-backup/geode.db"
-sudo rsync -a --no-o --no-g --no-p --exclude 'geode.db*' /opt/geode/data/ /srv/geode-backup/
+sudo rsync -a --no-o --no-g --no-p --exclude 'geode.db*' --exclude 'before-migration.sqlite*' \
+  /opt/geode/data/ /srv/geode-backup/
 ```
 
 Keep `--no-o --no-g --no-p`: `rsync -a` also copies the source directory's owner and mode onto the
 destination, which leaves `/srv/geode-backup` owned by `geode` with mode `700`, unreadable by any
 other user or backup job. The flags leave the backup directory's own attributes alone.
+
+The two excludes drop the live database, which `sqlite3 .backup` already copied consistently, and
+`before-migration.sqlite`: the copy the server writes before a pending migration (see
+[`docs/architecture/server.md`](./docs/architecture/server.md) §3). That one is a stopgap for going
+back straight after an update, as large as the database, and stale as soon as the server runs again,
+so it does not belong in a backup.
 
 To restore, stop the service, copy the backup over `data/` and delete what the backup does not have:
 
@@ -316,6 +323,10 @@ restored `geode.db` is the backup's. `--delete` removes `geode.db-wal` and `geod
 them the blobs of files and vaults created after the backup: the server then serves exactly the
 backup's state. If you would rather keep those blobs, delete `geode.db`, `geode.db-wal` and
 `geode.db-shm` yourself and copy without `--delete`; the leftover blobs stay on disk unreferenced.
+
+`--delete` also removes a `before-migration.sqlite` the server left in `data/`, which is what you
+want: it belongs to the database you just replaced it with. The next update that migrates writes a
+fresh one.
 
 Then check what the server actually serves. `[]` is correct when the backup held no vaults;
 otherwise it lists the vaults the backup contained:

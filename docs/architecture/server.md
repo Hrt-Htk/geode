@@ -49,6 +49,7 @@ data/
 ├── geode.db                    # SQLite (WAL mode)
 ├── geode.db-wal
 ├── geode.db-shm
+├── before-migration.sqlite      # copy taken before the last migrating start (§3)
 └── blobs/
     └── <vaultId>/
         ├── 0a/
@@ -58,6 +59,13 @@ data/
 
 One data dir per server instance. A backup is an rsync of this directory. The contents are encrypted, so
 they are safe to copy to untrusted storage.
+
+`before-migration.sqlite` is only for going back straight after an update (§3). It holds device
+tokens, so it is written with `geode.db`'s mode. The README's backup rsync excludes it: it is a
+stopgap, not a backup, and it is as large as the database. Nothing that walks the data dir reads it:
+blob GC, the stranded `.tmp-*` sweep and the storage budget all stay inside `blobs/` (plus the
+filesystem-wide `statvfs`), and a crash mid-copy leaves `before-migration.sqlite.tmp`, which the next
+migrating start removes.
 
 ---
 
@@ -131,6 +139,30 @@ CREATE INDEX idx_trashed_vault ON trashed_heads(vault_id);
 
 `seq_counters` allocates a global `seq` atomically with the `file_versions` insert, in one transaction,
 without scanning `MAX(seq)`.
+
+### Copy before a pending migration (#45)
+
+A migration that runs cleanly can still be wrong, and an old image cannot read a newer schema. So
+before the first pending migration of a start, `db.ts` writes a `VACUUM INTO` copy of the database to
+`before-migration.sqlite` beside it, then applies every pending migration as usual.
+
+- **Nothing pending, nothing copied.** Most updates have no migration, and a first start on an empty
+data dir holds nothing worth keeping (`schema_version` unread, so 0). No file is touched.
+- **One copy per migrating start**, taken before the first pending migration, not one per migration.
+- **Only the latest one.** The copy goes to `before-migration.sqlite.tmp` and is renamed over the
+previous copy, because `VACUUM INTO` refuses an existing target; a crash mid-copy leaves the previous
+copy intact, and the next migrating start removes the temp file.
+- **Same mode as `geode.db`**: device tokens are in it.
+- **No copy, no migration.** If it cannot be written, the error is logged and thrown, so the server
+refuses to start with the database untouched: each migration is already atomic, so a refused start
+leaves the schema it had.
+- **One info line** with the file name, its size and how long the copy took.
+
+The blob store is not copied: migrations only change the database.
+
+**It is only for going back straight after an update.** A restore of the copy loses everything that
+synced since, and blobs GC removed in the meantime are gone. It does not replace a real backup
+(README, "Backup and restore").
 
 `pairing_codes` (migration 002) is unused: no code reads the table. It stays because migrations are
 forward-only.

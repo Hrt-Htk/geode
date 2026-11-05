@@ -2,6 +2,7 @@ import { openDb } from "../../../server/db.ts";
 import { Database } from "@db/sqlite";
 import { assertEquals } from "@std/assert";
 import { makeTempDataDir, removeTempDir } from "../../helpers/temp-dir.ts";
+import { addSink, type LogEntry } from "../../../core/log.ts";
 
 Deno.test({
   name: "migrations - fresh DB applies all migrations and sets schema_version",
@@ -324,6 +325,171 @@ Deno.test({
       assertEquals(rows, [{ version: 1, restored: 1 }, { version: 2, restored: 0 }]);
       db.close();
     } finally {
+      removeTempDir(dataDir);
+    }
+  },
+});
+
+// #45: an update that turns out wrong can be rolled back straight after it, so a
+// pending migration first copies the database to one file in the data dir.
+const COPY = "before-migration.sqlite";
+
+function copyFiles(dataDir: string): string[] {
+  return [...Deno.readDirSync(dataDir)]
+    .map((e) => e.name)
+    .filter((n) => n.startsWith(COPY))
+    .sort();
+}
+
+function schemaVersion(path: string): string {
+  const db = new Database(path);
+  try {
+    const row = db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get() as {
+      value: string;
+    };
+    return row.value;
+  } finally {
+    db.close();
+  }
+}
+
+function modeOf(path: string): number {
+  return (Deno.statSync(path).mode ?? 0) & 0o777;
+}
+
+function hasColumn(path: string, table: string, column: string): boolean {
+  const db = new Database(path);
+  try {
+    return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
+      .some((c) => c.name === column);
+  } finally {
+    db.close();
+  }
+}
+
+Deno.test({
+  name: "migrations - a pending migration copies the database first, holding the old schema",
+  fn() {
+    const dataDir = makeTempDataDir();
+    const logs: LogEntry[] = [];
+    const off = addSink((e) => logs.push(e));
+    try {
+      openDb(dataDir, migrationsBefore(17)).close();
+      Deno.chmodSync(`${dataDir}/geode.db`, 0o600); // device tokens live in this file
+      const dirMode = modeOf(dataDir);
+
+      openDb(dataDir).close();
+
+      assertEquals(copyFiles(dataDir), [COPY], "one copy, no temp file left behind");
+      assertEquals(COPY.startsWith("geode.db"), false, "the README backup excludes geode.db*");
+      assertEquals(schemaVersion(`${dataDir}/${COPY}`), "16", "copy is the pre-migration schema");
+      assertEquals(
+        hasColumn(`${dataDir}/${COPY}`, "vaults", "stored_bytes"),
+        false,
+        "copy holds the schema before 017",
+      );
+      assertEquals(modeOf(`${dataDir}/${COPY}`), 0o600, "copy carries geode.db's mode");
+      assertEquals(modeOf(dataDir), dirMode, "data dir mode unchanged");
+
+      const copied = logs.filter((e) => e.level === "info" && e.fields.file === COPY);
+      assertEquals(copied.length, 1, "one info line names the copy");
+      assertEquals(copied[0].fields.bytes, Deno.statSync(`${dataDir}/${COPY}`).size);
+      assertEquals(typeof copied[0].fields.ms, "number");
+    } finally {
+      off();
+      removeTempDir(dataDir);
+    }
+  },
+});
+
+Deno.test({
+  name: "migrations - no pending migration writes no copy and leaves the last one alone",
+  fn() {
+    const dataDir = makeTempDataDir();
+    try {
+      openDb(dataDir, migrationsBefore(17)).close();
+      openDb(dataDir).close();
+      const before = Deno.statSync(`${dataDir}/${COPY}`);
+
+      openDb(dataDir).close();
+
+      assertEquals([...Deno.readDirSync(dataDir)].map((e) => e.name).includes(COPY), true);
+      assertEquals(
+        Deno.statSync(`${dataDir}/${COPY}`).mtime?.getTime(),
+        before.mtime?.getTime(),
+        "the last copy is not rewritten",
+      );
+      assertEquals(schemaVersion(`${dataDir}/${COPY}`), "16");
+    } finally {
+      removeTempDir(dataDir);
+    }
+  },
+});
+
+Deno.test({
+  name: "migrations - a fresh database gets no copy",
+  fn() {
+    const dataDir = makeTempDataDir();
+    try {
+      openDb(dataDir).close();
+      assertEquals(copyFiles(dataDir), [], "nothing worth keeping on a first start");
+    } finally {
+      removeTempDir(dataDir);
+    }
+  },
+});
+
+Deno.test({
+  name: "migrations - the next migrating start replaces the copy",
+  fn() {
+    const dataDir = makeTempDataDir();
+    try {
+      openDb(dataDir, migrationsBefore(16)).close();
+      openDb(dataDir, migrationsBefore(17)).close();
+      assertEquals(schemaVersion(`${dataDir}/${COPY}`), "15", "copy of the schema before 016");
+
+      openDb(dataDir).close();
+
+      assertEquals(copyFiles(dataDir), [COPY], "still one copy");
+      assertEquals(schemaVersion(`${dataDir}/${COPY}`), "16", "replaced by the schema before 017");
+    } finally {
+      removeTempDir(dataDir);
+    }
+  },
+});
+
+Deno.test({
+  name: "migrations - a copy that cannot be written refuses to migrate",
+  fn() {
+    const dataDir = makeTempDataDir();
+    const logs: LogEntry[] = [];
+    const off = addSink((e) => logs.push(e));
+    try {
+      openDb(dataDir, migrationsBefore(17)).close();
+      Deno.mkdirSync(`${dataDir}/${COPY}`); // the copy has nowhere to land
+
+      let threw = false;
+      try {
+        openDb(dataDir).close();
+      } catch {
+        threw = true;
+      }
+
+      assertEquals(threw, true, "the server must refuse to start instead of migrating");
+      assertEquals(schemaVersion(`${dataDir}/geode.db`), "16", "database left unmigrated");
+      assertEquals(
+        hasColumn(`${dataDir}/geode.db`, "vaults", "stored_bytes"),
+        false,
+        "017 never ran",
+      );
+      assertEquals(copyFiles(dataDir).includes(`${COPY}.tmp`), false, "no temp file left");
+      assertEquals(
+        logs.some((e) => e.level === "error" && String(e.fields.error).length > 0),
+        true,
+        "the refusal is logged with a reason",
+      );
+    } finally {
+      off();
       removeTempDir(dataDir);
     }
   },
