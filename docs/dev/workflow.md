@@ -154,6 +154,15 @@ its changed files require, and must not leave docs drift (#646).
 
 The `Secret scan` job runs gitleaks over the commits a PR adds, with redacted output.
 
+The `Docker smoke` job builds `Dockerfile` and drives `compose.yaml` end to end, once per published
+architecture (`linux/amd64` on `ubuntu-latest`, `linux/arm64` on `ubuntu-24.04-arm`). The script,
+`scripts/docker-smoke.ts`, is the check: `/version`, an admin request, uid 1993 on a read-only rootfs,
+the disk-usage route against the host's `statvfs`, data across a recreate, `docker stop`, a WebSocket
+held open for two minutes through Caddy, Caddy's log holding no credential header (device token, admin
+token, re-key auth key), the default publish address, the rate-limit bucket behind each front, and what
+Geode can and cannot reach. Run it locally before the PR leaves draft: it is the only place
+the container is exercised locally.
+
 ### When CI runs
 
 CI runs no job on a draft PR: the local `deno task ci` before every push is the gate there. Marking
@@ -162,7 +171,9 @@ for the same PR cancels the older one; pushes to `main` always run to the end.
 
 ### Runner
 
-Every job runs on `${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}`. While the repo is private, the repo
+Every job runs on `${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}`, except the two `Docker smoke` matrix
+entries and the two `Image` entries in `release.yml`: those name their runner, because an arm64 image
+can only be built natively. While the repo is private, the repo
 variable `GEODE_RUNNER=self-hosted` sends jobs to three self-hosted runners on the maintainer's machine,
 so CI uses no Actions minutes and PRs do not queue behind each other. Each runs as a user service:
 `systemctl --user status actions-runner actions-runner-2 actions-runner-3` (install dirs

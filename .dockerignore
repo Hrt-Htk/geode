@@ -1,0 +1,11 @@
+# The image needs the server's own tree and the two Deno manifests. Everything else
+# is build-context weight (node_modules, docs, tests, the plugin) or a secret (.env).
+*
+!deno.json
+!deno.lock
+!core
+!core/**
+!db
+!db/**
+!server
+!server/**

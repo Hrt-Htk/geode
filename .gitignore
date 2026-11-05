@@ -9,6 +9,8 @@ blobs/
 .env
 .env.*
 !.env.example
+# Docker's env template: `.env` is what compose reads, this is the tracked example.
+!.env.docker.example
 
 # Build artifacts
 dist/

@@ -9,16 +9,151 @@ on:
 
 permissions:
   contents: write
-  # #17: artifact attestation for the release assets.
-  id-token: write
-  attestations: write
 
 jobs:
-  release:
-    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+  image:
+    name: Image (${{ matrix.arch }})
+    # #37: the image goes to GHCR, and only these two jobs may write packages.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    # Native runners, no QEMU: the arm64 image (aarch64 sqlite path, arm64 statvfs) is
+    # built and attested by an arm64 machine. GEODE_RUNNER is not used here.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          build-args: VERSION=${{ github.ref_name }}
+          # By digest only: the merge job below puts the two into one manifest, so a
+          # per-architecture image is never tagged on its own. provenance is false
+          # because the attestation step is the one record of where this came from.
+          provenance: false
+          outputs: type=image,name=ghcr.io/hrt-htk/geode,push-by-digest=true,name-canonical=true,push=true
+
+      - name: Stage the digest
+        # The digests are uploaded as files, and a file name cannot hold the colon in
+        # `sha256:<hex>`: strip the prefix and keep the bare hex.
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload the digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Attest image provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/hrt-htk/geode
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  image-manifest:
+    name: Image manifest
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch the digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Merge and tag
+        working-directory: /tmp/digests
+        # Exactly two, or the tag would ship one architecture. The digests arrive as bare
+        # hex; imagetools wants the `sha256:` prefix back.
+        run: |
+          digests=()
+          for file in *; do digests+=("ghcr.io/hrt-htk/geode@sha256:$file"); done
+          if [ "${#digests[@]}" -ne 2 ]; then
+            echo "::error::expected 2 architecture digests, found ${#digests[@]}: ${digests[*]}"
+            exit 1
+          fi
+          docker buildx imagetools create \
+            --tag ghcr.io/hrt-htk/geode:${{ github.ref_name }} \
+            --tag ghcr.io/hrt-htk/geode:latest \
+            "${digests[@]}"
+
+      - name: Read the manifest digest
+        id: digest
+        run: |
+          digest=$(docker buildx imagetools inspect ghcr.io/hrt-htk/geode:${{ github.ref_name }} \
+            --format '{{.Manifest.Digest}}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Attest the manifest
+        # The per-architecture digests are attested in `image`. This record covers the
+        # digest a tag resolves to, so `gh attestation verify oci://ghcr.io/hrt-htk/geode:X.Y.Z`
+        # finds one too.
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/hrt-htk/geode
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
+  release:
+    # A plugin without its image is a plugin the user cannot sync to: the image
+    # manifest is a hard prerequisite, not a parallel job.
+    needs: image-manifest
+    runs-on: ${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      # #17: artifact attestation for the release assets.
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -57,6 +192,9 @@ jobs:
           body: |
             Install or update via [BRAT](https://github.com/TfTHacker/obsidian42-brat).
             Changelog below is auto-generated from merged PRs since the previous tag.
+
+            Server image: `ghcr.io/hrt-htk/geode:${{ github.ref_name }}` (linux/amd64,
+            linux/arm64). Run it from `compose.yaml` in this repository.
           files: |
             plugin-dist/main.js
             plugin-dist/manifest.json

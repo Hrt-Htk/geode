@@ -14,7 +14,8 @@ const libc = Deno.dlopen("libc.so.6", {
 });
 
 // struct statvfs (x86_64 glibc), u64 LE: f_bsize@0 f_frsize@8 f_blocks@16 f_bfree@24 f_bavail@32.
-const STATVFS = new DataView(new Uint8Array(112).buffer);
+// 256 bytes: glibc's struct is 112, and the slack costs nothing.
+const STATVFS = new DataView(new Uint8Array(256).buffer);
 
 export function fsUsage(path: string): FsUsage {
   const rc = libc.symbols.statvfs(new TextEncoder().encode(path + "\0"), STATVFS);

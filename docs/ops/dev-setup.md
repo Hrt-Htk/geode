@@ -25,9 +25,11 @@ files, the dev loop, and the checks that prove the setup works. Design docs desc
 | `libsodium-wrappers-sumo` | `^0.7.15`, plus `libsodium-sumo` as a direct dep | `deno.json` imports, `package.json` |
 | `@noble/hashes` | `2.2.0` | `deno.json` imports, `package.json` |
 | `node-diff3` | `^3.1.2` | `deno.json` imports, `package.json` |
+| Docker with compose v2 | current | not pinned; `scripts/docker-smoke.ts` builds `Dockerfile` and runs `compose.yaml` |
 
 Node is a dev-time tool only: esbuild, `tsc` and Playwright run on it. The server runs on Deno and the
-plugin runs inside Obsidian.
+plugin runs inside Obsidian. Docker is needed only for the image and `compose.yaml`; the E2E layer and
+`deno task ci` never touch it.
 
 Keep `deno.json`, `package.json` and `ci.yml` in step when you bump a version. A version that lands in
 only one of them is a bug.
@@ -257,6 +259,9 @@ ls plugin-dist/main.js plugin-dist/manifest.json plugin-dist/versions.json plugi
 node node_modules/@playwright/test/cli.js test \
   --config=test/e2e/playwright.config.ts --project=default \
   test/e2e/scenarios/gate4-plugin-loads.spec.ts
+
+# 6. Image and compose, end to end (~4 min, needs Docker)
+deno run -A scripts/docker-smoke.ts
 ```
 
 Steps 1 and 4 need nothing but the repo. Steps 2 and 5 need Node: step 5 runs

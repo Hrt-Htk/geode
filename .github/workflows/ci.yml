@@ -204,3 +204,32 @@ jobs:
             git status --porcelain
             exit 1
           fi
+
+  docker-smoke:
+    # #37: the image and compose.yaml end to end, on both published architectures. The
+    # runners are native (no QEMU), so the arm64 sqlite path and the arm64 statvfs layout
+    # prove themselves instead of being emulated; GEODE_RUNNER is not used here.
+    name: Docker smoke (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.x
+
+      - name: Smoke
+        # Builds geode-smoke:local, brings compose.yaml up with the https profile, runs
+        # every check in the script and removes what it made. Needs only Docker.
+        run: deno run -A scripts/docker-smoke.ts

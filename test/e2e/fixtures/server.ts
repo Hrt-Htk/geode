@@ -51,6 +51,11 @@ export async function startServer(opts?: {
   /** The created vault's name (default `e2e-vault`; the docs screenshots show a demo name). */
   vaultName?: string;
 }): Promise<E2EServer> {
+  // GEODE_E2E_SERVER_URL points the specs at a server this fixture did not start (a Docker
+  // container). Nothing to spawn, nothing to stop, no restart: the run that started it owns it.
+  const external = process.env.GEODE_E2E_SERVER_URL;
+  if (external) return attachServer(external, opts);
+
   const denoBin = opts?.denoBin ?? DEFAULT_DENO_BIN;
   const adminToken = opts?.adminToken ?? DEFAULT_ADMIN_TOKEN;
   const timeoutMs = opts?.timeoutMs ?? 30_000;
@@ -72,21 +77,8 @@ export async function startServer(opts?: {
       salt: vault.salt,
       dataDir,
       mintToken: (label: string) => createDevice(url, adminToken, vault.vaultId, label),
-      registerAuthHash: async (deviceToken, passphrase, params) => {
-        const authKey = await computeAuthKeyHex(passphrase, vault.salt, params);
-        const res = await fetch(`${url}/vaults/${vault.vaultId}/auth`, {
-          method: "PUT",
-          headers: {
-            authorization: `Bearer ${deviceToken}`,
-            "x-geode-admin-token": adminToken,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ auth_key: authKey }),
-        });
-        if (!res.ok) {
-          throw new Error(`registerAuthHash failed: ${res.status} ${await res.text()}`);
-        }
-      },
+      registerAuthHash: (deviceToken, passphrase, params) =>
+        putAuthHash(url, vault.vaultId, adminToken, deviceToken, passphrase, vault.salt, params),
       shutdown: async () => {
         if (stopped || !running) return;
         await stopChild(child);
@@ -121,6 +113,54 @@ export async function startServer(opts?: {
     }
     throw error;
   }
+}
+
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/** A server this fixture attaches to instead of starting: a Docker container (#37). */
+async function attachServer(
+  url: string,
+  opts: Parameters<typeof startServer>[0] = {},
+): Promise<E2EServer> {
+  // An option this fixture cannot honor is an error, not something to drop on the floor.
+  // An explicit `undefined` is not a request (launchPair passes `env` unconditionally).
+  const unsupported = Object.entries(opts)
+    .filter(([key, value]) => key !== "vaultName" && value !== undefined)
+    .map(([key]) => key);
+  if (unsupported.length) {
+    throw new Error(`GEODE_E2E_SERVER_URL: the fixture cannot honor ${unsupported.join(", ")}`);
+  }
+  // Fail closed on anything but loopback: a test never points at a server you care about,
+  // and GEODE_E2E_SERVER_URL is one character away from GEODE_SERVER_URL.
+  if (!LOOPBACK.has(new URL(url).hostname)) {
+    throw new Error(`GEODE_E2E_SERVER_URL must be a loopback address, not ${url}`);
+  }
+  const adminToken = process.env.GEODE_ADMIN_TOKEN ?? DEFAULT_ADMIN_TOKEN;
+  // Specs poll the SQLite DB through dataDir; a container keeps it on a bind mount.
+  const dataDir = process.env.GEODE_E2E_DATA_DIR;
+  if (!dataDir) {
+    throw new Error("GEODE_E2E_SERVER_URL is set: also set GEODE_E2E_DATA_DIR to its data dir");
+  }
+  const vault = await createVault(url, adminToken, opts.vaultName);
+  const notOurs = (what: string) =>
+    Promise.reject(
+      new Error(`GEODE_E2E_SERVER_URL: the fixture did not start this server to ${what}`),
+    );
+  return {
+    url,
+    vaultId: vault.vaultId,
+    salt: vault.salt,
+    dataDir,
+    mintToken: (label) => createDevice(url, adminToken, vault.vaultId, label),
+    registerAuthHash: (deviceToken, passphrase, params) =>
+      putAuthHash(url, vault.vaultId, adminToken, deviceToken, passphrase, vault.salt, params),
+    // The run that started the container owns it: a spec that needs it down has to start
+    // its own, so these reject instead of pretending. launchPair's teardown uses
+    // allSettled, so a normal run is unaffected.
+    shutdown: () => notOurs("shut it down"),
+    restart: () => notOurs("restart it"),
+    stop: () => notOurs("stop it"),
+  };
 }
 
 function spawnServer(
@@ -221,6 +261,30 @@ async function createVault(
 
   const data = await response.json() as { vault_id: string; salt: string };
   return { vaultId: data.vault_id, salt: data.salt };
+}
+
+async function putAuthHash(
+  url: string,
+  vaultId: string,
+  adminToken: string,
+  deviceToken: string,
+  passphrase: string,
+  salt: string,
+  params: { ops: number; mem: number },
+): Promise<void> {
+  const authKey = await computeAuthKeyHex(passphrase, salt, params);
+  const res = await fetch(`${url}/vaults/${vaultId}/auth`, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${deviceToken}`,
+      "x-geode-admin-token": adminToken,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ auth_key: authKey }),
+  });
+  if (!res.ok) {
+    throw new Error(`registerAuthHash failed: ${res.status} ${await res.text()}`);
+  }
 }
 
 async function createDevice(
