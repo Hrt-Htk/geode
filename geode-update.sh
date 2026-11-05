@@ -28,21 +28,14 @@ fail() { result rollback-failed; refuse "$*"; }
 # leaves `up --wait` behind) must not keep the lock and block the next run.
 compose() { docker compose "$@" 9>&-; }
 
-# Root executes whatever is in this directory every minute, so only root may be able to
-# write it: a user-owned compose directory next to this cron line is root access for that
-# user. The check is on ownership and the mode bits, not on what root may write anyway.
-root_only() {
-  [ -e "$1" ] || refuse "$1 is missing"
-  [ "$(stat -c %u "$1" 2>/dev/null)" = 0 ] || refuse "$1 is not owned by root"
-  [ "$((0$(stat -c %a "$1") & 0022))" -eq 0 ] || refuse "$1 is writable by group or other"
-}
+# Root runs everything in this directory every minute (compose.yaml, any override, this
+# script), so only root may be able to write it. One rule for the directory and every entry
+# in it: find does not dereference, so a symlink is refused by its own 0777 mode, and the
+# data folder is the container's, by name.
 [ "$(id -u)" = 0 ] || refuse "must run as root"
-root_only "$(basename "$0")"
-root_only "$PWD"
 mkdir -p "$STATE" || exit 1
-root_only "$STATE"
-root_only compose.yaml
-root_only .env
+bad=$(find . -maxdepth 1 ! -name data '(' ! -uid 0 -o -perm /022 ')' -print | tr '\n' ' ')
+[ -z "$bad" ] || refuse "not root's, or writable by group or other: $bad"
 command -v flock >/dev/null 2>&1 || { result no-flock; refuse "flock not found (util-linux)"; }
 
 # The #45 copy of the database, restored in a throwaway container as uid 1993 with only the
@@ -54,17 +47,20 @@ restore() {
      cp /data/before-migration.sqlite /data/geode.db' 9>&-
 }
 
-# Only db.ts writes that copy, only when a migration is pending, so its age is the
-# migration's own. find dates a link by itself, never by what it names.
+# Only db.ts writes that copy, only when a migration is pending, and it writes a regular
+# file: a regular file newer than the start is a copy. find does not dereference, so a link
+# or a FIFO the failed image left there is not one, and the restore that would follow it, or
+# block on it forever, does not run.
 migrated() {
-  [ -n "$(find "$DATA" -maxdepth 1 -name before-migration.sqlite -newer "$STATE/started" 2>/dev/null)" ]
+  [ -n "$(find "$DATA" -maxdepth 1 -type f -name before-migration.sqlite -newer "$STATE/started" 2>/dev/null)" ]
 }
 
-# Put image $1 back, restoring the database if the failed start migrated it. The recover
-# marker survives a failure here, so the next run tries again.
+# Put image $1 back, restoring the database if the failed start migrated it. The tag comes
+# first: a marker whose image was pruned must not stop a running server before we know it
+# cannot go back. The recover marker survives a failure here, so the next run tries again.
 rollback() {
-  compose stop geode >/dev/null 2>&1
   docker tag "$1" "$ref" || fail "cannot put image $1 back on $ref"
+  compose stop geode >/dev/null 2>&1
   migrated && ! restore "$1" && fail "the database restore failed"
   if compose up -d --wait --wait-timeout "$WAIT" --pull never geode >/dev/null 2>&1; then
     rm -f "$STATE/recover"

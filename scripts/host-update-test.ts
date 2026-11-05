@@ -123,6 +123,29 @@ async function imageId(name: string): Promise<string> {
   return sh(["docker", "image", "inspect", "--format", "{{.Id}}", `${REG}/geode:${name}`]);
 }
 
+/** The job under a hard bound: a restore that blocks on a writerless FIFO must fail the
+ * test, not hang it, and its own child (a blocked `docker run`) must not hold the pipes
+ * open afterwards. 137 and 124 are the timeout's exit codes. */
+async function boundedJob(seconds: number): Promise<number> {
+  const child = new Deno.Command(
+    SUDO.length ? SUDO[0] : `${dir}/geode-update.sh`,
+    {
+      args: SUDO.length
+        ? [SUDO[1], "timeout", "-s", "KILL", `${seconds}`, `${dir}/geode-update.sh`]
+        : [],
+      cwd: dir,
+      stdout: "null",
+      stderr: "null",
+    },
+  ).spawn();
+  return (await child.status).code;
+}
+
+/** Nobody holds the job's lock. */
+async function lockFree(): Promise<boolean> {
+  return (await exec([...SUDO, "flock", "-n", `${dir}/.update-lock`, "true"])).code === 0;
+}
+
 /** The image the service runs. Every variant is the same build plus one layer, so the
  * image id, not `/version`, is what says which one a request applied. */
 async function running(): Promise<string> {
@@ -204,7 +227,8 @@ try {
   // this file, so the job's fixed commands stay fixed.
   await Deno.writeTextFile(
     `${dir}/compose.override.yaml`,
-    `services:\n  geode:\n    image: ${REG}/geode:latest\n`,
+    `services:\n  geode:\n    image: ${REG}/geode:latest\n    labels:\n` +
+      `      geode.update.test: root-owned override\n`,
   );
   await Deno.writeTextFile(
     `${dir}/.env`,
@@ -335,6 +359,29 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
       "",
     ]
       .join("\n"),
+  );
+  // A FIFO where the #45 copy should be: a restore would open it for reading and block
+  // forever, with Geode stopped and the job's lock held.
+  await Deno.writeTextFile(
+    `${variants}/021_host_update_fifo.sql`,
+    "CREATE TABLE host_update_fifo (id INTEGER PRIMARY KEY);\n",
+  );
+  await Deno.writeTextFile(
+    `${variants}/migrate-then-fifo.ts`,
+    [
+      'import { openDb } from "./server/db.ts";',
+      'openDb("/data");',
+      'Deno.removeSync("/data/before-migration.sqlite");',
+      'new Deno.Command("mkfifo", { args: ["/data/before-migration.sqlite"] }).outputSync();',
+      "Deno.exit(1);",
+      "",
+    ].join("\n"),
+  );
+  await variant(
+    "fifo",
+    marker("fifo") +
+      "COPY 021_host_update_fifo.sql /app/db/migrations/\n" +
+      runScript("migrate-then-fifo.ts"),
   );
   await variant(
     "stall",
@@ -574,7 +621,12 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
   await sh([...SUDO, "chmod", "666", `${dir}/compose.yaml`]);
   refusals.push(["compose.yaml", await job()]);
   await sh([...SUDO, "chmod", "644", `${dir}/compose.yaml`]);
-  // A symlinked script is dated by what it really is, and this one is the test user's.
+  // A compose.override.yaml is merged by root's compose too: it can add mounts, or a
+  // service of its own.
+  await sh([...SUDO, "chown", `${Deno.uid()}:${Deno.gid()}`, `${dir}/compose.override.yaml`]);
+  refusals.push(["compose.override.yaml", await job()]);
+  await sh([...SUDO, "chown", "root:root", `${dir}/compose.override.yaml`]);
+  // A symlink is refused by its own 0777 mode: nothing dereferences it.
   await Deno.copyFile(`${ROOT}geode-update.sh`, `${work}/elsewhere.sh`);
   await sh([...SUDO, "rm", `${dir}/geode-update.sh`]);
   await sh([...SUDO, "ln", "-s", `${work}/elsewhere.sh`, `${dir}/geode-update.sh`]);
@@ -591,7 +643,19 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
   // Started as `app/geode-update.sh` from the parent, it must still find itself.
   const relative = await exec([...SUDO, "app/geode-update.sh"], {}, parent);
   eq(`${relative.code}`, "0", "the job started by a relative path");
-  ok("root refuses a writable directory, compose file or script", "and finds itself from one");
+  // A root-owned override still counts: compose merges it, so the label has to be there.
+  eq(
+    await sh([
+      "docker",
+      "inspect",
+      "--format",
+      '{{index .Config.Labels "geode.update.test"}}',
+      await container(),
+    ]),
+    "root-owned override",
+    "a root-owned compose.override.yaml is used",
+  );
+  ok("root refuses a writable directory, compose file or override", "and uses a root's override");
 
   console.log("==> Geode cannot write the status folder");
   const geode = await container();
@@ -652,14 +716,40 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
   if (await exists(`${statusDir}/PWNED`)) throw new Error("the request ran as a command");
   ok("a request is a name, never a path or a command");
 
-  console.log("==> the restore cannot be pointed at a host file");
-  await update("attack");
-  const attacked = await result();
-  if (attacked !== "rolled-back" && attacked !== "rollback-failed") {
-    throw new Error(`a pointed-away database reported "${attacked}"`);
+  console.log("==> a FIFO where the copy should be");
+  // The copy db.ts took is replaced by a FIFO. Opening it for reading blocks forever, and
+  // Geode is stopped with the lock held by then, so the run has to finish without it.
+  const schemaBeforeFifo = (await probeDb()).schema;
+  await allowUpdate();
+  await publish("fifo");
+  await request();
+  const fifoRun = await boundedJob(120);
+  if (fifoRun === 137 || fifoRun === 124) {
+    throw new Error("the job hung on a FIFO where the copy should be");
   }
+  eq(await result(), "rolled-back", "a FIFO is not a copy, so the old image starts");
+  eq(await health(), "healthy", "the old image came up");
+  const afterFifo = await probeDb();
+  if (afterFifo.schema === schemaBeforeFifo) throw new Error("the FIFO copy was restored anyway");
   eq(await hostsSum(), hostsBefore, "no host file was written");
-  ok("the restore refuses a symlinked copy", attacked);
+  if (!(await lockFree())) throw new Error("the job still holds the lock");
+  ok(
+    "a FIFO where the copy should be cannot hang the job",
+    `schema ${schemaBeforeFifo} -> ${afterFifo.schema}`,
+  );
+
+  console.log("==> the copy is a link to a host file");
+  await allowUpdate();
+  await publish("attack");
+  await request();
+  const linkRun = await boundedJob(120);
+  if (linkRun === 137 || linkRun === 124) {
+    throw new Error("the job hung on a linked copy");
+  }
+  eq(await result(), "rollback-failed", "a linked copy leaves the old image nothing to start on");
+  eq(await hostsSum(), hostsBefore, "no host file was written");
+  if (!(await lockFree())) throw new Error("the job still holds the lock");
+  ok("a linked copy is not a copy either", "rollback-failed, no host file touched");
 
   console.log("==> all checks passed");
 } catch (error) {

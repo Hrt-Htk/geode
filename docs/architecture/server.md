@@ -926,10 +926,12 @@ WantedBy=timers.target
 
 `sudo systemctl daemon-reload && sudo systemctl enable --now geode-update.timer`.
 
-**It refuses to run** unless the script, its directory and `update-status` are owned by root and not
-writable by group or other, and it needs `flock` (util-linux: Ubuntu, Debian and Alpine all ship it).
-A directory another user can write reports on stderr and writes nothing; a host without `flock`
-reports `no-flock` and updates nothing.
+**It refuses to run** unless it is root, and the directory and everything directly in it except
+`data` are owned by root and not writable by group or other: `compose.yaml`, any override, the script,
+`update-status`. A symlink there counts as writable, since nothing dereferences it. Anything else
+reports `not root's, or writable by group or other: <paths>` on stderr and writes nothing. It also
+needs `flock` (util-linux: Ubuntu, Debian and Alpine all ship it); without it, `no-flock` and no
+update.
 
 **State** is `./update-status`, created by Docker at the first `up` (the job creates it too if it runs
 first) and mounted read-only into Geode at `/update-status`. root writes it 0644, so Geode reads it as
@@ -960,12 +962,13 @@ finishes that rollback from `recover` and reports `rolled-back`: stop, tag the o
 restore if a migration ran, `up --pull never`. It only ever acts on this job's own marker, so it is
 not supervision.
 
-**The restore.** If `data/before-migration.sqlite` (§3) is newer than `started`, the failed start ran
-a migration, and the copy goes back over `geode.db` (with `geode.db-wal` and `geode.db-shm` removed)
-before the old image opens it. That runs in a throwaway container as `--user 1993:1993 --network none
---cap-drop ALL` with only the data folder mounted, on the old image: a root `cp` would follow a link
-the failed image left in that folder, and `find -newer` dates a link by itself, never what it names.
-Only `db.ts` writes that copy, and only when a migration is pending. **A restore drops every commit
+**The restore.** If a *regular file* `data/before-migration.sqlite` (§3) is newer than `started`, the
+failed start ran a migration, and the copy goes back over `geode.db` (with `geode.db-wal` and
+`geode.db-shm` removed) before the old image opens it. Only `db.ts` writes that copy, only when a
+migration is pending, and it writes a regular file: `find` does not dereference, so a link or a FIFO
+the failed image left there is not a copy, and nothing is followed or opened. The restore itself runs
+in a throwaway container as `--user 1993:1993 --network none --cap-drop ALL` with only the data folder
+mounted, on the old image, because a root `cp` would follow a link out of that folder. **A restore drops every commit
 the bad window accepted**, and any blob GC removed in the meantime: it is the way back from a bad
 release, not a backup. A restore that fails leaves the container stopped, reports `rollback-failed`
 and keeps `recover`, so the next run tries again.
@@ -973,8 +976,8 @@ and keeps `recover`, so the next run tries again.
 **A release that fails** is not retried: its id and the failure time go to `failed-image`, and a
 request that pulls that exact image reports `blocked` for 24 hours. A newer image is tried normally.
 
-**Tested** on Linux with cron and with a systemd timer. Synology's Task Scheduler and Unraid's User
-Scripts are untested: run the script from them the same way (root, Docker on PATH). Docker Desktop has
+**Run by hand once** under cron and once under a systemd timer, on Linux; neither runs in CI.
+Synology's Task Scheduler and Unraid's User Scripts are untested: run the script from them the same way (root, Docker on PATH). Docker Desktop has
 no root cron; it uses the plugin's copy button.
 
 **Rate-limit buckets per setup.** `adminGate` counts failures per `clientIp`, and `clientIp` takes the
@@ -1005,7 +1008,8 @@ out. `scripts/host-update-test.ts` drives `geode-update.sh` against a throwaway 
 a real update with the plugin's sync core committing through it, a release that never reports healthy
 (and the same one again), a failed migration whose database is restored with its vaults and heads, a
 run killed between `stop` and `up` and one killed inside `up --wait`, the lock, the rate limit, the
-guard on a writable directory, compose file or script, a status folder with nothing in it a container
-could lock, and the job attacked from inside the container. `ci.yml` runs both on both
+guard on a writable directory, compose file, override or script, a status folder with nothing in it a
+container could lock, a FIFO or link where the database copy should be, and the job attacked from
+inside the container. `ci.yml` runs both on both
 architectures, and `shellcheck -s sh` over the job. A real-Obsidian run attaches through the
 fixtures' external-server switch (`GEODE_E2E_SERVER_URL`, `GEODE_E2E_DATA_DIR`, `GEODE_ADMIN_TOKEN`).
