@@ -774,13 +774,12 @@ EnvironmentFile=/etc/geode/geode.env
 Environment=HOME=/opt/geode
 Environment=DENO_DIR=/opt/geode/.deno-cache
 Environment=DENO_SQLITE_PATH=@SQLITE_LIB@
-Environment=GEODE_UPDATE_STATUS_DIR=/opt/geode/update-status
 ExecStart=/usr/local/bin/deno run \
     --allow-net=@HOST@:@GEODE_PORT@ \
-    --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@,/opt/geode/update-status \
+    --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@ \
     --allow-write=/opt/geode/data \
     --allow-ffi \
-    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY,GEODE_UPDATE_STATUS_DIR \
+    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY \
     /opt/geode/server/main.ts --data-dir /opt/geode/data --host @HOST@ --port @GEODE_PORT@
 Restart=on-failure
 RestartSec=5s
@@ -986,10 +985,10 @@ request is a file in the folder Geode already owns, and the job's state is a rea
 /update/status` is device-token-gated (never public) and reads only two files in `update-status`:
 `installed` is a `heartbeat` younger than three minutes, and `result` is the last word and epoch, one
 of the table's. A missing folder, an unreadable file or a garbage line is `installed: false` and
-`result: null`, never an error. The folder is `/update-status` in the container and
-`GEODE_UPDATE_STATUS_DIR` names it elsewhere: `/opt/geode/update-status` in `deploy/geode.service`,
-and a test sets its own. Both the env var and the folder are in the unit's `--allow-env` /
-`--allow-read` lists: an unscoped read would fail silently as "no job". The plugin
+`result: null`, never an error. The folder is `/update-status`, mounted by `compose.yaml`;
+`GEODE_UPDATE_STATUS_DIR` names another one (a test sets its own). The container's `--allow-read`
+covers `/update-status` and its `--allow-env` the variable, since a denied read must not surface as
+an error: with neither, this install has no job and the route says so. The plugin
 shows the job as installed when `installed` is true, offers the copy button when the route answers
 404 (a server older than this release) or `installed: false`, and reports a run only from a result
 whose epoch is at or after its request's; 150 s without any result, or 12 minutes overall, is a run

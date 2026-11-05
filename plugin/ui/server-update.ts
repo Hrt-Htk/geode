@@ -4,6 +4,7 @@ import {
   fetchUpdateStatus,
   requestServerUpdate,
 } from "../plumbing/update-client.ts";
+import { isAdminAuthFailure } from "../plumbing/errors.ts";
 import { formatError, log } from "../plumbing/log.ts";
 import { windowGlobal } from "../plumbing/window.ts";
 import { withAdminToken } from "./admin-token-modal.ts";
@@ -13,14 +14,14 @@ import {
   noticeDue,
   notRun,
   SERVER_UPDATE_COMMAND,
+  type ServerUpdateInput,
   UPDATE_BUTTON,
   UPDATE_NOTICE,
   UPDATE_TOKEN_MESSAGE,
   UPDATE_TOKEN_TITLE,
   updateExpired,
-  updateOutcome,
-  type ServerUpdateInput,
   type UpdateOutcome,
+  updateOutcome,
 } from "./server-update-logic.ts";
 
 /** Two seconds: the job takes seconds to minutes and every poll is two tiny reads. */
@@ -56,7 +57,6 @@ export class ServerUpdate {
   private requestEpoch = 0;
   private postedAt = 0;
   private lastResultAt = 0;
-  private lastVersion: string | null = null;
 
   constructor(private host: ServerUpdateHost) {}
 
@@ -65,8 +65,14 @@ export class ServerUpdate {
   }
 
   /** What the Status row describes: the run's own state plus what the plugin knows of versions. */
-  input(own: string, server: string | null, refused: boolean): ServerUpdateInput {
-    return { own, server, refused, jobInstalled: this.jobInstalled, updating: this.isRunning() };
+  input(server: string | null, refused: boolean): ServerUpdateInput {
+    return {
+      own: this.host.ownVersion(),
+      server,
+      refused,
+      jobInstalled: this.jobInstalled,
+      updating: this.isRunning(),
+    };
   }
 
   /** hello_ack: refresh the job's state, and say once per plugin version that it can update. */
@@ -92,9 +98,12 @@ export class ServerUpdate {
     this.host.onChange();
   }
 
-  /** The dialog: confirm, then the admin token, then the run. Also the notice's action. */
+  /** The dialog: confirm, then the admin token, then the run. Also the notice's and the
+   * refusal banner's action. */
   prompt(): void {
-    this.state = { kind: "idle" };
+    // A run is going: reopen it. Resetting to idle here would orphan it (no polling, no
+    // "Updating the server." on the row) and leave a second request one click away.
+    if (this.state.kind !== "running") this.state = { kind: "idle" };
     this.openModal();
   }
 
@@ -137,6 +146,8 @@ export class ServerUpdate {
     this.timer = null;
     this.modal?.close();
     this.modal = null;
+    // A poll already awaiting its reads belongs to the session this unload ends.
+    this.state = { kind: "idle" };
   }
 
   private async run(adminToken: string): Promise<void> {
@@ -146,6 +157,13 @@ export class ServerUpdate {
     try {
       epoch = (await requestServerUpdate(this.host.serverUrl(), adminToken)).epoch;
     } catch (e) {
+      // A rotated admin token answers 401: drop it and ask again rather than ending the run.
+      if (isAdminAuthFailure(e)) {
+        this.host.setAdminToken(null);
+        this.state = { kind: "idle" };
+        this.confirm();
+        return;
+      }
       log.warn("server update request failed", { error: formatError(e) });
       this.finish(notRun());
       return;
@@ -168,14 +186,16 @@ export class ServerUpdate {
     const status = await fetchUpdateStatus(this.host.serverUrl(), this.host.deviceToken())
       .catch(() => null);
     const version = await fetchServerVersion(this.host.serverUrl()).catch(() => null);
-    if (version !== null) this.lastVersion = version;
+    // An unload or a reopened run during those reads ends the run this tick belongs to.
+    if (this.state.kind !== "running") return;
     const result = freshResult(status, this.requestEpoch);
-    if (result !== null && result.word !== "running") {
-      const now = version ?? this.lastVersion ?? this.host.ownVersion();
-      this.finish(updateOutcome(result.word, now));
+    if (result !== null) this.lastResultAt = Date.now();
+    // The word is final, but the line names the version the server runs now: without one the
+    // tick waits, and the deadline below still ends the wait.
+    if (result !== null && result.word !== "running" && version !== null) {
+      this.finish(updateOutcome(result.word, version));
       return;
     }
-    if (result !== null) this.lastResultAt = Date.now();
     const now = Date.now();
     if (
       updateExpired({ sincePostMs: now - this.postedAt, sinceResultMs: now - this.lastResultAt })

@@ -234,7 +234,6 @@ export class GeodeSettingTab extends PluginSettingTab {
       openConflictsModal: () => this.plugin.openConflictsModal(),
       getServerUpdateInput: () =>
         this.plugin.updater.input(
-          this.plugin.manifest.version,
           this.plugin.serverVersion,
           this.plugin.versionStatus.kind === "blocked" &&
             this.plugin.versionStatus.side === "server",

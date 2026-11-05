@@ -69,18 +69,6 @@ async function versionNow(): Promise<string> {
   return ((await res.json()) as { version: string }).version;
 }
 
-/** The job's state as the plugin reads it (#44): the read route, with a device token. */
-async function jobStatus(token: string): Promise<{
-  installed: boolean;
-  result: { word: string; epoch: number } | null;
-}> {
-  const res = await fetch(`${API}/update/status`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`/update/status: ${res.status} ${await res.text()}`);
-  return await res.json() as { installed: boolean; result: { word: string; epoch: number } | null };
-}
-
 function container(): Promise<string> {
   return compose("ps", "-q", "geode");
 }
@@ -507,7 +495,7 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
   if (await exists(`${dataDir}/update-request`)) throw new Error("a refused POST left a request");
   const noToken = await fetch(`${API}/update/status`);
   eq(`${noToken.status}`, "401", "a status read without a device token");
-  eq(`${(await jobStatus(device.token)).installed}`, "true", "the job's heartbeat");
+  eq(`${(await fetchUpdateStatus(API, device.token)).installed}`, "true", "the job's heartbeat");
   await allowUpdate();
   await publish("base");
   const posted = await requestServerUpdate(API, ADMIN);

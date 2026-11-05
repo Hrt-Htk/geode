@@ -4,7 +4,6 @@
 // folder and the job's state is mounted read-only (docs/architecture/server.md §11).
 import type { Database } from "@db/sqlite";
 import { adminGate, jsonResp, requireDevice } from "./http-helpers.ts";
-import { envPath } from "./env.ts";
 import { log } from "./log.ts";
 
 /** The job writes epoch seconds (`date +%s`), so the request is dated the same way. */
@@ -15,9 +14,14 @@ function epochNow(): number {
 /** A job that has not run for this long is not installed (server.md §11). */
 const HEARTBEAT_FRESH_S = 180;
 
-/** The job's state folder: mounted read-only into the container by compose.yaml. */
+/** The job's state folder: mounted read-only into the container by compose.yaml. A unit whose
+ * `--allow-env` does not name the variable has no job, and reads nothing. */
 function statusDir(): string {
-  return envPath("GEODE_UPDATE_STATUS_DIR") ?? "/update-status";
+  try {
+    return Deno.env.get("GEODE_UPDATE_STATUS_DIR") || "/update-status";
+  } catch {
+    return "/update-status";
+  }
 }
 
 /** A file the job writes, or null: a missing folder and an unreadable file are both "no". */

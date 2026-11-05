@@ -137,6 +137,8 @@ export class SettingsStatusSection {
   private renderServerUpdateRow(row: Setting): void {
     row.settingEl.dataset.testid = "geode-settings-server-update";
     this.serverUpdateSetting = row;
+    this.serverUpdateBtn = null;
+    this.serverUpdateControl = "none";
     this.serverUpdateDescEl = row.descEl.createSpan();
     this.updateServerUpdateRow();
   }
@@ -145,14 +147,13 @@ export class SettingsStatusSection {
    * closed dialog never leaves a second Update one click away. */
   updateServerUpdateRow(): void {
     const setting = this.serverUpdateSetting;
-    if (!setting || !this.serverUpdateDescEl) return;
-    const row = serverUpdateRow(this.host.getServerUpdateInput());
-    this.serverUpdateDescEl.setText(row.kind === "none" ? "" : row.desc);
+    const input = this.host.getServerUpdateInput();
+    // The row renders only once the server's version is known, and the plugin never unlearns it.
+    if (!setting || !this.serverUpdateDescEl || input.server === null) return;
+    const row = serverUpdateRow({ ...input, server: input.server });
+    this.serverUpdateDescEl.setText(row.desc);
     const control = row.kind === "action" ? row.control : "none";
-    if (control === this.serverUpdateControl) {
-      if (this.serverUpdateBtn) this.serverUpdateBtn.buttonEl.disabled = control === "updating";
-      return;
-    }
+    if (control === this.serverUpdateControl) return;
     this.serverUpdateBtn?.buttonEl.remove();
     this.serverUpdateBtn = null;
     this.serverUpdateControl = control;

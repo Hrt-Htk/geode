@@ -27,7 +27,6 @@ export const UPDATE_DONE = "Done";
 export const UPDATE_NO_JOB = "The update job is not installed. Run the command on the server.";
 
 export type UpdateOutcome = {
-  kind: "updated" | "up-to-date" | "rate-limited" | "failed" | "not-run";
   text: string;
   /** A run that failed or did not happen shows the command, so it can be finished by hand. */
   showCommand: boolean;
@@ -35,27 +34,18 @@ export type UpdateOutcome = {
 
 /** A run that never reached a result: the command is the next step. */
 export function notRun(): UpdateOutcome {
-  return {
-    kind: "not-run",
-    text: "The update did not run. Copy the command below.",
-    showCommand: true,
-  };
+  return { text: "The update did not run. Copy the command below.", showCommand: true };
 }
 
 /** One result line per word the job writes (server.md §11); `serverVersion` is what it runs now. */
 export function updateOutcome(word: string, serverVersion: string): UpdateOutcome {
   switch (word) {
     case "updated":
-      return {
-        kind: "updated",
-        text: `Server updated to ${serverVersion}.`,
-        showCommand: false,
-      };
+      return { text: `Server updated to ${serverVersion}.`, showCommand: false };
     case "up-to-date":
-      return { kind: "up-to-date", text: "Server is already up to date.", showCommand: false };
+      return { text: "Server is already up to date.", showCommand: false };
     case "rate-limited":
       return {
-        kind: "rate-limited",
         text: "An update ran recently. Try again in a few minutes.",
         showCommand: false,
       };
@@ -67,7 +57,6 @@ export function updateOutcome(word: string, serverVersion: string): UpdateOutcom
       // rolled-back, blocked, pull-failed, and any word a newer job adds: a run that ended
       // without success, so the version /version answers is the one it is on.
       return {
-        kind: "failed",
         text: `The update failed. The server is back on ${serverVersion}.`,
         showCommand: true,
       };
@@ -86,13 +75,12 @@ export type ServerUpdateInput = {
 };
 
 export type ServerUpdateRow =
-  | { kind: "none" }
   | { kind: "plain"; desc: string }
   | { kind: "action"; desc: string; control: "update" | "copy" | "updating" };
 
-/** The Status row: the versions, and the one control that fits the job's state. */
-export function serverUpdateRow(i: ServerUpdateInput): ServerUpdateRow {
-  if (i.server === null) return { kind: "none" };
+/** The Status row, once the server's version is known: the versions, and the one control the
+ * job's state allows. A server the plugin is behind is not this row's business. */
+export function serverUpdateRow(i: ServerUpdateInput & { server: string }): ServerUpdateRow {
   // Only an older server is this row's business; the plugin's own update keeps the banner.
   if (compareSemVer(i.server, i.own) >= 0) return { kind: "plain", desc: `Server ${i.server}.` };
   const desc = `Server ${i.server}, plugin ${i.own}.`;

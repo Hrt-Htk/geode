@@ -1,14 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { connectPhone } from "../fixtures/phone-obsidian";
 import { useRemoteServer } from "../fixtures/phone-server";
 import { enterAdminToken } from "../helpers/admin-token";
 import { expectFits } from "../helpers/fit";
 import { dismissModals, evalClick } from "../helpers/mobile-ui";
+import { openSettingsTab } from "../helpers/logs";
 import { clearNotices } from "../helpers/settings-tab";
 import { shotPath } from "../helpers/shots";
+import { statusDir, writeHeartbeat, writeResult } from "../helpers/update-status";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import packageJson from "../../../package.json" with { type: "json" };
 
@@ -27,20 +26,6 @@ const COPY = '[data-testid="geode-settings-update-copy"]';
 const STATUS_ROW = '[data-testid="geode-settings-sync-status"]';
 const DIALOG = ".modal.geode-confirm";
 const BANNER = '[data-testid="geode-settings-version-banner"]';
-
-const epochNow = () => Math.floor(Date.now() / 1000);
-
-function statusDir(): string {
-  return mkdtempSync(path.join(tmpdir(), "geode-update-phone-"));
-}
-
-function writeHeartbeat(dir: string, ageSeconds = 0): void {
-  writeFileSync(`${dir}/heartbeat`, `${epochNow() - ageSeconds}\n`);
-}
-
-function writeResult(dir: string, word: string): void {
-  writeFileSync(`${dir}/result`, `${word} ${epochNow()}\n`);
-}
 
 /** Let a modal's appear animation finish: a screencap mid-fade has no backdrop yet. */
 async function settle(ui: { eval: (js: string) => Promise<unknown> }): Promise<void> {
@@ -107,11 +92,7 @@ test("server update (phone): notice, row, confirm, progress, and both command re
 
     /* ---- B1: the status line keeps the age, the row offers the update ---- */
     await clearNotices(obsidian);
-    await obsidian.eval(`
-      app.setting.open();
-      app.setting.openTabById("geode");
-      return true;
-    `);
+    await openSettingsTab(obsidian, true);
     await expect.poll(() => rowText(obsidian, ROW), { timeout: 20_000 }).toBe(
       `Server ${SERVER_VERSION}, plugin ${NEWER_PLUGIN}.`,
     );
@@ -253,11 +234,7 @@ test("server update (phone): no job, and a refused server", async () => {
     expect(await obsidian.eval<number>(`document.querySelectorAll(".notice-cta").length`)).toBe(0);
     await clearNotices(obsidian);
 
-    await obsidian.eval(`
-      app.setting.open();
-      app.setting.openTabById("geode");
-      return true;
-    `);
+    await openSettingsTab(obsidian, true);
     await expect.poll(() => rowText(obsidian, ROW), { timeout: 20_000 }).toBe(
       "The update job is not installed. Run the command on the server.",
     );

@@ -16,27 +16,20 @@ import {
 // the one time notice is due. The obsidian files render these.
 
 const OWN = "0.45.0";
+const row = (
+  i: { server: string; refused?: boolean; jobInstalled?: boolean | null; updating?: boolean },
+) => serverUpdateRow({ own: OWN, refused: false, jobInstalled: true, updating: false, ...i });
 
 Deno.test("server update - every result word the job writes maps to its line", () => {
   const text = (word: string) => updateOutcome(word, "0.44.0");
-  assertEquals(text("updated"), {
-    kind: "updated",
-    text: "Server updated to 0.44.0.",
-    showCommand: false,
-  });
-  assertEquals(text("up-to-date"), {
-    kind: "up-to-date",
-    text: "Server is already up to date.",
-    showCommand: false,
-  });
+  assertEquals(text("updated"), { text: "Server updated to 0.44.0.", showCommand: false });
+  assertEquals(text("up-to-date"), { text: "Server is already up to date.", showCommand: false });
   assertEquals(text("rate-limited"), {
-    kind: "rate-limited",
     text: "An update ran recently. Try again in a few minutes.",
     showCommand: false,
   });
   for (const word of ["rolled-back", "blocked", "pull-failed"]) {
     assertEquals(text(word), {
-      kind: "failed",
       text: "The update failed. The server is back on 0.44.0.",
       showCommand: true,
     });
@@ -47,7 +40,6 @@ Deno.test("server update - every result word the job writes maps to its line", (
   // A word a newer job adds is still a run that ended without success, not a run that never
   // happened: the version /version answers is the one it is on.
   assertEquals(text("something-new"), {
-    kind: "failed",
     text: "The update failed. The server is back on 0.44.0.",
     showCommand: true,
   });
@@ -55,7 +47,6 @@ Deno.test("server update - every result word the job writes maps to its line", (
 
 Deno.test("server update - a run that did not happen shows the command", () => {
   assertEquals(notRun(), {
-    kind: "not-run",
     text: "The update did not run. Copy the command below.",
     showCommand: true,
   });
@@ -63,84 +54,46 @@ Deno.test("server update - a run that did not happen shows the command", () => {
 });
 
 Deno.test("server update - the row shows the server version when nothing is to be done", () => {
-  const base = { own: OWN, refused: false, jobInstalled: true, updating: false };
-  assertEquals(serverUpdateRow({ ...base, server: null }), { kind: "none" });
-  assertEquals(serverUpdateRow({ ...base, server: OWN }), {
-    kind: "plain",
-    desc: `Server ${OWN}.`,
-  });
+  assertEquals(row({ server: OWN }), { kind: "plain", desc: `Server ${OWN}.` });
   // The plugin is the side to update: the row names no action.
-  assertEquals(serverUpdateRow({ ...base, server: "0.46.0" }), {
-    kind: "plain",
-    desc: "Server 0.46.0.",
-  });
+  assertEquals(row({ server: "0.46.0" }), { kind: "plain", desc: "Server 0.46.0." });
 });
 
 Deno.test("server update - an older server with the job installed offers Update", () => {
-  assertEquals(
-    serverUpdateRow({
-      own: OWN,
-      server: "0.44.0",
-      refused: false,
-      jobInstalled: true,
-      updating: false,
-    }),
-    { kind: "action", desc: "Server 0.44.0, plugin 0.45.0.", control: "update" },
-  );
+  assertEquals(row({ server: "0.44.0" }), {
+    kind: "action",
+    desc: "Server 0.44.0, plugin 0.45.0.",
+    control: "update",
+  });
 });
 
 Deno.test("server update - no job, or no answer yet, keeps the row usable", () => {
-  assertEquals(
-    serverUpdateRow({
-      own: OWN,
-      server: "0.44.0",
-      refused: false,
-      jobInstalled: false,
-      updating: false,
-    }),
-    {
-      kind: "action",
-      desc: "The update job is not installed. Run the command on the server.",
-      control: "copy",
-    },
-  );
+  assertEquals(row({ server: "0.44.0", jobInstalled: false }), {
+    kind: "action",
+    desc: "The update job is not installed. Run the command on the server.",
+    control: "copy",
+  });
   // Unknown is the update path: the POST is what finds out.
-  assertEquals(
-    serverUpdateRow({
-      own: OWN,
-      server: "0.44.0",
-      refused: false,
-      jobInstalled: null,
-      updating: false,
-    }),
-    { kind: "action", desc: "Server 0.44.0, plugin 0.45.0.", control: "update" },
-  );
+  assertEquals(row({ server: "0.44.0", jobInstalled: null }), {
+    kind: "action",
+    desc: "Server 0.44.0, plugin 0.45.0.",
+    control: "update",
+  });
 });
 
 Deno.test("server update - a run in flight disables the row's Update", () => {
-  assertEquals(
-    serverUpdateRow({
-      own: OWN,
-      server: "0.44.0",
-      refused: false,
-      jobInstalled: true,
-      updating: true,
-    }),
-    { kind: "action", desc: "Server 0.44.0, plugin 0.45.0.", control: "updating" },
-  );
+  assertEquals(row({ server: "0.44.0", updating: true }), {
+    kind: "action",
+    desc: "Server 0.44.0, plugin 0.45.0.",
+    control: "updating",
+  });
 });
 
 Deno.test("server update - a refused server keeps the row to the versions", () => {
-  assertEquals(
-    serverUpdateRow({
-      own: OWN,
-      server: "0.44.0",
-      refused: true,
-      jobInstalled: true,
-      updating: false,
-    }),
-    { kind: "plain", desc: "Server 0.44.0, plugin 0.45.0." },
-  );
+  assertEquals(row({ server: "0.44.0", refused: true }), {
+    kind: "plain",
+    desc: "Server 0.44.0, plugin 0.45.0.",
+  });
 });
 
 Deno.test("server update - only a result at or after the request counts", () => {
