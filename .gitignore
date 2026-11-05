@@ -1,5 +1,6 @@
 # Runtime data: never commit
 data/
+update-status/
 *.db
 *.db-wal
 *.db-shm

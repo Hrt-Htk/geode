@@ -21,6 +21,9 @@ services:
       GEODE_TRUST_PROXY: ${GEODE_TRUST_PROXY:-0}
     volumes:
       - ./data:/data
+      # The host update job's state (geode-update.sh, server.md §11): read-only, because
+      # the request it answers lives in ./data and the container owns that folder.
+      - ./update-status:/update-status:ro
     networks: [internal]
 
   # HTTPS front for a public domain: stock Caddy, default timeouts, the deploy/Caddyfile

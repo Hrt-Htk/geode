@@ -160,8 +160,11 @@ architecture (`linux/amd64` on `ubuntu-latest`, `linux/arm64` on `ubuntu-24.04-a
 the disk-usage route against the host's `statvfs`, data across a recreate, `docker stop`, a WebSocket
 held open for two minutes through Caddy, Caddy's log holding no credential header (device token, admin
 token, re-key auth key), the default publish address, the rate-limit bucket behind each front, and what
-Geode can and cannot reach. Run it locally before the PR leaves draft: it is the only place
-the container is exercised locally.
+Geode can and cannot reach. The same job then runs `scripts/host-update-test.ts`: `geode-update.sh`
+against a throwaway registry (nothing new, a real update with the plugin's sync core committing
+through it, a release that never reports healthy, a failed migration whose database is restored, the
+lock, the rate limit, and the job attacked from inside the container). Run both locally before the PR
+leaves draft: they are the only place the container and the job are exercised locally.
 
 ### When CI runs
 
