@@ -535,6 +535,10 @@ row's Edit modal checks the server before committing and keeps the old address o
 device-authed trash GET carries the kind: 2xx exists for this device, 401 a revoked or stale device
 token (rejoin the vault), 403 a token for another vault, 404 no vault at that address, 5xx or no
 answer unreachable. Each kind has its own line; every one ends with "Your previous address is kept."
+The scheme is decided in `plumbing/scheme.ts`: a scheme the user typed survives into every request and
+into `serverUrl`, a bare host gets `http` on loopback or a private range (10/8, 172.16/12, 192.168/16,
+100.64/10) and `https` anywhere else, and an already stored address without a scheme follows the same
+rule. The wizard, the flows and the modal all go through it, so no caller re-derives a scheme.
 
 **Status bar** (`statusbar.ts`, `statusbar-icon.ts`): a single icon whose color and tooltip encode the
 state: synced with last-sync age, syncing progress, pending count, offline with the retry delay, locked,

@@ -46,8 +46,9 @@ test("create: inline errors, Enter, Back, Higher params stored server-side", asy
     await win.locator('[data-testid="geode-create-server"]').fill("http://127.0.0.1:1");
     await win.locator('[data-testid="geode-create-admin"]').fill("e2e");
     await win.locator('[data-testid="geode-create-continue"]').click();
+    // #35: the typed scheme is kept, so the error names the address as tried.
     await expect(win.locator('[data-testid="geode-create-error"]')).toContainText(
-      "Couldn't reach the server at 127.0.0.1:1.",
+      "Couldn't reach the server at http://127.0.0.1:1.",
     );
     await modalShot(win, "459-wizard-create1-unreachable.png");
 

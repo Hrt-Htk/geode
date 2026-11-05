@@ -93,6 +93,7 @@ Deno.test("scan: generic placeholder home names are allowed", () => {
 Deno.test("scan: an allow-listed address is exempt only in the file that needs it", () => {
   assertEquals(scan(file("README.md", "192.168.1.20"), []), []);
   assertEquals(scan(file("test/integration/provisioning-client.test.ts", "192.168.1.5"), []), []);
+  assertEquals(scan(file("test/integration/provisioning-client.test.ts", "100.100.1.1"), []), []);
   assertEquals(
     scan(file("a.md", "192.168.1.20 192.168.1.5 192.168.1.21"), []).map((h) => h.detail),
     ["192.168.1.20", "192.168.1.5", "192.168.1.21"],

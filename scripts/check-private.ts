@@ -30,6 +30,8 @@ const ALLOWED: Record<string, string> = {
   "192.168.1.20": "README.md", // home-network example: the doc must show a LAN address
   // httpBase LAN heuristic fixture: the address must be private
   "192.168.1.5": "test/integration/provisioning-client.test.ts",
+  // Local rule fixture for the Tailscale range.
+  "100.100.1.1": "test/integration/provisioning-client.test.ts",
 };
 
 // Private IPv4: 10/8, 172.16/12, 192.168/16, 100.64/10.
