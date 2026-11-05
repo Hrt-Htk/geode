@@ -2,7 +2,7 @@
 // `scripts/host-update-test.ts`): run a command and read both streams, fail loudly on a
 // non-zero exit, wait for a condition, and find a free loopback port.
 
-export type Result = { code: number; out: string; text: string };
+type Result = { code: number; out: string; text: string };
 
 /** Exit code, stdout, and both streams together, for a command that may fail. */
 export async function exec(

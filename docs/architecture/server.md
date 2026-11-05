@@ -880,14 +880,28 @@ Docker: no clone, no build.
 
 ### Host update job (#43)
 
-**No container gets the Docker socket.** The plugin (#44) leaves `data/update-request`; a short script
-on the host answers it. Optional: without the job, Geode installs and syncs normally and the plugin
-shows a copy button.
+**No container gets the Docker socket.** The plugin (#44) leaves `data/update-request`; a short
+script on the host answers it. Optional: without the job, Geode installs and syncs normally and the
+plugin shows a copy button.
 
-**Install once.** Copy `geode-update.sh` from the repo beside `compose.yaml` and `.env`, then pick one:
+**Install.** Root owns the compose directory, and only root: the cron line below executes whatever is
+in it every minute, so a login user who can write that directory is root within a minute. Every
+parent of it has to be root-only too: `/opt/geode` is, a directory under a home is not, because its
+owner can rename it and put their own script in place of this one, and the guard inside a replaced
+script protects nothing. (Without the job, a user-owned directory is fine.)
+
+```sh
+sudo install -d -m 0755 -o root -g root /opt/geode
+sudo install -m 0644 -o root -g root compose.yaml /opt/geode/
+sudo install -m 0600 -o root -g root .env /opt/geode/
+sudo install -m 0755 -o root -g root geode-update.sh /opt/geode/
+sudo install -d -m 0755 -o 1993 -g 1993 /opt/geode/data
+cd /opt/geode && sudo docker compose up -d
+```
+
+Then one scheduler, run as root, every minute:
 
 ```cron
-# root crontab (`sudo crontab -e`), or /etc/cron.d/geode-update with a `root` column
 * * * * * /opt/geode/geode-update.sh
 ```
 
@@ -912,48 +926,56 @@ WantedBy=timers.target
 
 `sudo systemctl daemon-reload && sudo systemctl enable --now geode-update.timer`.
 
-**It runs as root, with fixed commands and no input.** It takes no arguments, reads no file the
-container can write, and decides everything from its own directory (the compose directory). Its PATH
-is the Debian/Ubuntu default; a Docker installed elsewhere needs the line at the top edited. Copy the
-file again to update it: the image release does not carry it.
+**It refuses to run** unless the script, its directory and `update-status` are owned by root and not
+writable by group or other, and it needs `flock` (util-linux: Ubuntu, Debian and Alpine all ship it).
+A directory another user can write reports on stderr and writes nothing; a host without `flock`
+reports `no-flock` and updates nothing.
 
-**State** is `./update-status`: Docker creates it at the first `up` (the job creates it too if it runs
-first) and mounts it read-only into Geode at `/update-status`. root writes it with `umask 022`, so Geode
-reads it as uid 1993.
+**State** is `./update-status`, created by Docker at the first `up` (the job creates it too if it runs
+first) and mounted read-only into Geode at `/update-status`. root writes it 0644, so Geode reads it as
+uid 1993.
 
 | File | Contents |
 | --- | --- |
 | `heartbeat` | epoch seconds of the last run: a client reads it to tell the job is installed |
-| `result` | `<status> <epoch>`: `updated`, `up-to-date`, `rate-limited`, `pull-failed`, `rolled-back`, `rollback-failed` |
-| `last-update` | epoch seconds of the last attempt, the rate limit |
-| `failed-image` | id of the image that failed here last, never started again |
+| `result` | `<status> <epoch>`, one of `running`, `updated`, `up-to-date`, `rate-limited`, `blocked`, `pull-failed`, `config-failed`, `rolled-back`, `rollback-failed`, `no-flock` |
+| `last-update` | epoch seconds of the last real update, the rate limit |
+| `failed-image` | `<image id> <epoch>`: not started again for 24 hours |
+| `started` | touched before a start, so the copy from §3 can be dated |
+| `recover` | the image to go back to while a run has the container in its hands |
 
 **What a run does.** No request, nothing but the heartbeat. A request is removed with `rm -rf --`,
-which removes the entry and never what a link names, and then: at most one real update per 10 minutes,
-`docker compose pull geode`, stop if nothing is new, `docker compose up -d --wait --wait-timeout 120
-geode`. Geode only: Caddy and the forwarder stay as they are. One run at a time: `flock`, or where it
-is missing a directory lock whose dead run is detected by its pid.
+which removes the entry and never what a link names, then `running`, then at most one real update per
+ten minutes: `docker compose pull geode`, stop if nothing is new, `docker compose up -d --wait
+--wait-timeout 300 geode`. Geode only: Caddy and the forwarder are untouched. One run at a time:
+`flock` on `.update-lock` beside the compose file, never inside `update-status`, because the container
+can read that folder and a lock only needs its file to be readable. An up-to-date check never uses up
+the rate limit. A normal run prints nothing on stderr, so
+cron does not mail.
 
-**Rollback.** The running image is tagged back, the failed container is stopped, and `docker compose up
--d --wait --pull never geode` starts the old one. The data folder is never written by root: the one
-restore that has to write runs in a throwaway container as `--user 1993:1993 --network none --cap-drop
-ALL`, with only the data folder mounted, on the old image (`cp` in there cannot follow a link out of
-the container). A root `cp` would: a failed image can leave `geode.db` pointing at a host file.
+**Rollback, and a run that dies.** Before it takes the container over, the job writes the running
+image to `recover` and clears that after the last healthy `up` of either path. A run killed in
+between leaves Geode down, or on the failed image, with no request left to ask again, so the next run
+finishes that rollback from `recover` and reports `rolled-back`: stop, tag the old image back,
+restore if a migration ran, `up --pull never`. It only ever acts on this job's own marker, so it is
+not supervision.
 
-**Did a migration run?** If `data/before-migration.sqlite` (§3) is newer than a stamp the job touches
-before it starts, the failed start ran one, and the copy is restored over `geode.db` (with
-`geode.db-wal` and `geode.db-shm` removed) before the old image opens it. The age test is `find`'s
-`-newer`, which `lstat`s: a link the image left behind is dated by itself, never by what it names. A
-restore that fails leaves the container stopped and reports `rollback-failed`. Only `db.ts` writes the
-copy, and only when a migration is pending, so the file's age is the migration's own.
+**The restore.** If `data/before-migration.sqlite` (§3) is newer than `started`, the failed start ran
+a migration, and the copy goes back over `geode.db` (with `geode.db-wal` and `geode.db-shm` removed)
+before the old image opens it. That runs in a throwaway container as `--user 1993:1993 --network none
+--cap-drop ALL` with only the data folder mounted, on the old image: a root `cp` would follow a link
+the failed image left in that folder, and `find -newer` dates a link by itself, never what it names.
+Only `db.ts` writes that copy, and only when a migration is pending. **A restore drops every commit
+the bad window accepted**, and any blob GC removed in the meantime: it is the way back from a bad
+release, not a backup. A restore that fails leaves the container stopped, reports `rollback-failed`
+and keeps `recover`, so the next run tries again.
 
-**One failed image is not retried.** Its id goes to `failed-image`; a request that pulls the same image
-reports `rolled-back` and does not start it. A newer image is tried normally. Delete `failed-image` to
-retry that exact image after a transient failure.
+**A release that fails** is not retried: its id and the failure time go to `failed-image`, and a
+request that pulls that exact image reports `blocked` for 24 hours. A newer image is tried normally.
 
-**Tested** on Linux with cron and with a systemd timer. Synology's Task Scheduler and
-Unraid's User Scripts are untested: run the script from them the same way (root, Docker on PATH).
-Docker Desktop has no root cron; it uses the plugin's copy button.
+**Tested** on Linux with cron and with a systemd timer. Synology's Task Scheduler and Unraid's User
+Scripts are untested: run the script from them the same way (root, Docker on PATH). Docker Desktop has
+no root cron; it uses the plugin's copy button.
 
 **Rate-limit buckets per setup.** `adminGate` counts failures per `clientIp`, and `clientIp` takes the
 last `X-Forwarded-For` entry when the peer is trusted (`GEODE_TRUST_PROXY=1`, §8). Measured:
@@ -981,7 +1003,9 @@ an admin request, uid 1993 on the read-only rootfs, the disk-usage route against
 log without any credential header, the healthcheck, the rate-limit buckets of both fronts, and no route
 out. `scripts/host-update-test.ts` drives `geode-update.sh` against a throwaway registry: nothing new,
 a real update with the plugin's sync core committing through it, a release that never reports healthy
-(and the same one again), a failed migration whose database is restored, the lock, the rate limit, and
-`geode-update.sh` attacked from inside the container. `ci.yml` runs both on both architectures. A
-real-Obsidian run attaches through the fixtures'
-external-server switch (`GEODE_E2E_SERVER_URL`, `GEODE_E2E_DATA_DIR`, `GEODE_ADMIN_TOKEN`).
+(and the same one again), a failed migration whose database is restored with its vaults and heads, a
+run killed between `stop` and `up` and one killed inside `up --wait`, the lock, the rate limit, the
+guard on a writable directory, compose file or script, a status folder with nothing in it a container
+could lock, and the job attacked from inside the container. `ci.yml` runs both on both
+architectures, and `shellcheck -s sh` over the job. A real-Obsidian run attaches through the
+fixtures' external-server switch (`GEODE_E2E_SERVER_URL`, `GEODE_E2E_DATA_DIR`, `GEODE_ADMIN_TOKEN`).
