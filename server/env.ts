@@ -18,3 +18,12 @@ export function envNum(key: string): number | undefined {
     return undefined; // --allow-env not granted
   }
 }
+
+/** Read a path env knob: undefined when unset or not permitted. */
+export function envPath(key: string): string | undefined {
+  try {
+    return Deno.env.get(key) || undefined;
+  } catch {
+    return undefined; // --allow-env not granted
+  }
+}

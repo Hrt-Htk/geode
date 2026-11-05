@@ -21,6 +21,30 @@
   margin: 4px 0;
 }
 
+/* #44: a phone has no room for the one line command beside its copy control: wrap it. */
+.is-phone .geode-code-row code {
+  white-space: normal;
+  overflow-x: visible;
+  overflow-wrap: anywhere;
+}
+
+/* #44: the server update run, one sentence beside a spinner. */
+.geode-update-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+.geode-update-progress-icon {
+  display: flex;
+}
+
+.geode-update-progress-icon svg {
+  animation: geode-spin 1s linear infinite;
+}
+
 /* Encryption-strength detail line under the dropdown (#441, #459). */
 .geode-strength-detail {
   color: var(--text-muted);

@@ -6,6 +6,13 @@ import { PassphraseModal } from "./passphrase-modal.ts";
 import { runWithFeedback } from "./button-feedback.ts";
 import { createForgotLink } from "./forgot-modal.ts";
 import { FORGOT_TITLE } from "./passphrase-copy.ts";
+import {
+  type ServerUpdateInput,
+  serverUpdateRow,
+  UPDATE_BUTTON,
+  UPDATE_COPY,
+  UPDATE_ROW_NAME,
+} from "./server-update-logic.ts";
 import type { SettingsRow } from "./settings-legacy.ts";
 import {
   NOT_SET_UP_SETUP_DESC,
@@ -35,6 +42,10 @@ export type StatusSectionHost = {
   openActivityModal: () => void;
   /** #432: the sync-status row's [Review] opens the Conflicts modal. */
   openConflictsModal: () => void;
+  /** #44: the Status row for the server's own version, and the two things it can do. */
+  getServerUpdateInput: () => ServerUpdateInput;
+  startServerUpdate: () => void;
+  copyUpdateCommand: () => void;
 };
 
 /** Status section rows: sync-status row updates in place; never re-renders the tab. */
@@ -48,6 +59,10 @@ export class SettingsStatusSection {
   private storageTextEl: HTMLElement | null = null;
   private storageMeterEl: HTMLElement | null = null;
   private storageState: StorageState = { kind: "loading" };
+  private serverUpdateSetting: Setting | null = null;
+  private serverUpdateDescEl: HTMLElement | null = null;
+  private serverUpdateBtn: ButtonComponent | null = null;
+  private serverUpdateControl: "none" | "update" | "copy" | "updating" = "none";
 
   constructor(private host: StatusSectionHost) {}
 
@@ -63,6 +78,12 @@ export class SettingsStatusSection {
     if (!this.host.configured()) return this.notSetUpRows();
     return [
       { name: "Sync status", render: (s) => this.renderStatusRow(s) },
+      {
+        // #44: a locked tab keeps to its rows (#458), and the version it would offer is stale.
+        name: UPDATE_ROW_NAME,
+        visible: () => this.host.getUnlocked() && this.host.getServerUpdateInput().server !== null,
+        render: (s) => this.renderServerUpdateRow(s),
+      },
       {
         // #440: "Forgot your passphrase?" link row, visible only while locked.
         name: FORGOT_TITLE,
@@ -111,6 +132,42 @@ export class SettingsStatusSection {
     this.conflictTextEl = row.descEl.createDiv({ cls: "geode-pause-conflicts geode-hidden" });
     this.syncStatusButton(this.state() === "locked");
     this.updateStatusRow();
+  }
+
+  private renderServerUpdateRow(row: Setting): void {
+    row.settingEl.dataset.testid = "geode-settings-server-update";
+    this.serverUpdateSetting = row;
+    this.serverUpdateDescEl = row.descEl.createSpan();
+    this.updateServerUpdateRow();
+  }
+
+  /** Re-describe the Server update row in place: its control follows the job's state, so a
+   * closed dialog never leaves a second Update one click away. */
+  updateServerUpdateRow(): void {
+    const setting = this.serverUpdateSetting;
+    if (!setting || !this.serverUpdateDescEl) return;
+    const row = serverUpdateRow(this.host.getServerUpdateInput());
+    this.serverUpdateDescEl.setText(row.kind === "none" ? "" : row.desc);
+    const control = row.kind === "action" ? row.control : "none";
+    if (control === this.serverUpdateControl) {
+      if (this.serverUpdateBtn) this.serverUpdateBtn.buttonEl.disabled = control === "updating";
+      return;
+    }
+    this.serverUpdateBtn?.buttonEl.remove();
+    this.serverUpdateBtn = null;
+    this.serverUpdateControl = control;
+    if (control === "none") return;
+    setting.addButton((btn) => {
+      this.serverUpdateBtn = btn;
+      if (control === "copy") {
+        btn.setButtonText(UPDATE_COPY).onClick(() => this.host.copyUpdateCommand());
+        btn.buttonEl.dataset.testid = "geode-settings-update-copy";
+        return;
+      }
+      btn.setButtonText(UPDATE_BUTTON).onClick(() => this.host.startServerUpdate());
+      btn.buttonEl.dataset.testid = "geode-settings-update";
+      btn.setDisabled(control === "updating");
+    });
   }
 
   private renderStorageRow(row: Setting): void {
@@ -276,6 +333,7 @@ export class SettingsStatusSection {
   updateStatusRow(): void {
     if (!this.dotEl || !this.textEl) return;
     this.updatePauseBtn();
+    this.updateServerUpdateRow();
     const { text, dot, conflictText } = describeSyncStatus(this.host.getStatusInput(), Date.now());
     this.textEl.setText(text);
     this.conflictTextEl?.setText(conflictText ?? "");

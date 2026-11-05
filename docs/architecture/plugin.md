@@ -74,6 +74,7 @@ type PluginSettings = {
   massDeleteHold: MassDeleteHold | null;        // #601 held delete, survives restart
   massDeleteMinFiles: number;                   // guard: 20 files and 25% (both must trip)
   massDeleteMinPercent: number;
+  updateNoticeVersion: string;                  // #44: plugin version the server update notice was shown for
 };
 ```
 
@@ -540,6 +541,22 @@ into `serverUrl`, a bare host gets `http` on loopback or a private range (10/8, 
 100.64/10) and `https` anywhere else, and an already stored address without a scheme follows the same
 rule. The wizard, the flows and the modal all go through it, so no caller re-derives a scheme.
 
+**Server update** (`ui/server-update.ts`, `ui/server-update-logic.ts` for the decisions,
+`ui/server-update-modal.ts` for the dialog, `plumbing/update-client.ts` for the calls): a `Server
+update` row in Status shows `Server X, plugin Y.` with `Update` while the host job's heartbeat is
+fresh, and the copy button when it is not (`server.md` §11). The row is "versions match" quiet
+(`Server X.`, no control) and shows only the versions while the server refuses this plugin, because
+the refusal banner carries the action there. `Update` opens one dialog: the consequences, then the
+session's admin token (the same prompt as Devices, `ui/admin-token-modal.ts`), then the request and
+progress in the same dialog, then one result line. Closing the dialog hides it and the run keeps
+going: the status row reads `Updating the server.` while it does, and `Update` stays disabled. The
+result comes from the job's own words, mapped in `server-update-logic.ts`; a failed or missed run
+shows the command instead of pretending. The one-time notice after a plugin update is once per
+plugin version (`PluginSettings.updateNoticeVersion`), with the action only when the job can answer
+it. A server behind the plugin is no longer a status-line hint: the row and the notice carry it, so
+`Up to date. Last backup 2 min ago.` stays readable. The plugin's own update keeps its hint and
+banner.
+
 **Status bar** (`statusbar.ts`, `statusbar-icon.ts`): a single icon whose color and tooltip encode the
 state: synced with last-sync age, syncing progress, pending count, offline with the retry delay, locked,
 conflicts. Clicking it opens the status menu (`status-menu.ts`).
@@ -611,6 +628,7 @@ retention floor (#677, `../ops/trash-soft-delete.md` §5).
 | `sync/commit.ts`, `path-lock.ts`, `rename-*.ts`, `parked-moves.ts` | outbound commits, one-writer-per-path, rename links |
 | `sync/history-*.ts`, `export-vault.ts`, `recovery.ts`, `rebuild-flow.ts`, `join-plan.ts`, `rejoin.ts`, `rekey-*.ts` | history, export, resync and rejoin rebuilds, join mode, rejoin backup, re-key |
 | `ui/` | settings tab + sections, status bar/menu, modals, views |
+| `ui/server-update*.ts`, `plumbing/update-client.ts` | #44: the server update run, its dialog, the Status row's copy, the two HTTP calls |
 
 ---
 

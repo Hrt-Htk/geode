@@ -25,6 +25,7 @@ import { SettingsVaultSection } from "./settings-vault-section.ts";
 import { SettingsScopeSection } from "./settings-scope-section.ts";
 import { SettingsAdvancedSection } from "./settings-advanced-section.ts";
 import type { SyncStatusInput } from "./sync-status.ts";
+import type { ServerUpdate } from "./server-update.ts";
 import type { StatusBar } from "./statusbar.ts";
 import type { RekeyKind } from "./rekey-modal-logic.ts";
 
@@ -55,6 +56,9 @@ type PluginInstance = {
   rekeyElsewhere: boolean;
   rekeyInProgress: boolean;
   versionStatus: VersionStatus;
+  /** #44: the server's own version, and the run the row and the dialog describe. */
+  serverVersion: string | null;
+  updater: ServerUpdate;
   lastBackupAt: number;
   getPausedAt: () => number;
   pauseSync: () => Promise<void>;
@@ -120,6 +124,7 @@ export class GeodeSettingTab extends PluginSettingTab {
       openMassDeleteReview: () => this.plugin.openMassDeleteReview(),
       retrySync: (btn) => this.plugin.retrySync(btn),
       resumeSync: () => this.plugin.resumeSync(),
+      startServerUpdate: () => this.plugin.updater.prompt(),
     });
     this.statusBar.subscribe(() => {
       this.statusSection?.updateStatusRow();
@@ -227,6 +232,15 @@ export class GeodeSettingTab extends PluginSettingTab {
       resume: () => void this.plugin.resumeSync(),
       openActivityModal: () => this.plugin.openActivityModal(),
       openConflictsModal: () => this.plugin.openConflictsModal(),
+      getServerUpdateInput: () =>
+        this.plugin.updater.input(
+          this.plugin.manifest.version,
+          this.plugin.serverVersion,
+          this.plugin.versionStatus.kind === "blocked" &&
+            this.plugin.versionStatus.side === "server",
+        ),
+      startServerUpdate: () => this.plugin.updater.prompt(),
+      copyUpdateCommand: () => this.plugin.updater.copyCommand(),
     });
     const status: TreeSection<SettingsRow> = {
       id: "status",
@@ -380,5 +394,10 @@ export class GeodeSettingTab extends PluginSettingTab {
 
   updateVaultDesc(): void {
     this.vaultSection?.updateVaultDesc();
+  }
+
+  /** #44: the update run changed state: re-describe its row now, not on the next tick. */
+  updateServerUpdateRow(): void {
+    this.statusSection?.updateServerUpdateRow();
   }
 }

@@ -25,6 +25,7 @@ import {
 import { b64encode, type HeadRecord } from "../core/protocol.ts";
 import { intParam, jsonResp, requireDevice } from "./http-helpers.ts";
 import { rekeyRoutes } from "./rekey-routes.ts";
+import { updateRoutes } from "./update-routes.ts";
 import { fsUsage } from "./fs-usage.ts";
 import { vaultBytes } from "./vault-budget.ts";
 import { log } from "./log.ts";
@@ -291,9 +292,12 @@ export function vaultRoutes(
   dataDir: string,
 ): (req: Request) => Promise<Response> {
   const rekey = rekeyRoutes(dataDir, db, adminToken);
+  const update = updateRoutes(db, adminToken, dataDir);
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const parts = url.pathname.split("/").filter(Boolean);
+    // #44: not vault-scoped, so it carries no vault id and stays out of the table below.
+    if (parts[0] === "update") return await update(req);
     // Outside the static table: it needs the data dir, which the table can't see.
     if (
       parts.length >= 3 && parts[0] === "vaults" && (parts[2] === "auth" || parts[2] === "rekey")

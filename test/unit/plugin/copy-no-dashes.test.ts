@@ -130,6 +130,23 @@ import {
   serverAddressError,
 } from "../../../plugin/plumbing/server-address.ts";
 import { blockedCopy, describeVersionHint } from "../../../plugin/sync/version-state.ts";
+import {
+  notRun,
+  UPDATE_BUTTON,
+  UPDATE_CONFIRM_LINES,
+  UPDATE_COPY,
+  UPDATE_DONE,
+  UPDATE_NO_JOB,
+  UPDATE_NOTICE,
+  UPDATE_PROGRESS,
+  UPDATE_ROW_NAME,
+  UPDATE_STATUS_UPDATING,
+  UPDATE_TITLE_ASK,
+  UPDATE_TITLE_RUN,
+  UPDATE_TOKEN_MESSAGE,
+  UPDATE_TOKEN_TITLE,
+  updateOutcome,
+} from "../../../plugin/ui/server-update-logic.ts";
 import { copySpaceCheck, formatEta, liveEta } from "../../../plugin/ui/rekey-estimate.ts";
 import {
   CANCEL_BUTTON,
@@ -479,6 +496,35 @@ Deno.test("copy-no-dashes - blocked copy, both sides (#625)", () => {
       copy.row,
     ]);
   }
+});
+
+Deno.test("copy-no-dashes - the server update surfaces (#44)", () => {
+  assertNoDashes(
+    "server-update",
+    [
+      UPDATE_ROW_NAME,
+      UPDATE_NOTICE,
+      UPDATE_BUTTON,
+      UPDATE_TITLE_ASK,
+      UPDATE_TITLE_RUN,
+      UPDATE_CONFIRM_LINES,
+      UPDATE_TOKEN_TITLE,
+      UPDATE_TOKEN_MESSAGE,
+      UPDATE_PROGRESS,
+      UPDATE_STATUS_UPDATING,
+      UPDATE_COPY,
+      UPDATE_DONE,
+      UPDATE_NO_JOB,
+      // SERVER_UPDATE_COMMAND is a shell command, not copy: it carries the job's own flags.
+      notRun().text,
+      ...["updated", "up-to-date", "rate-limited", "rolled-back", "blocked", "pull-failed"].map(
+        (word) => updateOutcome(word, "0.44.0").text,
+      ),
+      ...["rollback-failed", "config-failed", "no-flock"].map((word) =>
+        updateOutcome(word, "0.44.0").text
+      ),
+    ].flat(),
+  );
 });
 
 Deno.test("copy-no-dashes - update hints (#529)", () => {

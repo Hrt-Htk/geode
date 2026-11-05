@@ -148,14 +148,23 @@ test("verify tier1-3 UI: #246 blocked version warning, #169 lock feedback, #168 
     const hintStatusEl = obsidian.win.locator('[data-testid="geode-statusbar"]');
     await expect(hintStatusEl).not.toHaveClass(/geode-statusbar-error/, { timeout: 10_000 });
     await obsidian.win.screenshot({ path: shotPath("529-settings-version-hint.png") });
-    /* server older than plugin → "Server update available" */
+    /* #44: a server older than the plugin is no status hint any more. The status line keeps
+       its backup age and the Server update row carries the versions and the action. */
     await obsidian.eval(`
       app.plugins.plugins.geode.onServerVersion("0.0.1");
       return true;
     `);
+    await expect(hintBanner.first()).toBeHidden({ timeout: 10_000 });
+    const updateRow = obsidian.win.locator('[data-testid="geode-settings-server-update"]');
+    await expect(updateRow).toBeVisible({ timeout: 10_000 });
+    /* This throwaway server has no host job, so the row carries the command. */
+    await expect(updateRow.locator(".setting-item-description")).toHaveText(
+      "The update job is not installed. Run the command on the server.",
+    );
+    await expect(updateRow.locator('[data-testid="geode-settings-update-copy"]')).toBeVisible();
     await expect
-      .poll(async () => await hintBanner.first().textContent(), { timeout: 10_000 })
-      .toContain("Server update available");
+      .poll(async () => await statusRow.first().textContent(), { timeout: 10_000 })
+      .toContain("Up to date.");
     /* clear back to ok so later steps are unaffected */
     await obsidian.eval(`
       app.plugins.plugins.geode.onServerVersion(app.plugins.plugins.geode.manifest.version);
@@ -248,18 +257,18 @@ test("verify tier1-3 UI: #529 real-seam version difference syncs and shows the u
       }, { timeout: 30_000 })
       .toBeGreaterThan(0);
 
-    /* Open settings: the sync-status row must show the update hint (server older
-       than plugin), and the version banner must too. */
+    /* #44: open settings: the server is older than the plugin, so the Server update row says
+       so, the status line keeps its backup age, and no version hint banner is up. */
     await openSettings(obsidian);
     const statusRow = obsidian.win.locator('[data-testid="geode-settings-sync-status"]');
     await expect
       .poll(async () => await statusRow.first().textContent(), { timeout: 15_000 })
-      .toContain("Server update available");
-    const hintBanner = obsidian.win.locator(".setting-item").filter({
-      hasText: "Update available",
-    });
-    await expect(hintBanner.first()).toBeVisible({ timeout: 10_000 });
-    expect(await hintBanner.first().textContent()).toContain("Server update available");
+      .toContain("Up to date.");
+    const updateRow = obsidian.win.locator('[data-testid="geode-settings-server-update"]');
+    await expect(updateRow.locator(".setting-item-description")).toHaveText(
+      "The update job is not installed. Run the command on the server.",
+    );
+    await expect(updateRow.locator('[data-testid="geode-settings-update-copy"]')).toBeVisible();
     await obsidian.win.screenshot({ path: shotPath("529-realseam-settings-version-hint.png") });
   } finally {
     await obsidian.close();

@@ -302,6 +302,8 @@ declarative in `server/routes.ts`; blob routes live in `server/blob-routes.ts` a
 | `GET /blobs/:hash` | device | raw `application/octet-stream` bytes |
 | `POST /blobs/:hash` | device | upload a chunk; 200 whether new or already present; 413 above 4 MB; 503 while the process-wide body budget is full (§ below); 507 once the vault is past its storage budget (§4); refused while a re-key session is open |
 | `GET /version` | none | `{ version }`, the server's own version |
+| `POST /update` | admin | leave the empty `data/update-request` the host job answers, answer `{ epoch }` (§11) |
+| `GET /update/status` | device | `{ installed, result }`: the host job's heartbeat and its last `<status> <epoch>`, never an error when absent (§11) |
 | `GET /vaults` | admin | list vaults |
 | `POST /vaults` | admin | create a vault → `{ vault_id, salt }` |
 | `GET /vaults/:vaultId/info` | admin or device | `{ salt, verifier, argon2_ops, argon2_mem }` (#560: a device needs it to unlock after a re-key); staging vaults are 404 |
@@ -772,12 +774,13 @@ EnvironmentFile=/etc/geode/geode.env
 Environment=HOME=/opt/geode
 Environment=DENO_DIR=/opt/geode/.deno-cache
 Environment=DENO_SQLITE_PATH=@SQLITE_LIB@
+Environment=GEODE_UPDATE_STATUS_DIR=/opt/geode/update-status
 ExecStart=/usr/local/bin/deno run \
     --allow-net=@HOST@:@GEODE_PORT@ \
-    --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@ \
+    --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@,/opt/geode/update-status \
     --allow-write=/opt/geode/data \
     --allow-ffi \
-    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY \
+    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY,GEODE_UPDATE_STATUS_DIR \
     /opt/geode/server/main.ts --data-dir /opt/geode/data --host @HOST@ --port @GEODE_PORT@
 Restart=on-failure
 RestartSec=5s
@@ -975,6 +978,22 @@ and keeps `recover`, so the next run tries again.
 
 **A release that fails** is not retried: its id and the failure time go to `failed-image`, and a
 request that pulls that exact image reports `blocked` for 24 hours. A newer image is tried normally.
+
+**The plugin's side (#44).** Two HTTP routes, no Docker access and no new network access: the
+request is a file in the folder Geode already owns, and the job's state is a read-only mount.
+`POST /update` is admin-gated and leaves an empty `data/update-request`, answering `{ epoch }` taken
+*before* the write, so a client can tell a fresh result from the previous run's. `GET
+/update/status` is device-token-gated (never public) and reads only two files in `update-status`:
+`installed` is a `heartbeat` younger than three minutes, and `result` is the last word and epoch, one
+of the table's. A missing folder, an unreadable file or a garbage line is `installed: false` and
+`result: null`, never an error. The folder is `/update-status` in the container and
+`GEODE_UPDATE_STATUS_DIR` names it elsewhere: `/opt/geode/update-status` in `deploy/geode.service`,
+and a test sets its own. Both the env var and the folder are in the unit's `--allow-env` /
+`--allow-read` lists: an unscoped read would fail silently as "no job". The plugin
+shows the job as installed when `installed` is true, offers the copy button when the route answers
+404 (a server older than this release) or `installed: false`, and reports a run only from a result
+whose epoch is at or after its request's; 150 s without any result, or 12 minutes overall, is a run
+that did not happen, because a host can die mid run and leave `running` behind.
 
 **Run by hand once** under cron and once under a systemd timer, on Linux; neither runs in CI.
 Synology's Task Scheduler and Unraid's User Scripts are untested: run the script from them the same way (root, Docker on PATH). Docker Desktop has

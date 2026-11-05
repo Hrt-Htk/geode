@@ -48,8 +48,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # (Deno resolves it against the working directory and the load fails).
 ENTRYPOINT ["/tini", "--", "deno", "run", \
   "--allow-net=0.0.0.0:8080", \
-  "--allow-read=/data,/app/server,/app/core,/app/db", \
+  "--allow-read=/data,/app/server,/app/core,/app/db,/update-status", \
   "--allow-write=/data", \
   "--allow-ffi", \
-  "--allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY", \
+  "--allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY,GEODE_UPDATE_STATUS_DIR", \
   "server/main.ts", "--data-dir", "/data", "--host", "0.0.0.0", "--port", "8080"]
