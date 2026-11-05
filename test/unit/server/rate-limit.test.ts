@@ -94,6 +94,68 @@ Deno.test("rate-limit - clientIp: loopback socket without XFF uses socket peer",
   assertEquals(clientIp(req), "::1");
 });
 
+function withTrustProxy<T>(value: string | undefined, run: () => T): T {
+  const prev = Deno.env.get("GEODE_TRUST_PROXY");
+  if (value === undefined) Deno.env.delete("GEODE_TRUST_PROXY");
+  else Deno.env.set("GEODE_TRUST_PROXY", value);
+  try {
+    return run();
+  } finally {
+    if (prev === undefined) Deno.env.delete("GEODE_TRUST_PROXY");
+    else Deno.env.set("GEODE_TRUST_PROXY", prev);
+  }
+}
+
+Deno.test("rate-limit - clientIp: trust proxy on reads XFF from a non-loopback peer", () => {
+  withTrustProxy("1", () => {
+    const req = new Request("http://geode/vaults", {
+      headers: { "x-forwarded-for": "1.2.3.4, 203.0.113.7,  5.6.7.8  " },
+    });
+    attachRemoteAddr(req, addrWith("198.51.100.7"));
+    assertEquals(clientIp(req), "5.6.7.8");
+  });
+});
+
+Deno.test("rate-limit - clientIp: trust proxy on still reads XFF from a loopback peer", () => {
+  withTrustProxy("1", () => {
+    const req = new Request("http://geode/vaults", {
+      headers: { "x-forwarded-for": "1.2.3.4, 5.6.7.8" },
+    });
+    attachRemoteAddr(req, addrWith("127.0.0.1"));
+    assertEquals(clientIp(req), "5.6.7.8");
+  });
+});
+
+Deno.test("rate-limit - clientIp: trust proxy on without XFF uses the socket peer", () => {
+  withTrustProxy("1", () => {
+    const req = new Request("http://geode/vaults");
+    attachRemoteAddr(req, addrWith("198.51.100.7"));
+    assertEquals(clientIp(req), "198.51.100.7");
+  });
+});
+
+Deno.test("rate-limit - clientIp: trust proxy off ignores XFF from a non-loopback peer", () => {
+  withTrustProxy(undefined, () => {
+    const req = new Request("http://geode/vaults", {
+      headers: { "x-forwarded-for": "1.2.3.4, 203.0.113.7, 5.6.7.8" },
+    });
+    attachRemoteAddr(req, addrWith("198.51.100.7"));
+    assertEquals(clientIp(req), "198.51.100.7");
+  });
+});
+
+Deno.test("rate-limit - clientIp: only the exact value 1 enables trust proxy", () => {
+  for (const value of ["true", "yes", "on", "0", " 1", "1 "]) {
+    withTrustProxy(value, () => {
+      const req = new Request("http://geode/vaults", {
+        headers: { "x-forwarded-for": "9.9.9.9" },
+      });
+      attachRemoteAddr(req, addrWith("198.51.100.7"));
+      assertEquals(clientIp(req), "198.51.100.7", `GEODE_TRUST_PROXY=${JSON.stringify(value)}`);
+    });
+  }
+});
+
 Deno.test("rate-limit - clientIp: no socket info falls back to XFF, else unknown", () => {
   const req = new Request("http://geode/vaults", {
     headers: { "x-forwarded-for": "5.6.7.8" },

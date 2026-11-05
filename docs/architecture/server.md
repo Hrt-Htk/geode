@@ -36,8 +36,9 @@ env-only (`GEODE_ADMIN_TOKEN`) and `--admin-token` fails with a message that nam
 argv is world-readable in `/proc/<pid>/cmdline` (#680 L-4); a missing token logs a startup warning. Env
 knobs: `GEODE_ADMIN_TOKEN`,
 `GEODE_TRASH_RETENTION_DAYS`, `GEODE_COMPACT_FLOOR_DAYS`, `GEODE_COMPACT_THROTTLE_MS`,
-`GEODE_MIN_PLUGIN_VERSION`, `GEODE_VAULT_MAX_BYTES` (a systemd drop-in, not `geode.env`, see §10),
-`DENO_SQLITE_PATH`.
+`GEODE_MIN_PLUGIN_VERSION`, `GEODE_VAULT_MAX_BYTES`, `GEODE_TRUST_PROXY` (the last two a systemd
+drop-in, not `geode.env`, see §10), `DENO_SQLITE_PATH`. `GEODE_TRUST_PROXY` is on only for the exact
+value `1` (§8).
 
 ---
 
@@ -551,22 +552,26 @@ boxes would not see each other live.
   preflight and the call surfaces as `TypeError: Failed to fetch`. This happens on the phone only,
   because desktop rides Electron's `requestUrl`.
 - **Admin rate limit**: 5 failures per 15 min per IP. The IP is the socket peer; `X-Forwarded-For` is
-  trusted only when the peer is loopback (Caddy on the same host), so a direct client cannot rotate a
-  fake IP (#533). The two per-file purge routes charge a bearer that is neither the admin token nor a
-  device of the vault (#677), so accepting the admin token there is not a free guessing oracle.
+  trusted when the peer is loopback (Caddy on the same host) or when `GEODE_TRUST_PROXY=1` puts a proxy
+  in another container in front, so a direct client cannot rotate a fake IP (#533). The two per-file
+  purge routes charge a bearer that is neither the admin token nor a device of the vault (#677), so
+  accepting the admin token there is not a free guessing oracle.
 - **The bucket map is bounded** (#680 N-7): `MAX_TRACKED_IPS` (10 000). At the cap every expired
   bucket is dropped, then the oldest, so a client rotating IPv6 source addresses cannot grow the map
   without bound. This bounds memory, not the bypass: eviction can drop an attacker's own bucket and
   its failure count, which buys nothing when a caller holding 10 000 addresses already has 10 000
   free guesses.
 - **Accepted: the limit is per socket IP, so an off-host proxy collapses every client into one
-  bucket** (#680 N-7). Behind a proxy on another machine the peer is the proxy and `X-Forwarded-For`
-  is not trusted, because trusting a header from a non-loopback peer lets any direct client spoof a
-  fresh IP per request and dodge the limit entirely. The cost is the other direction: five bad admin
-  tokens from one client over such a proxy lock every admin route for 15 min. Supported topologies are
-  the ones `deploy/install.sh` produces (Caddy on the same host, loopback peer) or a direct
-  LAN/Tailscale client; an off-host front proxy needs a configured trusted-proxy list, which is a
-  design change rather than a hardening patch.
+  bucket unless `GEODE_TRUST_PROXY=1`** (#680 N-7). Behind a proxy on another machine or in another
+  container the peer is the proxy, and `X-Forwarded-For` is not trusted by default, because trusting a
+  header from a non-loopback peer lets any direct client spoof a fresh IP per request and dodge the
+  limit entirely. The cost of leaving it off is the other direction: five bad admin tokens from one
+  client over such a proxy lock every admin route for 15 min. The setting is off by default and on only
+  for the exact value `1`; it reads the last `X-Forwarded-For` entry from any peer, and falls back to
+  the socket peer when the header is absent. **Never set it while Geode's port is directly reachable**:
+  a client could then spoof a fresh address per request and dodge the admin rate limit. Supported
+  topologies are the ones `deploy/install.sh` produces (Caddy on the same host, loopback peer), a
+  direct LAN/Tailscale client, or a proxy in another container that is the only route to the port.
 
 ### Validation flow
 
@@ -731,7 +736,7 @@ ExecStart=/usr/local/bin/deno run \
     --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@ \
     --allow-write=/opt/geode/data \
     --allow-ffi \
-    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES \
+    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY \
     /opt/geode/server/main.ts --data-dir /opt/geode/data --host @HOST@ --port @GEODE_PORT@
 Restart=on-failure
 RestartSec=5s
@@ -780,16 +785,17 @@ value comes from `deploy/print-admin-token.sh`.
 restarts the service, and proves the old token is refused and the new one accepted. Device tokens are
 untouched.
 
-**Other env knobs** (the storage cap in §4) do **not** go in `geode.env`: `install.sh` and
-`rotate-admin-token.sh` rewrite that file and would drop them. Use `sudo systemctl edit geode` and add
-`[Service]` / `Environment=GEODE_VAULT_MAX_BYTES=<bytes>`, then `sudo systemctl restart geode`.
+**Other env knobs** (the storage cap in §4, `GEODE_TRUST_PROXY` in §8) do **not** go in `geode.env`:
+`install.sh` and `rotate-admin-token.sh` rewrite that file and would drop them. Use `sudo systemctl
+edit geode` and add `[Service]` / `Environment=GEODE_VAULT_MAX_BYTES=<bytes>`, then `sudo systemctl
+restart geode`.
 
 **An existing install must update its unit first.** The template's `--allow-env` gained
-`GEODE_VAULT_MAX_BYTES`, but `deploy/deploy.sh` copies code only and never regenerates
-`/etc/systemd/system/geode.service`, so a unit written before the knob denies it and the cap stays at
-the default. Re-run `deploy/install.sh` (it rewrites the unit and presets) or add the name to that
-unit's `--allow-env` by hand. The server logs the effective cap at startup (`vault storage budget`),
-which is how to confirm it took.
+`GEODE_VAULT_MAX_BYTES` and `GEODE_TRUST_PROXY`, but `deploy/deploy.sh` copies code only and never
+regenerates `/etc/systemd/system/geode.service`, so a unit written before either knob denies it: the
+cap stays at the default and `GEODE_TRUST_PROXY` reads as off. Re-run `deploy/install.sh` (it rewrites
+the unit and presets) or add the names to that unit's `--allow-env` by hand. The server logs the
+effective cap at startup (`vault storage budget`), which is how to confirm it took.
 
 **Re-runs restart the service.** `install.sh` runs `systemctl enable geode` and then
 `systemctl restart geode`, so a re-run replaces the running process with the code it just copied.
