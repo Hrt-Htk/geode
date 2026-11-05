@@ -1,5 +1,5 @@
 ---
-covers: [server/*.ts, db/migrations/*.sql, deploy/*]
+covers: [server/*.ts, db/migrations/*.sql, deploy/*, Dockerfile, compose.yaml, .dockerignore, .env.docker.example, scripts/docker-smoke.ts]
 ---
 
 # Server
@@ -683,6 +683,8 @@ geode.example.com {
 			fields {
 				request>headers>Sec-Websocket-Protocol delete
 				resp_headers>Sec-WebSocket-Protocol delete
+				request>headers>X-Geode-Admin-Token delete
+				request>headers>X-Geode-Auth-Key delete
 			}
 		}
 	}
@@ -696,17 +698,24 @@ host, so an older Caddy would fail to start after a reboot. The server's own cap
 template is in `caddy fmt` form (tab indentation), so a reload logs no format warning, and its first
 line is the `# Managed by Geode` marker that says who owns the installed copy.
 
-**Device tokens never reach the access log.** The WebSocket handshake authenticates with
-`Sec-WebSocket-Protocol: bearer.<device token>` (§8), and Caddy's log redacts `Authorization` and
-cookies but records every other header, so an unfiltered log hands out working device tokens. The
-server echoes the subprotocol back, so the token is on **both** sides of the handshake: the
-`format filter` block deletes `request>headers>Sec-Websocket-Protocol` and
-`resp_headers>Sec-WebSocket-Protocol` before the `json` encoder writes: same file, same JSON, both
-headers gone (#727, #733). Log field names match the logged casing exactly, and Caddy logs the request
-copy as `Sec-Websocket-Protocol` and the response copy as `Sec-WebSocket-Protocol`; a field with the
-wrong case deletes nothing and silently leaves the token in the log. **An existing install picks this
-up** by re-running `deploy/install.sh` (#736): it regenerates `Caddyfile.generated`, installs it to
-`/etc/caddy/Caddyfile` and runs `systemctl reload-or-restart caddy`. It takes that file over only when
+**No credential reaches the access log.** Caddy's log redacts `Authorization` and cookies and records
+every other header, so an unfiltered log hands out working secrets. Three channels carry one:
+
+| Header | Direction | Secret |
+| --- | --- | --- |
+| `Sec-WebSocket-Protocol: bearer.<device token>` | request and response | a device token (§8) |
+| `X-Geode-Admin-Token` | request | the admin token (§8) |
+| `X-Geode-Auth-Key` | request | a re-key auth key (§8) |
+
+The `format filter` block deletes all four fields before the `json` encoder writes: same file, same
+JSON, none of them left (#727, #733). The subprotocol is on both sides because the server echoes it
+back. Field names match the logged casing exactly, and Caddy logs the request copy as
+`Sec-Websocket-Protocol` and the response copy as `Sec-WebSocket-Protocol`; a wrong case deletes
+nothing and silently leaves the secret in the log. `scripts/docker-smoke.ts` sends every one of these
+headers with a distinctive value and asserts no value reaches the log, which is what keeps the casing
+honest. **An existing install picks this up** by re-running `deploy/install.sh` (#736): it regenerates
+`Caddyfile.generated`, installs it to `/etc/caddy/Caddyfile` and runs `systemctl reload-or-restart
+caddy`. It takes that file over only when
 Geode owns it: absent, first line is the marker, or identical to what the last install generated, so
 a Caddyfile that also serves other sites is left alone and the `cp` line to add the Geode block is
 printed instead. A log written before the update still holds tokens, so delete it, and revoke any
@@ -805,3 +814,61 @@ effective cap at startup (`vault storage budget`), which is how to confirm it to
 set (Caddy fronts it) and `0.0.0.0` otherwise (direct LAN or Tailscale clients), printing a warning never
 to open that port to the internet. It gives no firewall commands. `--allow-net` matches the bind host. `/opt/geode/data` is chmod 700, because the SQLite DB
 holds device tokens. Logs go to journald (`journalctl -u geode -f`).
+
+---
+
+## 11. Docker
+
+`Dockerfile` builds the server image, `compose.yaml` runs it with a front. A machine needs nothing but
+Docker: no clone, no build.
+
+- **Image.** `denoland/deno:debian-2.9.7` plus Debian's `libsqlite3-0`, the library `@db/sqlite` loads
+  over FFI. Debian keeps it under an arch-specific directory (`x86_64-linux-gnu`, `aarch64-linux-gnu`),
+  so the build copies it to `/usr/local/lib/geode-sqlite.so` and `DENO_SQLITE_PATH` names that one path
+  on both architectures. The flags are §10's list with `--host 0.0.0.0`, because the front is another
+  container, and `--allow-ffi` unscoped: `server/fs-usage.ts` opens `libc.so.6` by soname, which a
+  path-scoped allowlist does not admit, so scoping it needs that call to name an absolute,
+  architecture-specific path. `deno install` runs at build time, so the container never fetches
+  anything; `--build-arg VERSION` is the version `/version` reports.
+- **Release.** `release.yml` builds amd64 on `ubuntu-latest` and arm64 on `ubuntu-24.04-arm`, merges the
+  two digests into one manifest tagged `X.Y.Z` and `latest`, and attests them. The GitHub release
+  `needs` that manifest, so a broken image blocks the plugin release too (skill `geode-release`).
+- **Networks.** Geode is on an `internal: true` network and publishes nothing; a front joins that
+  network and `egress` and takes the traffic, `caddy:2` for a domain or the pinned `alpine/socat` relay
+  otherwise. Both fronts sit behind a compose profile (`https`, `forward`) because compose has none:
+  with no `COMPOSE_PROFILES` nothing is reachable. `.env.docker.example` holds the three setups. The
+  front publishes on `127.0.0.1` unless `GEODE_PUBLISH` says otherwise, since a published port bypasses
+  ufw.
+- **Hardening** is §10's, as container options: uid 1993 on a read-only rootfs, `/tmp` on a tmpfs,
+  `cap_drop: ALL`, `no-new-privileges`, `nofile` 65536. `./data` must belong to uid 1993 (compose
+  creates it as root, which is the first start's failure) and SMB/CIFS shares do not work: the blob
+  store hard-links inside a vault's directory. No curl in the image, so the healthcheck is `deno eval`.
+- **The admin token** is `GEODE_ADMIN_TOKEN` in `.env`, required by compose, read from the environment
+  as in §10 until #36 hashes it.
+
+**Rate-limit buckets per setup.** `adminGate` counts failures per `clientIp`, and `clientIp` takes the
+last `X-Forwarded-For` entry when the peer is trusted (`GEODE_TRUST_PROXY=1`, §8). Measured:
+
+| Setup | Geode sees | Bucket |
+| --- | --- | --- |
+| VPS, bundled Caddy | the real peer, in Caddy's `X-Forwarded-For` | one per client; a client-supplied header is overwritten, so it cannot rotate the bucket |
+| Home server, forwarder only | the forwarder's address, `GEODE_TRUST_PROXY` off | one bucket for every client |
+| Own proxy + forwarder | the outer proxy's `X-Forwarded-For` entry | one per client |
+
+The last entry wins, so the proxy next to Geode has to set the client address there: a chain that
+leaves its own edge or CDN address in that position puts every client in one bucket. On the home setup
+the single bucket costs a household member five wrong tokens to lock everyone out for 15 minutes; that
+is the price of not trusting a header nobody sets. Never combine `GEODE_TRUST_PROXY=1` with a
+`GEODE_PUBLISH` that is not loopback, or every client picks its own bucket.
+
+**No route out** (measured on Docker 29). `internal: true` leaves no default route, so neither the
+internet nor the host's LAN address answers. The host's internal-network gateway (`172.x.0.1`) does
+answer for a host service bound to `0.0.0.0`, filtered only by the host's firewall: on a shared host,
+block that (still open in #39).
+
+**Gate.** `scripts/docker-smoke.ts` builds the image and drives `compose.yaml` end to end: `/version`,
+an admin request, uid 1993 on the read-only rootfs, the disk-usage route against the host's `statvfs`
+(the arm64 check), data across a recreate, `docker stop`, a two-minute WebSocket through Caddy, Caddy's
+log without any credential header, the healthcheck, the rate-limit buckets of both fronts, and no route
+out. `ci.yml` runs it on both architectures. A real-Obsidian run attaches through the fixtures'
+external-server switch (`GEODE_E2E_SERVER_URL`, `GEODE_E2E_DATA_DIR`, `GEODE_ADMIN_TOKEN`).

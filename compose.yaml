@@ -1,0 +1,97 @@
+# Geode, the whole server: copy this file and `.env.docker.example` to a directory, then
+# `docker compose up -d`. The three setups live, commented, in the example file.
+#
+# Compose interpolates this file and Caddy reads it, so a dollar sign meant for Caddy is
+# written doubled (`$$`).
+name: geode
+
+services:
+  geode:
+    image: ghcr.io/hrt-htk/geode:latest
+    restart: unless-stopped
+    # deploy/geode.service restated: nothing to escalate into, nothing writable but /data.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ulimits:
+      nofile: 65536
+    environment:
+      GEODE_ADMIN_TOKEN: ${GEODE_ADMIN_TOKEN:?set GEODE_ADMIN_TOKEN in .env}
+      GEODE_TRUST_PROXY: ${GEODE_TRUST_PROXY:-0}
+    volumes:
+      - ./data:/data
+    networks: [internal]
+
+  # HTTPS front for a public domain: stock Caddy, default timeouts, the deploy/Caddyfile
+  # log filter inline below. Floating on the major tag on purpose: it is stock Caddy, the
+  # smoke test catches a regression, and users get its security fixes without a Geode
+  # release.
+  https:
+    profiles: [https]
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      # An empty domain makes the site address empty, so Caddy reads the first directive
+      # as a global option and refuses to start: "unrecognized global option: encode".
+      GEODE_DOMAIN: ${GEODE_DOMAIN:-}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - caddy-data:/data
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    # `egress` first: Docker publishes the port on a container's non-internal address, and
+    # nothing may be published from an internal network at all.
+    networks: [egress, internal]
+
+  # Front for the home and own-proxy setups. A plain TCP relay, so the outer proxy's
+  # X-Forwarded-For arrives untouched and GEODE_TRUST_PROXY buckets per client.
+  forward:
+    profiles: [forward]
+    image: alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # socat forks one relay per connection; max-children bounds what a flood can start.
+    command: ["TCP-LISTEN:8080,fork,reuseaddr,max-children=256", "TCP:geode:8080"]
+    ports: ["${GEODE_PUBLISH:-127.0.0.1:8080}:8080"]
+    # `egress` first, same reason as the Caddy front: the published port must not resolve
+    # to the internal network's address.
+    networks: [egress, internal]
+
+configs:
+  # deploy/Caddyfile, minus the file output (Docker collects stdout) and with the site
+  # address from GEODE_DOMAIN. Every credential header the client sends is deleted before
+  # the json encoder writes: the device token rides Sec-WebSocket-Protocol on both sides of
+  # the handshake, and the admin and re-key headers are bearer secrets (server.md §9).
+  caddyfile:
+    content: |
+      {$$GEODE_DOMAIN} {
+      	encode gzip
+      	reverse_proxy geode:8080
+      	log {
+      		format filter {
+      			wrap json
+      			fields {
+      				request>headers>Sec-Websocket-Protocol delete
+      				resp_headers>Sec-WebSocket-Protocol delete
+      				request>headers>X-Geode-Admin-Token delete
+      				request>headers>X-Geode-Auth-Key delete
+      			}
+      		}
+      	}
+      }
+
+networks:
+  # No published port, no default route: only the front reaches Geode. The host's bridge
+  # gateway still answers for a service bound to 0.0.0.0 (docs/architecture/server.md §11).
+  internal:
+    internal: true
+  # What the front needs and an internal network cannot give: Caddy's ACME traffic, and a
+  # published port, which Docker will not route from an internal-only network.
+  egress:
+
+volumes:
+  caddy-data:

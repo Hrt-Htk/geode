@@ -9,6 +9,8 @@ geode.example.com {
 			fields {
 				request>headers>Sec-Websocket-Protocol delete
 				resp_headers>Sec-WebSocket-Protocol delete
+				request>headers>X-Geode-Admin-Token delete
+				request>headers>X-Geode-Auth-Key delete
 			}
 		}
 	}

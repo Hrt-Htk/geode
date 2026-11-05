@@ -331,8 +331,15 @@ pass criteria include those specs green in a local run. `test/README.md` fixes t
 - **The BRAT or community-store install path.** Specs copy the built plugin into a vault; the real
   install path is manual smoke before a release.
 - **Other OS builds of Obsidian.** CI runs no E2E at all; local runs are usually Linux.
-- **Caddy and TLS.** No spec fronts the server with Caddy; TLS is covered by the gate 7 manual
-  checks.
+- **Caddy and TLS, except one opt-in spec.** No spec in a normal run fronts the server with Caddy;
+  TLS is otherwise covered by the gate 7 manual checks. `test/e2e/scenarios/stall-recovery.spec.ts`
+  is the exception: run with `GEODE_STALL=1` against the container behind the bundled Caddy, it puts
+  `test/e2e/helpers/stall-proxy.ts` in front of Caddy, freezes one direction of a transfer for 65 s,
+  and asserts the file still converges. What each half proves: Caddy cuts the stalled upload at 60 s
+  (`read_body_idle`), while a stalled reader only aborts the download, because one response fits the
+  client's HTTP/2 window, so the plugin's retry is what recovers it. The setup commands are in the
+  spec's header. It takes about six minutes (two 65 s freezes), which is why it is not part of a
+  normal run.
 
 ---
 

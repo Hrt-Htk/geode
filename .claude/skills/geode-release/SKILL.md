@@ -29,6 +29,13 @@ Bumps `package.json` only, commits `chore(release): X.Y.Z`, pushes to `main`, ta
 (`release.yml` builds, attests and publishes a **pre-release** → BRAT), and deploys the server
 (`$GEODE_SSH_HOST`): **one atomic step.**
 
+**The tag also builds the server image, and a failed image job blocks the plugin release.**
+`release.yml` builds `Dockerfile` for amd64 and arm64, merges the two digests into one manifest, attests
+them and pushes `ghcr.io/hrt-htk/geode:X.Y.Z` plus `latest`; the `release` job `needs` that manifest.
+So a broken image means no BRAT release either. Recover by re-running the failed jobs of that tag's run
+(`gh run list --workflow=Release`, then `gh run rerun <run-id> --failed`): never delete and re-push the
+tag, and never cut a new version for it.
+
 Run it through the task, never `deno run -A scripts/release.ts`: only the task loads `.env.local` for
 the deploy step.
 
@@ -107,6 +114,10 @@ git log $(git describe --tags --abbrev=0)..HEAD --no-merges --format=%s -- plugi
 Run it locally after pruning (skill `geode-pr-flow`); Actions never releases or deploys.
 
 ## After release
+- **First release only: make the GHCR package public.** The image lands in
+  `ghcr.io/hrt-htk/geode` as a private package, so `docker compose` cannot pull it anonymously. In the
+  package settings, change the visibility to public and link the package to the repository (its
+  provenance and source then show on the package page). One-time, after the first tag.
 - **Reload devices / cutover:** local dev vaults still run the old build until rebuilt+redeployed.
   BRAT users get the update on next plugin check. Directory users get nothing until it is promoted.
 - **Release notes:** `release.yml` sets `generate_release_notes: true`, so a beta's body is
