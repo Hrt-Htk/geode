@@ -229,7 +229,23 @@ jobs:
         with:
           deno-version: 2.x
 
+      - name: Install
+        # The host update test imports the plugin's sync core, so its graph is the whole
+        # npm set: resolve it once, here, instead of inside a test step.
+        run: deno install
+
+      - name: Shellcheck
+        # geode-update.sh runs as root every minute: a quoting bug there is a host
+        # compromise, not a failed update. Preinstalled on GitHub's Ubuntu runners.
+        run: shellcheck -s sh geode-update.sh
+
       - name: Smoke
         # Builds geode-smoke:local, brings compose.yaml up with the https profile, runs
         # every check in the script and removes what it made. Needs only Docker.
         run: deno run -A scripts/docker-smoke.ts
+
+      - name: Host update job
+        # #43: geode-update.sh against a throwaway registry: nothing new, a real update
+        # with a device committing through it, a release that never reports healthy (and
+        # the same one again), a migration that fails and is undone, and the attacks.
+        run: deno run -A scripts/host-update-test.ts

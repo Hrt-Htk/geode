@@ -1,5 +1,7 @@
 # Runtime data: never commit
 data/
+update-status/
+.update-lock
 *.db
 *.db-wal
 *.db-shm

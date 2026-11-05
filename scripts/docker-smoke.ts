@@ -11,6 +11,7 @@
 // of them.
 
 import { PROTOCOL_VERSION } from "../core/protocol.ts";
+import { chain, chownTree, exec, freePort, sh, waitFor } from "./docker-helpers.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 // A concurrent run must not collide: its own compose project, image tag and networks.
@@ -75,29 +76,6 @@ function api(url: string, init: FetchInit = {}): Promise<Response> {
   return fetch(url, opts);
 }
 
-/** Exit code, stdout, and both streams together, for a command that may fail. */
-async function exec(
-  args: string[],
-  env: Record<string, string> = {},
-): Promise<{ code: number; out: string; text: string }> {
-  const result = await new Deno.Command(args[0], {
-    args: args.slice(1),
-    env: { ...Deno.env.toObject(), ...env },
-    stdout: "piped",
-    stderr: "piped",
-  }).output();
-  const out = new TextDecoder().decode(result.stdout).trim();
-  const text = `${out}\n${new TextDecoder().decode(result.stderr)}`.trim();
-  return { code: result.code, out, text };
-}
-
-/** Run a command and fail loudly with both streams on a non-zero exit. */
-async function sh(args: string[], env: Record<string, string> = {}): Promise<string> {
-  const { code, out, text } = await exec(args, env);
-  if (code !== 0) throw new Error(`failed: ${args.join(" ")}\n${text}`);
-  return out;
-}
-
 function compose(args: string[], env: Record<string, string> = {}): Promise<string> {
   return sh([...composeBase, ...args], { ...token, ...phase, ...env });
 }
@@ -115,32 +93,6 @@ function downArgs(volumes: boolean): string[] {
 }
 
 const down = (volumes = false): Promise<string> => sh(downArgs(volumes), token);
-
-/** Docker writes as root and the server as 1993, so both directions need a chown. */
-function chownTree(path: string, owner: string): string[] {
-  return [
-    "docker",
-    "run",
-    "--rm",
-    "--user",
-    "0",
-    "-v",
-    `${path}:/target`,
-    "--entrypoint",
-    "chown",
-    IMAGE,
-    "-R",
-    owner,
-    "/target",
-  ];
-}
-
-/** The whole failure, not just its top layer: `fetch failed` alone says nothing. */
-function chain(e: unknown, depth = 0): string {
-  if (!(e instanceof Error) || depth > 5) return String(e);
-  const cause = (e as Error & { cause?: unknown }).cause;
-  return `${e.name}: ${e.message}${cause === undefined ? "" : ` <- ${chain(cause, depth + 1)}`}`;
-}
 
 function redact(text: string): string {
   return secrets.reduce((out, secret) => out.replaceAll(secret, "REDACTED"), text)
@@ -206,21 +158,6 @@ function ok(name: string, detail = ""): void {
   console.log(`ok    ${name}${detail ? ` (${detail})` : ""}`);
 }
 
-async function waitFor(check: () => Promise<boolean>, what: string, ms = 90_000): Promise<void> {
-  const deadline = Date.now() + ms;
-  let last = "";
-  while (Date.now() < deadline) {
-    try {
-      if (await check()) return;
-    } catch (e) {
-      // Swallowed so the wait retries, but never silently: a timeout has to say why.
-      last = chain(e);
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`timed out waiting for ${what}${last ? ` (last failure: ${last})` : ""}`);
-}
-
 async function admin(path: string, init: RequestInit = {}): Promise<Response> {
   return await api(`${BASE}${path}`, {
     ...init,
@@ -283,20 +220,13 @@ async function openSocket(url: string, deviceId: string, token: string): Promise
   return ws;
 }
 
-function freePort(): number {
-  const listener = Deno.listen({ port: 0 });
-  const { port } = listener.addr as Deno.NetAddr;
-  listener.close();
-  return port;
-}
-
 try {
   console.log(`==> build ${IMAGE} (version ${version})`);
   await sh(["docker", "build", "--quiet", "--build-arg", `VERSION=${version}`, "-t", IMAGE, ROOT]);
   ok("image builds");
 
   // The container runs as uid 1993, so ./data has to belong to it before compose starts.
-  await sh(chownTree(dataDir, "1993:1993"));
+  await sh(chownTree(IMAGE, dataDir, "1993:1993"));
 
   // A published port bypasses ufw, so the front must not leave loopback unless asked.
   const config = JSON.parse(
@@ -546,7 +476,7 @@ try {
   // uid 1993 owns ./data, so the tree has to go back to this user before it can be removed.
   const steps = [
     downArgs(true),
-    chownTree(dir, `${Deno.uid()}:${Deno.gid()}`),
+    chownTree(IMAGE, dir, `${Deno.uid()}:${Deno.gid()}`),
     ["docker", "image", "rm", "--force", IMAGE],
   ];
   for (const step of steps) {

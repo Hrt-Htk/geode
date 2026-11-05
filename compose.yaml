@@ -12,6 +12,8 @@ services:
     # deploy/geode.service restated: nothing to escalate into, nothing writable but /data.
     read_only: true
     tmpfs: [/tmp]
+    # The image's uid, restated: hardening must not depend on what the image says.
+    user: "1993:1993"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     ulimits:
@@ -21,6 +23,9 @@ services:
       GEODE_TRUST_PROXY: ${GEODE_TRUST_PROXY:-0}
     volumes:
       - ./data:/data
+      # The host update job's state (geode-update.sh, server.md §11): read-only, because
+      # the request it answers lives in ./data and the container owns that folder.
+      - ./update-status:/update-status:ro
     networks: [internal]
 
   # HTTPS front for a public domain: stock Caddy, default timeouts, the deploy/Caddyfile
