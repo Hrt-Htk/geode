@@ -154,8 +154,8 @@ Use one sync tool per vault. Don't sync a Geode vault with iCloud or Google Driv
    `[]` is the right answer on a fresh server: the database holds no vaults yet. After the setup
    wizard it lists your vault instead.
 
-Use `wss://geode.example.com` as the server address. `geode.example.com` works too, because the
-wizard adds the scheme.
+Use `wss://geode.example.com` as the server address. `geode.example.com` works too: an address with
+no scheme gets `https`, unless it is a private or local one.
 
 Geode and Caddy both start again after a reboot.
 
@@ -165,6 +165,8 @@ Run the same install script without `GEODE_DOMAIN`. Geode then listens on `0.0.0
 
 On your home network, use `http://192.168.1.20:8080` as the server address, with your server's LAN
 IP in place of `192.168.1.20` (`ip addr` shows it). Plain `http` is fine inside your own network.
+Typed without a scheme, a private or local address (localhost, 10.x, 192.168.x, 172.16 to 31.x,
+100.64 to 127.x) also defaults to `http`; any other address defaults to `https`.
 Open `http://192.168.1.20:8080/version` in a browser to check the server: it shows the server
 version. The admin `curl` from the domain steps works here too: run it on the server itself.
 
