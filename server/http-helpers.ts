@@ -1,5 +1,6 @@
 import { type DeviceInfo, parseBearerHeader, validateAdminToken, validateToken } from "./auth.ts";
 import { checkAdminRate, recordAdminFailure, recordAdminSuccess } from "./rate-limit.ts";
+import { envFlag } from "./env.ts";
 import { log } from "./log.ts";
 import { rekeyMode } from "./db.ts";
 import type { Database } from "@db/sqlite";
@@ -152,17 +153,19 @@ function isLoopback(addr: Deno.Addr): boolean {
   return h === "127.0.0.1" || h === "::1" || h === "::ffff:127.0.0.1";
 }
 
-// The socket peer is authoritative. X-Forwarded-For is trusted only when the
-// peer is loopback (Caddy on the same host): a direct client must not be able
-// to rotate a fake IP per request to dodge the admin rate limit (#533).
+// The socket peer is authoritative. X-Forwarded-For is trusted from a loopback peer (Caddy on the
+// same host) or, with GEODE_TRUST_PROXY=1, from any peer (a proxy in another container). Trusting
+// it from a peer that is not a proxy lets a direct client rotate a fake IP per request to dodge
+// the admin rate limit (#533).
 export function clientIp(req: Request): string {
   const remote = (req as unknown as Record<PropertyKey, unknown>)[remoteAddrKey] as
     | Deno.Addr
     | undefined;
-  if (remote && "hostname" in remote && !isLoopback(remote)) return remote.hostname;
+  const peer = remote && "hostname" in remote ? remote.hostname : undefined;
+  if (peer !== undefined && !envFlag("GEODE_TRUST_PROXY") && !isLoopback(remote!)) return peer;
   const xff = req.headers.get("x-forwarded-for");
   if (xff) return xff.split(",").pop()!.trim();
-  return remote && "hostname" in remote ? remote.hostname : "unknown";
+  return peer ?? "unknown";
 }
 
 // `header` names the credential channel. Routes that must prove admin *in

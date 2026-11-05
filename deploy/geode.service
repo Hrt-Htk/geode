@@ -22,7 +22,7 @@ ExecStart=/usr/local/bin/deno run \
     --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@ \
     --allow-write=/opt/geode/data \
     --allow-ffi \
-    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES \
+    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY \
     /opt/geode/server/main.ts --data-dir /opt/geode/data --host @HOST@ --port @GEODE_PORT@
 Restart=on-failure
 RestartSec=5s
