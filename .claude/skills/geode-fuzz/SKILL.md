@@ -24,9 +24,9 @@ committed suite. Don't re-derive this each time.
   `offline-conflict`, `restart-storm`, `three-device-fanout`.
 
 ## Run
-- Full committed suite (18 tests, ~9 min):
+- Full committed suite (51 tests, ~15 s):
   `deno test --allow-all --no-check test/fuzz/engine.test.ts`
-- One mode/seed (fast iteration: each seed ~18-45s, triple slowest):
+- One mode/seed (fast iteration: most seeds take under a second):
   add `--filter "triple seed=3"` (also `seq`, `concurrent`, `binary`).
 - **Do NOT loop the full suite while iterating**: filter to the failing case.
 

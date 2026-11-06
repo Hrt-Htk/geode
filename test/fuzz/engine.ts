@@ -1807,6 +1807,13 @@ export async function runTripleSequence(opts: RunTripleSequenceOpts): Promise<vo
   }
 }
 
+/** Every device has received and applied what any device holds: a round can outrun the
+ * delivery of its own commits, and a snapshot taken before that reads as settled or stuck. */
+async function waitForDelivery(devices: TestPlugin[]): Promise<void> {
+  const seq = Math.max(...devices.map((d) => d.transport?.getLastSeenSeq() ?? 0));
+  for (const d of devices) await d.waitForCaughtUp(seq);
+}
+
 /** Settle N devices to quiescence.
  *
  * Terminates when a full reconcile round produces NO change to ANY device
@@ -1825,7 +1832,7 @@ async function settleDevices(
   for (let round = 0; round < maxRounds; round++) {
     const snapshot = devices.map((d) => new Map(d.fakeVault.files));
     for (const d of devices) await d.reconcileNow();
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForDelivery(devices);
     throwIfRejected([...opTrace]);
 
     const stable = devices.every((d, i) => mapsEqual(d.fakeVault.files, snapshot[i]).equal);
