@@ -182,14 +182,14 @@ export class SyncManager {
     if (this.paused || this.deciding || this.deps.settings.massDeleteHold) return;
     await this.replay.flushReplayBuffer();
     if (!this.state) return;
+    // #622: a reconnect starts a fresh pass; the previous scanner must not keep its own
+    // 5-minute interval alive. #53: and no pass on rows from before the repair may finish.
+    this.reconciler?.stop();
     if (this.keys) await this.repairStaleRows(this.state, this.keys);
     // #342: bound pendingMoveOuts on every go-live: dead entries (source row
     // gone) drop, moves whose destination is back in scope complete, and the
     // list stays capped even for folders that are never re-included.
     await this.parkedMoves.release([]);
-    // #622: a reconnect starts a fresh pass; the previous scanner must not keep
-    // its own 5-minute interval alive.
-    this.reconciler?.stop();
     this.reconciler = new Reconciler(
       this.deps.vault,
       this.state,

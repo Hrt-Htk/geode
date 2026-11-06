@@ -182,7 +182,7 @@ export class CommitFileVanished extends Error {}
  * brought the file back, so no op may outlive this: the repair settles the row. */
 export class StaleHashDelete extends Error {
   constructor(path: string) {
-    super(`${path}: its path hash predates a re-key, sync it again at the next connection`);
+    super(`${path} is not synced yet. Try again after Geode reconnects.`);
   }
 }
 
