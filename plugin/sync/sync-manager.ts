@@ -12,6 +12,7 @@ import { Transport } from "./transport.ts";
 import { CommitQueue, type PendingOp } from "./commit-queue.ts";
 import { ReplayPipeline } from "./replay.ts";
 import { Reconciler } from "./reconciler.ts";
+import { healStaleRows } from "./stale-rows.ts";
 import { ConflictHandler } from "./conflict-handler.ts";
 import { applyVersion, renameHeadOf } from "./apply.ts";
 import { existsOnDisk } from "./commit.ts";
@@ -180,6 +181,7 @@ export class SyncManager {
     if (this.paused || this.deciding || this.deps.settings.massDeleteHold) return;
     await this.replay.flushReplayBuffer();
     if (!this.state) return;
+    if (this.keys) await this.repairStaleRows(this.state, this.keys);
     // #342: bound pendingMoveOuts on every go-live: dead entries (source row
     // gone) drop, moves whose destination is back in scope complete, and the
     // list stays capped even for folders that are never re-included.
@@ -346,6 +348,19 @@ export class SyncManager {
 
   private setGate(): void {
     this.commitQueue.setPaused(this.paused || this.deps.settings.massDeleteHold !== null);
+  }
+
+  /** #53: before the reconciler reads a row: it would send a delete under the old hash. */
+  private repairStaleRows(state: StateDB, keys: VaultKeys): Promise<void> {
+    const settings = this.deps.settings;
+    return healStaleRows({
+      rows: state.getAllLocalFiles().values(),
+      macKey: keys.mac_key,
+      exists: (path) => existsOnDisk(path, this.deps.vault.adapter),
+      isSyncable: (path) => isSyncable(path, this.deps.configDir, settings),
+      upsert: (row) => state.upsertLocalFile(row),
+      restore: (paths) => this.catchUpFolders(paths),
+    });
   }
 
   private stopReconciler(): void {

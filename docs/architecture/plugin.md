@@ -31,6 +31,8 @@ Unlock paths, in `plugin/plumbing/vault-lock.ts`:
   keys and starts the session.
 - `unlockAfterRemoteRekeyFlow` handles a verifier that was rewritten elsewhere (#560): fetch the vault's
   current salt, verifier and params, derive with those, rebuild the local path hashes, resume.
+- `finishRekey` is the device that ran the re-key: it swaps the keys and restarts the session. Its rows
+  are rebuilt at go-live by the stale-row repair (`sync/stale-rows.ts`, section 6).
 
 Lock (`lockVault`) clears the key cache and disposes the session. `leaveVault` also revokes the device
 on the server (best effort) and deletes every local state file. Disposing starts the last state writes
@@ -233,6 +235,13 @@ This is what keeps the plugin correct against edits it never saw a vault event f
 ### When it runs
 
 - Immediately on start (`startReconciler`), then every 5 minutes (`RECONCILE_INTERVAL`).
+- **Stale-row repair** runs first on every go-live (#53). A row whose `path_hash` differs from the hash
+  of its path under the current `mac_key` predates a re-key on this device. A delete or rename-away
+  sends the row's hash, which the server has no chain for, so it comes back as a conflict that nothing
+  can settle. A file on disk, a closed row or an out-of-scope path only gets the hash corrected. A live
+  row with its file gone restores the file through `catchUpFolders`, whose write rewrites the row: a
+  delete made under the old hash never lands, and a failed download stays stale and retries at the next
+  connection.
 - On every go-live: `SyncManager.startReconciler` stops the previous reconciler first, so reconnects
   never leave a second scanner running (#622).
 - "Reconcile now" forces a pass; otherwise a run within half the interval is skipped.
@@ -623,7 +632,7 @@ retention floor (#677, `../ops/trash-soft-delete.md` §5).
 | `plumbing/window.ts` | `windowGlobal`: the renderer's window for timers and the default transport (popout windows need it; Deno tests only have `self`) |
 | `plumbing/provisioning-client.ts`, `rekey-client.ts`, `trash-client.ts`, `storage-client.ts`, `scope-pending.ts` | server calls outside the sync core |
 | `sync/transport.ts`, `http-client.ts`, `commit-channel.ts`, `commit-queue.ts` | connectivity, HTTP, commit serialization and queueing |
-| `sync/events.ts`, `reconciler.ts`, `enumerate-disk.ts`, `vault-io.ts` | vault → op translation, full scans, disk IO |
+| `sync/events.ts`, `reconciler.ts`, `stale-rows.ts`, `enumerate-disk.ts`, `vault-io.ts` | vault → op translation, full scans, stale-row repair, disk IO |
 | `sync/apply.ts`, `replay.ts`, `merger.ts`, `conflict-handler.ts`, `conflicts.ts` | inbound apply, merge, conflict surfacing |
 | `sync/commit.ts`, `path-lock.ts`, `rename-*.ts`, `parked-moves.ts` | outbound commits, one-writer-per-path, rename links |
 | `sync/history-*.ts`, `export-vault.ts`, `recovery.ts`, `rebuild-flow.ts`, `join-plan.ts`, `rejoin.ts`, `rekey-*.ts` | history, export, resync and rejoin rebuilds, join mode, rejoin backup, re-key |
