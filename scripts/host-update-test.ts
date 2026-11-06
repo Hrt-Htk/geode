@@ -17,6 +17,8 @@ const ROOT = new URL("..", import.meta.url).pathname;
 // A concurrent run must not collide: its own compose project, image tag and networks.
 const RUN = crypto.randomUUID().slice(0, 8);
 const IMAGE = `geode-update-${RUN}/geode`;
+// Scopes the prune below to this run's own image: never prune a daemon wholesale.
+const PRUNE_LABEL = `geode.update-test=${RUN}`;
 const PROJECT = `geode-update-${RUN}`;
 const ADMIN = crypto.randomUUID();
 const SUDO = Deno.uid() === 0 ? [] : ["sudo", "-n"];
@@ -295,6 +297,12 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
       'HEALTHCHECK --interval=1s --timeout=1s --retries=2 --start-period=1s CMD ["false"]\n',
   );
   await variant("v4", marker("v4"));
+  await variant("sole", `${marker("sole")}LABEL ${PRUNE_LABEL}\n`);
+  await variant(
+    "broken2",
+    marker("broken2") +
+      'HEALTHCHECK --interval=1s --timeout=1s --retries=2 --start-period=1s CMD ["false"]\n',
+  );
   // A release that migrates, then fails: the rollback has to restore the database.
   await Deno.writeTextFile(
     `${variants}/migrate-and-fail.ts`,
@@ -542,6 +550,31 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
   eq(await result(), "rolled-back", "an expired block lets the image be tried again");
   eq(await running(), await imageId("v4"), "the running image");
   ok("a recorded failure expires after 24 hours");
+
+  console.log("==> a prune while a release starts");
+  // The pull moves the running image's only tag, so once the old container is gone nothing
+  // names that image, and a scheduled `docker image prune` deletes it mid update.
+  await update("sole");
+  eq(await result(), "updated", "the job's result");
+  const sole = await running();
+  await sh(["docker", "image", "rm", `${IMAGE}:sole`, `${REG}/geode:sole`]);
+  let starting = true;
+  const pruning = (async () => {
+    while (starting) {
+      // From the takeover on: a prune racing the pull can fail the pull, which is harmless
+      // (nothing was touched yet) and not what this step is about.
+      if (await exists(`${statusDir}/recover`)) {
+        await exec(["docker", "image", "prune", "--force", "--filter", `label=${PRUNE_LABEL}`]);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  })();
+  await update("broken2");
+  starting = false;
+  await pruning;
+  eq(await result(), "rolled-back", "the old image outlived the prune");
+  eq(await running(), sole, "the running image");
+  ok("a prune during an update cannot take the way back");
 
   console.log("==> two runs at once");
   await allowUpdate();

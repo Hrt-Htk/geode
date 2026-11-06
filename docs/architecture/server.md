@@ -962,7 +962,9 @@ image to `recover` and clears that after the last healthy `up` of either path. A
 between leaves Geode down, or on the failed image, with no request left to ask again, so the next run
 finishes that rollback from `recover` and reports `rolled-back`: stop, tag the old image back,
 restore if a migration ran, `up --pull never`. It only ever acts on this job's own marker, so it is
-not supervision.
+not supervision. The old image keeps the tag `before-update` until the next update moves it: the pull
+took its only other tag, and a scheduled `docker image prune` would delete an untagged image while
+the new one starts.
 
 **The restore.** If a *regular file* `data/before-migration.sqlite` (§3) is newer than `started`, the
 failed start ran a migration, and the copy goes back over `geode.db` (with `geode.db-wal` and
@@ -1025,7 +1027,8 @@ log without any credential header, the healthcheck, the rate-limit buckets of bo
 out. `scripts/host-update-test.ts` drives `geode-update.sh` against a throwaway registry: nothing new,
 a real update with the plugin's sync core committing through it, a release that never reports healthy
 (and the same one again), a failed migration whose database is restored with its vaults and heads, a
-run killed between `stop` and `up` and one killed inside `up --wait`, the lock, the rate limit, the
+run killed between `stop` and `up` and one killed inside `up --wait`, a prune during a failing start,
+the lock, the rate limit, the
 guard on a writable directory, compose file, override or script, a status folder with nothing in it a
 container could lock, a FIFO or link where the database copy should be, and the job attacked from
 inside the container. `ci.yml` runs both on both
