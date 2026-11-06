@@ -112,7 +112,7 @@ deno test --allow-all test/scenarios/
 ```
 
 CI runs on push to `main` and on pull requests: `.github/workflows/ci.yml` runs `deno task test:ci`,
-which is unit, integration and scenario tests (`test/fuzz` is excluded). It must be green before
+which is unit, integration, scenario and fuzz suite tests. It must be green before
 merge.
 
 ---

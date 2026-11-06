@@ -8,7 +8,7 @@
 // Override the cap with GEODE_TEST_TIMEOUT_MS (default 15 min).
 
 const TIMEOUT_MS = Number(Deno.env.get("GEODE_TEST_TIMEOUT_MS") ?? 900_000);
-const baseArgs = ["test", "--allow-all", "--no-check", "--ignore=test/fuzz"];
+const baseArgs = ["test", "--allow-all", "--no-check"];
 
 const child = new Deno.Command(Deno.execPath(), {
   args: [...baseArgs, ...Deno.args],

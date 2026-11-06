@@ -57,7 +57,7 @@ deno task fuzz:sweep --runner seq --seeds 1-10 --turns 8 --ops 3
 - Triage: `grep -E '^(FAIL|summary)'` on stdout (server logs still interleave), then
   `jq -c 'select(.ok|not)' <the out file>` for invariants + traces.
 - Arg parsing, shard tiling and the summary are unit-tested in `test/unit/fuzz-sweep.test.ts`
-  (`test/fuzz` is excluded from `test:ci`, so the test lives outside it).
+  (it tests the CLI, not the sync engine).
 
 ## Strip the noise (server logs bury the result)
 Pipe through:

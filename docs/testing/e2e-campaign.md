@@ -78,7 +78,7 @@ Runners: `runSequence` (single writer plus chaos), `runConcurrentSequence`,
 `runConcurrentBinarySequence`, `runTripleSequence`, `runRenameSequence`. Presets: `daily-cycle`,
 `large-vault`, `offline-conflict`, `restart-storm`, `three-device-fanout`, `rename-storm`.
 Multi-seed sweeps go through `deno task fuzz:sweep`. A known, triaged bug is quarantined in
-`KNOWN_FAILURES`, never skipped silently. `test/fuzz` is excluded from `deno task test:ci`; run it
+`KNOWN_FAILURES`, never skipped silently. The committed suite runs in `deno task test:ci`; run a sweep
 for any sync-affecting change.
 
 ---

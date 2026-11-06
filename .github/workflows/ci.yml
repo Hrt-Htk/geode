@@ -188,10 +188,6 @@ jobs:
         # check above; the plugin's type gate is the esbuild build. This step
         # exists to *run* the tests.
         #
-        # --ignore=test/fuzz: the oracle fuzz suite is ~70% of total test time
-        # (~8.5 min) and is run deliberately via the geode-fuzz skill / quarantine
-        # model, not on every push. Keeps the per-push gate fast (~3.5 min).
-        #
         # Shared with the local gate via `deno task test:ci` (see `deno task ci`)
         # so local and CI cannot drift.
         run: deno task test:ci
