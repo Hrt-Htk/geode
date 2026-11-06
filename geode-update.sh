@@ -118,6 +118,9 @@ fi
 
 printf '%s\n' "$now" > "$STATE/last-update"
 : > "$STATE/started"
+# The pull moved the running image's only tag, so a tag keeps the way back: a scheduled
+# `docker image prune` would otherwise delete it once the old container is gone.
+docker tag "$old" "${ref%:*}:before-update" || { result config-failed; exit 1; }
 printf '%s\n' "$old" > "$STATE/recover"
 if compose up -d --wait --wait-timeout "$WAIT" geode >/dev/null 2>&1; then
   rm -f "$STATE/recover"
