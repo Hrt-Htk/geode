@@ -158,7 +158,11 @@ export class ConflictHandler {
     this.conflictRetries.set(path, retries);
 
     const serverVersion = await this.resolveServerVersion(head);
-    if (!serverVersion) return;
+    if (!serverVersion) {
+      // #53: a conflict for a path the server has no chain for: nothing here can settle it.
+      log.warn("conflict for a path with no server head", { path, path_hash: head.path_hash });
+      return;
+    }
     // A resolution whose head the row already tracks is stale: a newer resolution (or
     // its commit) owns this path, and merging the older server copy here would write it
     // over the bytes that one just kept (#589/#590: two concurrent resolutions of one
@@ -328,7 +332,7 @@ export class ConflictHandler {
     const mime = detectMime(path);
     return orchestrateMerge(
       {
-        pathHash: local?.path_hash ?? hashPathHex(keys.mac_key, path),
+        pathHash: hashPathHex(keys.mac_key, path),
         path,
         mime,
         local: body,

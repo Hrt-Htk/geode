@@ -111,7 +111,8 @@ export function authHashHex(authKey: Uint8Array): string;
 Changing the passphrase or the argon2 level re-derives all three keys. Every blob, version row and
 trash head must be re-encrypted under the new keys and re-uploaded to the **same plaintext-hash ID**
 (Hard rules 1 and 2: chunking and nonce derivation never change, only the keys move). The path hash is
-keyed by `mac_key`, so every row's `path_hash` is rewritten too. The plugin runs this as a resumable
+keyed by `mac_key`, so every row's `path_hash` is rewritten too, on the server and in each device's
+local rows (the re-keying device at its next go-live: `docs/architecture/plugin.md`, section 6). The plugin runs this as a resumable
 worker (`plugin/sync/rekey-run.ts`) against the server's re-key session endpoints
 (`server/rekey-routes.ts`, `server/rekey-store.ts`), in one of two modes:
 

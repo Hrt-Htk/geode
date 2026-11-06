@@ -1,3 +1,4 @@
+import { hashPathHex } from "../../../core/hash.ts";
 import { assertEquals, assertRejects } from "@std/assert";
 import { executeResolution, planResolution } from "../../../plugin/sync/conflict-resolve.ts";
 import { commitOp, waitForInFlightCommit } from "../../../plugin/sync/commit.ts";
@@ -34,7 +35,7 @@ async function makeDeps(_transport: FakeTransport) {
   // a committed delete actually reaches the server instead of being a no-op.
   state.upsertLocalFile({
     path: CONFLICT,
-    path_hash: "h-cf",
+    path_hash: hashPathHex(keys.mac_key, CONFLICT),
     size: 9,
     mtime: Date.now(),
     plaintext_hash: "ph-cf",

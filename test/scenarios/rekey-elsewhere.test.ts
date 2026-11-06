@@ -7,23 +7,10 @@ import { deriveAuthKey, deriveKeys, makeVerifier } from "../../core/crypto.ts";
 import { hashPathHex, toHex } from "../../core/hash.ts";
 import { b64decode, b64encode } from "../../core/protocol.ts";
 import { makeRekeyClient, putVaultAuth } from "../../plugin/plumbing/rekey-client.ts";
-import { type RekeyCursor, type RekeyCursorStore, runRekey } from "../../plugin/sync/rekey-run.ts";
-import { pair, restartPlugin, TEST_KDF, waitFor } from "../two-vault-driver.ts";
+import { runRekey } from "../../plugin/sync/rekey-run.ts";
+import { memoryCursor, pair, restartPlugin, TEST_KDF, waitFor } from "../two-vault-driver.ts";
 
 const FAST = TEST_KDF;
-
-function memoryCursor(): RekeyCursorStore {
-  let c: RekeyCursor | null = null;
-  return {
-    load: () => c,
-    save: (x: RekeyCursor) => {
-      c = x;
-    },
-    clear: () => {
-      c = null;
-    },
-  };
-}
 
 function versionRowCount(db: import("../../server/db.ts").Database, vaultId: string): number {
   return (db
