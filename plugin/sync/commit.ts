@@ -389,6 +389,12 @@ async function deleteIsMoot(
 async function commitDelete(path: string, deps: CommitDeps, renamedTo?: string): Promise<boolean> {
   const local = deps.state.getLocalFile(path);
   if (!local) return true;
+  // #53: a hash from before a re-key has no chain: a parent of 0 would open one, and every
+  // peer applies its tombstone. The repair at go-live settles this row.
+  if (local.path_hash !== hashPathHex(deps.keys.mac_key, path)) {
+    log.warn("delete refused: the row's path hash predates a re-key", { path });
+    return true;
+  }
   // #629: a cancelled chain (its own name was deleted before it opened) is no rename:
   // the queue already resolved it to a plain tombstone, so this is never null here.
   const to = renamedTo === undefined

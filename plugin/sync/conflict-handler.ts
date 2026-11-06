@@ -161,6 +161,7 @@ export class ConflictHandler {
     if (!serverVersion) {
       // #53: a conflict for a path the server has no chain for: nothing here can settle it.
       log.warn("conflict for a path with no server head", { path, path_hash: head.path_hash });
+      this.conflictRetries.delete(path);
       return;
     }
     // A resolution whose head the row already tracks is stale: a newer resolution (or

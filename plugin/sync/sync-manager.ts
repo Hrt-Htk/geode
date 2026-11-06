@@ -6,13 +6,14 @@ import {
   type VersionRecord,
 } from "../../core/protocol.ts";
 import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
+import { hashPathHex } from "../../core/hash.ts";
 
 import { StateDB } from "../plumbing/state.ts";
 import { Transport } from "./transport.ts";
 import { CommitQueue, type PendingOp } from "./commit-queue.ts";
 import { ReplayPipeline } from "./replay.ts";
 import { Reconciler } from "./reconciler.ts";
-import { healStaleRows } from "./stale-rows.ts";
+import { planStaleRows } from "./stale-rows.ts";
 import { ConflictHandler } from "./conflict-handler.ts";
 import { applyVersion, renameHeadOf } from "./apply.ts";
 import { existsOnDisk } from "./commit.ts";
@@ -180,8 +181,8 @@ export class SyncManager {
     // re-trip the guard, and a mid-decision one would commit the paths being restored).
     if (this.paused || this.deciding || this.deps.settings.massDeleteHold) return;
     await this.replay.flushReplayBuffer();
-    if (!this.state) return;
-    if (this.keys) await this.repairStaleRows(this.state, this.keys);
+    if (!this.state || !this.keys) return;
+    await this.repairStaleRows(this.state, this.keys);
     // #342: bound pendingMoveOuts on every go-live: dead entries (source row
     // gone) drop, moves whose destination is back in scope complete, and the
     // list stays capped even for folders that are never re-included.
@@ -350,16 +351,31 @@ export class SyncManager {
     this.commitQueue.setPaused(this.paused || this.deps.settings.massDeleteHold !== null);
   }
 
-  /** #53: before the reconciler reads a row: it would send a delete under the old hash. */
-  private repairStaleRows(state: StateDB, keys: VaultKeys): Promise<void> {
+  /** #53: docs/architecture/plugin.md section 6. Rows are re-read: an apply can land during
+   * the plan's disk checks. A file that fails to download keeps its row stale, and
+   * `commitDelete` refuses a stale hash, so its delete cannot land on the retry. */
+  private async repairStaleRows(state: StateDB, keys: VaultKeys): Promise<void> {
     const settings = this.deps.settings;
-    return healStaleRows({
-      rows: state.getAllLocalFiles().values(),
-      macKey: keys.mac_key,
-      exists: (path) => existsOnDisk(path, this.deps.vault.adapter),
-      isSyncable: (path) => isSyncable(path, this.deps.configDir, settings),
-      upsert: (row) => state.upsertLocalFile(row),
-      restore: (paths) => this.catchUpFolders(paths),
+    const plan = await planStaleRows(
+      state.getAllLocalFiles().values(),
+      keys.mac_key,
+      (path) => existsOnDisk(path, this.deps.vault.adapter),
+      (path) => isSyncable(path, this.deps.configDir, settings),
+    );
+    if (plan.corrected.length === 0 && plan.restore.length === 0) return;
+    log.info("repairing stale path hashes", {
+      corrected: plan.corrected.length,
+      restore: plan.restore,
+    });
+    for (const path of plan.corrected) {
+      const row = state.getLocalFile(path);
+      if (row) state.upsertLocalFile({ ...row, path_hash: hashPathHex(keys.mac_key, path) });
+    }
+    if (plan.restore.length === 0) return;
+    await this.catchUpFolders(plan.restore).catch((error) => {
+      log.warn("stale row restore failed, retrying at the next connection", {
+        error: String(error),
+      });
     });
   }
 

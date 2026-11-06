@@ -15,7 +15,6 @@ const NEW_PASSPHRASE = "rekey-own-device-new-pass";
 const DELETED = "notes/older-deleted.md";
 const RENAMED = "notes/older-renamed.md";
 const RENAMED_TO = "notes/older-renamed-now.md";
-const q = (s: string) => JSON.stringify(s);
 
 test("rekey own device: older files delete and rename on the re-keying device, the phone follows", async () => {
   test.skip(process.env.GEODE_PHONE !== "1", "requires connected phone (GEODE_PHONE=1)");
@@ -24,7 +23,7 @@ test("rekey own device: older files delete and rename on the re-keying device, t
   const pair = await launchHybridPair({ passphrase: PASSPHRASE });
   const { A, B } = pair; // A = desktop, B = phone
   const onPhone = (path: string) =>
-    B.eval<boolean>(`return await app.vault.adapter.exists(${q(path)})`);
+    B.eval<boolean>(`return await app.vault.adapter.exists(${JSON.stringify(path)})`);
 
   try {
     await Promise.all([
@@ -47,7 +46,7 @@ test("rekey own device: older files delete and rename on the re-keying device, t
     // see the re-key: store one, as a joined device has.
     const verifier = await computeVerifier(PASSPHRASE, pair.server.salt, TEST_ARGON2_PARAMS);
     await B.eval(`
-      app.plugins.plugins.geode.pluginSettings.verifier = ${q(verifier)};
+      app.plugins.plugins.geode.pluginSettings.verifier = ${JSON.stringify(verifier)};
       await app.plugins.plugins.geode.saveSettings();
       return true;
     `);
@@ -72,9 +71,13 @@ test("rekey own device: older files delete and rename on the re-keying device, t
     await waitForUnlocked(B, 60_000);
     await waitForStatusBar(B, "Geode: synced", 60_000);
 
-    await A.eval(`await app.vault.delete(app.vault.getAbstractFileByPath(${q(DELETED)}))`);
     await A.eval(
-      `await app.vault.rename(app.vault.getAbstractFileByPath(${q(RENAMED)}), ${q(RENAMED_TO)})`,
+      `await app.vault.delete(app.vault.getAbstractFileByPath(${JSON.stringify(DELETED)}))`,
+    );
+    await A.eval(
+      `await app.vault.rename(app.vault.getAbstractFileByPath(${JSON.stringify(RENAMED)}), ${
+        JSON.stringify(RENAMED_TO)
+      })`,
     );
 
     await expect.poll(() => onPhone(DELETED), { timeout: 90_000 }).toBe(false);

@@ -14,30 +14,12 @@ import {
 import { hashPathHex, toHex } from "../../core/hash.ts";
 import { b64decode } from "../../core/protocol.ts";
 import { makeRekeyClient, putVaultAuth } from "../../plugin/plumbing/rekey-client.ts";
-import {
-  type RekeyCursor,
-  type RekeyCursorStore,
-  type RekeyProgress,
-  runRekey,
-} from "../../plugin/sync/rekey-run.ts";
-import { pair, TEST_KDF, TestPlugin } from "../two-vault-driver.ts";
+import { type RekeyCursor, type RekeyProgress, runRekey } from "../../plugin/sync/rekey-run.ts";
+import { memoryCursor, pair, TEST_KDF, TestPlugin } from "../two-vault-driver.ts";
 
 const FAST = TEST_KDF;
 
 const authKeyHex = (keys: VaultKeys): string => toHex(deriveAuthKey(keys));
-
-function memoryCursor(): RekeyCursorStore {
-  let c: RekeyCursor | null = null;
-  return {
-    load: () => c,
-    save: (x: RekeyCursor) => {
-      c = x;
-    },
-    clear: () => {
-      c = null;
-    },
-  };
-}
 
 // note1.md has two versions; note3.md is written then deleted (trash).
 async function seed(A: TestPlugin): Promise<void> {
