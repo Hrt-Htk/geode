@@ -1,6 +1,8 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { hashPathHex } from "../../../core/hash.ts";
 import type { LocalFileRow } from "../../../plugin/plumbing/state.ts";
+import { commitOp, StaleHashDelete } from "../../../plugin/sync/commit.ts";
+import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { planStaleRows } from "../../../plugin/sync/stale-rows.ts";
 
 const KEY = new Uint8Array(32).fill(1);
@@ -45,4 +47,28 @@ Deno.test("stale rows - a live row with its file gone is restored, not corrected
 Deno.test("stale rows - a missing file this device does not sync only gets its hash corrected", async () => {
   const plan = await planStaleRows([row("a.md", { stale: true })], KEY, on(), () => false);
   assertEquals(plan, { corrected: ["a.md"], restore: [] });
+});
+
+Deno.test("stale rows - a delete under a stale hash is refused before anything is sent", async () => {
+  const state = openStateDB();
+  state.upsertLocalFile(row("a.md", { stale: true }));
+  let sent = 0;
+  await assertRejects(
+    () =>
+      commitOp({ path: "a.md", kind: "delete" }, {
+        state,
+        keys: { mac_key: KEY },
+        vault: { adapter: { exists: () => Promise.resolve(false) } },
+        transport: {
+          commit: () => {
+            sent++;
+            return Promise.resolve({ kind: "error", message: "unreachable" });
+          },
+        },
+        onConflict: () => {},
+        pendingRenameTarget: () => undefined,
+      } as never),
+    StaleHashDelete,
+  );
+  assertEquals(sent, 0);
 });

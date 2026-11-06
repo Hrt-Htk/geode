@@ -177,6 +177,15 @@ export async function waitForInFlightCommit(
  * the op is dropped and counted, never silently forgotten (#589). */
 export class CommitFileVanished extends Error {}
 
+/** #53: a delete of a row whose hash predates a re-key. That hash has no chain, so a parent of
+ * 0 would open one, and every peer applies its tombstone. A retry could land after the repair
+ * brought the file back, so no op may outlive this: the repair settles the row. */
+export class StaleHashDelete extends Error {
+  constructor(path: string) {
+    super(`${path}: its path hash predates a re-key, sync it again at the next connection`);
+  }
+}
+
 async function commitFile(path: string, deps: CommitDeps, renamedFrom?: string): Promise<boolean> {
   if (await followClosedRename(path, deps, renamedFrom)) return true;
   // Stat BEFORE the read: the mtime must belong to bytes read at or after it. Writers
@@ -389,12 +398,7 @@ async function deleteIsMoot(
 async function commitDelete(path: string, deps: CommitDeps, renamedTo?: string): Promise<boolean> {
   const local = deps.state.getLocalFile(path);
   if (!local) return true;
-  // #53: a hash from before a re-key has no chain: a parent of 0 would open one, and every
-  // peer applies its tombstone. The repair at go-live settles this row.
-  if (local.path_hash !== hashPathHex(deps.keys.mac_key, path)) {
-    log.warn("delete refused: the row's path hash predates a re-key", { path });
-    return true;
-  }
+  if (local.path_hash !== hashPathHex(deps.keys.mac_key, path)) throw new StaleHashDelete(path);
   // #629: a cancelled chain (its own name was deleted before it opened) is no rename:
   // the queue already resolved it to a plain tombstone, so this is never null here.
   const to = renamedTo === undefined

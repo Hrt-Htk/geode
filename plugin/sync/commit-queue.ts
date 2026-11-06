@@ -6,6 +6,7 @@ import {
   type CommitOp,
   commitOp,
   type RenameLink,
+  StaleHashDelete,
   type Vault,
 } from "./commit.ts";
 import {
@@ -367,7 +368,7 @@ export class CommitQueue {
       // socket, a transient adapter error) is retried, never reported as a lost edit
       // that blocks the backup stamp.
       if (err instanceof CommitFileVanished) this.dropOp(op);
-      else this.retryOrDrop(op, requeuedThisPass);
+      else if (!(err instanceof StaleHashDelete)) this.retryOrDrop(op, requeuedThisPass);
       this.deps.recordActivity?.({
         path: op.path,
         kind: "error",

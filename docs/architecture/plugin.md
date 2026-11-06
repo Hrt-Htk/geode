@@ -235,14 +235,17 @@ This is what keeps the plugin correct against edits it never saw a vault event f
 ### When it runs
 
 - Immediately on start (`startReconciler`), then every 5 minutes (`RECONCILE_INTERVAL`).
-- **Stale-row repair** runs first on every go-live (#53). A row whose `path_hash` differs from the hash
-  of its path under the current `mac_key` predates a re-key on this device. A file on disk, a closed row
-  or an out-of-scope path only gets the hash corrected. A live row with its file gone restores the file
-  through `catchUpFolders`, whose write rewrites the row. `commitDelete` refuses a row whose hash is
-  stale: that name has no chain on the server, so a parent of 0 would open one, and every peer would
-  apply the tombstone. So a delete made under the old hash never lands. A rename made while stale is
-  not undone: its new name stands and the old name comes back. A row that cannot restore (the download
-  failed, or the server has no head for it) stays stale and retries at the next connection.
+- **Stale-row repair** runs before the scan on a go-live that starts a reconciler (#53). A row whose
+  `path_hash` differs from the hash of its path under the current `mac_key` predates a re-key on this
+  device. A file on disk, a closed row or an out-of-scope path only gets the hash corrected. A live row
+  with its file gone restores the file through `catchUpFolders`, whose write rewrites the row. One with
+  no chain under the current hash has nothing to restore and closes at version 0. A failed download
+  stays stale and retries at the next connection.
+- **A stale hash never sends a delete.** It has no chain on the server, so a parent of 0 would open one,
+  and every peer would apply the tombstone. `commitDelete` throws `StaleHashDelete`: a conflict resolution
+  shows the error, the activity log records it, and the queue keeps no op, because a retry could land
+  after the repair brought the file back. A rename made while stale is not undone: its new name stands,
+  and the old name comes back when the server has a head for it.
 - On every go-live: `SyncManager.startReconciler` stops the previous reconciler first, so reconnects
   never leave a second scanner running (#622).
 - "Reconcile now" forces a pass; otherwise a run within half the interval is skipped.

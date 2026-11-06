@@ -181,8 +181,8 @@ export class SyncManager {
     // re-trip the guard, and a mid-decision one would commit the paths being restored).
     if (this.paused || this.deciding || this.deps.settings.massDeleteHold) return;
     await this.replay.flushReplayBuffer();
-    if (!this.state || !this.keys) return;
-    await this.repairStaleRows(this.state, this.keys);
+    if (!this.state) return;
+    if (this.keys) await this.repairStaleRows(this.state, this.keys);
     // #342: bound pendingMoveOuts on every go-live: dead entries (source row
     // gone) drop, moves whose destination is back in scope complete, and the
     // list stays capped even for folders that are never re-included.
@@ -352,8 +352,7 @@ export class SyncManager {
   }
 
   /** #53: docs/architecture/plugin.md section 6. Rows are re-read: an apply can land during
-   * the plan's disk checks. A file that fails to download keeps its row stale, and
-   * `commitDelete` refuses a stale hash, so its delete cannot land on the retry. */
+   * the plan's disk checks. */
   private async repairStaleRows(state: StateDB, keys: VaultKeys): Promise<void> {
     const settings = this.deps.settings;
     const plan = await planStaleRows(
@@ -372,11 +371,27 @@ export class SyncManager {
       if (row) state.upsertLocalFile({ ...row, path_hash: hashPathHex(keys.mac_key, path) });
     }
     if (plan.restore.length === 0) return;
-    await this.catchUpFolders(plan.restore).catch((error) => {
+    try {
+      await this.catchUpFolders(plan.restore);
+      for (const path of plan.restore) await this.closeIfNeverOnServer(state, keys, path);
+    } catch (error) {
       log.warn("stale row restore failed, retrying at the next connection", {
         error: String(error),
       });
-    });
+    }
+  }
+
+  /** The download rewrites a row it restored. One still stale with no chain under the current
+   * hash has nothing to restore and nothing to delete. Version 0: any later version applies. */
+  private async closeIfNeverOnServer(
+    state: StateDB,
+    keys: VaultKeys,
+    path: string,
+  ): Promise<void> {
+    const pathHash = hashPathHex(keys.mac_key, path);
+    if (state.getLocalFile(path)?.path_hash === pathHash) return;
+    const chain = await this.transport.getVersionChain(pathHash);
+    if (chain.length === 0) state.closeLocalRow(path, pathHash, 0);
   }
 
   private stopReconciler(): void {

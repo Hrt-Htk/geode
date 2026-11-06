@@ -8,6 +8,7 @@ import { b64decode, b64encode } from "../../core/protocol.ts";
 import { makeRekeyClient, putVaultAuth } from "../../plugin/plumbing/rekey-client.ts";
 import { finishRekey } from "../../plugin/plumbing/vault-lock.ts";
 import { runRekey } from "../../plugin/sync/rekey-run.ts";
+import { Transport } from "../../plugin/sync/transport.ts";
 import { headOf, memoryCursor, pair, TEST_KDF, waitFor } from "../two-vault-driver.ts";
 
 /** A runs a replace re-key and comes back the way the real modal brings it back, through
@@ -150,6 +151,10 @@ Deno.test("rekey own device: a stale row with no version of its own never opens 
     await A.reconcileNow();
     await A.flushPending();
     assertEquals(headOf(server, vaultId, hash), null, "no tombstone under the old hash");
+    // Nothing to restore and nothing to delete: the row closes, so no delete is derived again.
+    assertEquals(A.state!.getLocalFile("carried.md")!.deleted, true);
+    assertEquals(A.syncManager!.getPendingOps(), []);
+    assertEquals(A.syncManager!.getDroppedCount(), 0);
 
     // B can still use the name: an orphan tombstone would leave it unable to commit here.
     B.fakeVault.write("carried.md", "written on B");
@@ -163,6 +168,66 @@ Deno.test("rekey own device: a stale row with no version of its own never opens 
       A.state!.getLocalFile("carried.md")!.path_hash,
       hashPathHex(newKeys.mac_key, "carried.md"),
     );
+  } finally {
+    await stop();
+  }
+});
+
+Deno.test("rekey own device: a failed restore removes nothing and the next connection retries it", async () => {
+  const { A, B, server, vaultId, oldKeys, newKeys, stop } = await rekeyedOnA();
+  const getHeads = Transport.prototype.getHeads;
+  try {
+    const row = A.state!.getLocalFile("gone.md")!;
+    A.state!.upsertLocalFile({ ...row, path_hash: hashPathHex(oldKeys.mac_key, "gone.md") });
+    A.stop();
+    await A.fakeVault.delete("gone.md");
+
+    Transport.prototype.getHeads = function () {
+      throw new Error("heads unavailable");
+    };
+    await A.restartUnlockedSession();
+    await waitFor(() => A.isLive(), "A to go live again");
+    await A.syncManager!.startReconciler();
+    await A.reconcileNow();
+
+    const goneHash = hashPathHex(newKeys.mac_key, "gone.md");
+    assert(!A.fakeVault.fileExists("gone.md"));
+    assertEquals(headOf(server, vaultId, goneHash), { version: 1, deleted: 0 });
+    assert(B.fakeVault.fileExists("gone.md"), "the delete must not reach the other device");
+    assertEquals(A.syncManager!.getPendingOps(), [], "no op may outlive the refusal");
+    assertEquals(A.syncManager!.getDroppedCount(), 0, "nothing to retry after the repair");
+
+    Transport.prototype.getHeads = getHeads;
+    A.disconnect();
+    await A.reconnect();
+    await waitFor(() => A.fakeVault.fileExists("gone.md"), "the retry to restore the file");
+    assertEquals(A.state!.getLocalFile("gone.md")!.path_hash, goneHash);
+    assertEquals(headOf(server, vaultId, goneHash), { version: 1, deleted: 0 });
+  } finally {
+    Transport.prototype.getHeads = getHeads;
+    await stop();
+  }
+});
+
+Deno.test("rekey own device: a merge on a stale row settles instead of failing the apply", async () => {
+  const { A, B, server, vaultId, oldKeys, newKeys, stop } = await rekeyedOnA();
+  try {
+    // Live, so no go-live repair runs: the version reaches a row that is still stale.
+    const row = A.state!.getLocalFile("older.md")!;
+    A.state!.upsertLocalFile({ ...row, path_hash: hashPathHex(oldKeys.mac_key, "older.md") });
+    A.fakeVault.write("older.md", "edited on A");
+    A.markLocalEdit("older.md");
+
+    B.fakeVault.write("older.md", "edited on B");
+    await B.flushPending();
+    const hash = hashPathHex(newKeys.mac_key, "older.md");
+    const { seq } = server.db
+      .prepare("SELECT MAX(seq) AS seq FROM file_versions WHERE vault_id = ? AND path_hash = ?")
+      .get(vaultId, hash) as { seq: number };
+
+    await A.waitForCaughtUp(seq);
+    await waitFor(() => A.state!.getSyncCursor() >= seq, "the version to be accounted for");
+    assertEquals(A.state!.getLocalFile("older.md")!.path_hash, hash);
   } finally {
     await stop();
   }
