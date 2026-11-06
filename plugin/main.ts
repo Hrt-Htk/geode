@@ -15,17 +15,14 @@ import {
   startSetupWizard,
 } from "./ui/modals.ts";
 import { formatError, getRecentLog, log, setDebugLogging } from "./plumbing/log.ts";
+import { compareSemVer } from "../core/version.ts";
+import { ServerUpdate } from "./ui/server-update.ts";
 import { formatUserError } from "./plumbing/errors.ts";
 import { formatLogExport } from "./ui/log-format.ts";
 import { makeTrashApi, TrashApi } from "./plumbing/trash-client.ts";
 import { Transport } from "./sync/transport.ts";
 import { StateDB } from "./plumbing/state.ts";
-import {
-  blockedCopy,
-  blockedSide,
-  describeVersionHint,
-  type VersionStatus,
-} from "./sync/version-state.ts";
+import { blockedCopy, blockedSide, type VersionStatus } from "./sync/version-state.ts";
 import { VaultEventHandler } from "./sync/events.ts";
 import { SyncManager } from "./sync/sync-manager.ts";
 import { ActivityRecorder } from "./sync/activity-log.ts";
@@ -111,6 +108,10 @@ export default class GeodePlugin extends Plugin {
   rekeyCursor: RekeyCursor | null = null;
   trash: TrashApi = makeTrashApi(() => this.pluginSettings, () => this.keys);
   versionStatus: VersionStatus = { kind: "ok" };
+  /** #44: the server's own version, from hello_ack or a refusal; the update row reads it. */
+  serverVersion: string | null = null;
+  /** #44: the one server update run this session owns (dialog, polling, notice). */
+  updater!: ServerUpdate;
   // #433: in-memory admin token from the Devices view's privileged-action
   // prompt; never persisted (asked again next time Obsidian starts).
   adminToken: string | null = null;
@@ -152,6 +153,22 @@ export default class GeodePlugin extends Plugin {
       log.warn("failed to remove legacy key cache file", { error: formatError(error) });
     });
     wirePlatformHttp();
+    this.updater = new ServerUpdate({
+      app: this.app,
+      serverUrl: () => this.pluginSettings.serverUrl,
+      deviceToken: () => this.pluginSettings.deviceToken,
+      ownVersion: () => this.manifest.version,
+      adminToken: () => this.adminToken,
+      setAdminToken: (token) => {
+        this.adminToken = token;
+      },
+      seenVersion: () => this.pluginSettings.updateNoticeVersion,
+      rememberSeenVersion: (version) => {
+        this.pluginSettings.updateNoticeVersion = version;
+        void this.saveSettings();
+      },
+      onChange: () => this.settingTab?.updateServerUpdateRow(),
+    });
     registerCommands(this);
     this.statusBar = new StatusBar(this);
     this.statusBar.setPausedAt(this.pluginSettings.pauseAt);
@@ -164,6 +181,7 @@ export default class GeodePlugin extends Plugin {
   }
   onunload(): void {
     this.activity?.flush();
+    this.updater.dispose();
     this.statusBar?.dispose();
     disposeRuntime(this, { clearKeys: true, updateStatus: false });
   }
@@ -326,6 +344,7 @@ export default class GeodePlugin extends Plugin {
       lastBackupAt: this.lastBackupAt,
       rekeyElsewhere: this.rekeyElsewhere,
       rekeyInProgress: this.rekeyInProgress,
+      updatingServer: this.updater.isRunning(),
     };
   }
 
@@ -403,6 +422,7 @@ export default class GeodePlugin extends Plugin {
   onBlocked(serverVersion: string, clientVersion: string, reason: string): void {
     const side = blockedSide(clientVersion, serverVersion, reason);
     this.versionStatus = { kind: "blocked", side };
+    this.serverVersion = serverVersion;
     this.statusBar?.setVersionStatus(this.versionStatus);
     this.settingTab?.updateVersionBanner();
     if (!this.blockedNoticeShown) {
@@ -418,12 +438,15 @@ export default class GeodePlugin extends Plugin {
   /** #529: hello_ack reported a compatible but different server version: show the update hint, keep syncing. */
   onServerVersion(serverVersion: string): void {
     const own = this.manifest.version;
-    const hint = describeVersionHint(own, serverVersion);
-    this.versionStatus = hint === null
-      ? { kind: "ok" }
-      : { kind: "hint", own, server: serverVersion };
+    this.serverVersion = serverVersion;
+    // #44: a server behind the plugin is the Server update row's, so only the plugin's own
+    // update keeps the status hint and its banner.
+    this.versionStatus = compareSemVer(serverVersion, own) > 0
+      ? { kind: "hint", own, server: serverVersion }
+      : { kind: "ok" };
     this.statusBar?.setVersionStatus(this.versionStatus);
     this.settingTab?.updateVersionBanner();
+    void this.updater.serverVersionReported(serverVersion);
   }
 
   retrySync(btn: ButtonComponent): Promise<void> {

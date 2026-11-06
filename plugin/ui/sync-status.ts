@@ -3,6 +3,7 @@ import type { IconInput } from "./statusbar-icon.ts";
 import { blockedCopy, describeVersionHint } from "../sync/version-state.ts";
 import { pauseAgeColor } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
+import { UPDATE_STATUS_UPDATING } from "./server-update-logic.ts";
 
 export type SyncStatusInput = IconInput & {
   lastBackupAt: number;
@@ -10,6 +11,8 @@ export type SyncStatusInput = IconInput & {
   rekeyInProgress?: boolean;
   /** #560: the vault's passphrase changed elsewhere: locked until re-unlocked. */
   rekeyElsewhere?: boolean;
+  /** #44: a server update is running on the host: the connection drops and comes back. */
+  updatingServer?: boolean;
 };
 
 export type StatusDot = "green" | "blue" | "grey" | "orange" | "red";
@@ -50,6 +53,10 @@ export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusR
       dot: "orange",
     };
   }
+
+  // #44: the host restarts Geode mid run, so the status line would otherwise read as an
+  // outage. No backup age: the update is what the user needs to see.
+  if (i.updatingServer) return { text: UPDATE_STATUS_UPDATING, dot: "blue" };
 
   const gated = describeGated(i, now, backup);
   if (gated) return gated;

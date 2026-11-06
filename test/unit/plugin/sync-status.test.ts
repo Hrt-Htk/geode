@@ -316,3 +316,24 @@ Deno.test("sync-status - a held mass delete names the hold, not the server", () 
     dot: "orange",
   });
 });
+
+Deno.test("sync-status - a server update in flight outranks the dropping connection (#44)", () => {
+  // The host restarts Geode mid run, so the transport goes offline: the row keeps saying
+  // what is happening instead of "Offline. Retrying in N s.".
+  assertEquals(
+    describeSyncStatus(
+      input({
+        updatingServer: true,
+        state: "disconnected",
+        reconnectDelay: 2_000,
+        lastBackupAt: 0,
+      }),
+      0,
+    ),
+    { text: "Updating the server.", dot: "blue" },
+  );
+  assertEquals(describeSyncStatus(input({ updatingServer: true }), 0), {
+    text: "Updating the server.",
+    dot: "blue",
+  });
+});

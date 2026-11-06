@@ -8,6 +8,7 @@ import type { SettingsRow } from "./settings-legacy.ts";
 import type { TreeSection } from "./settings-tree.ts";
 import { describeErrorBanner } from "./sync-banner.ts";
 import type { SyncStatusInput } from "./sync-status.ts";
+import { UPDATE_BUTTON } from "./server-update-logic.ts";
 
 export type BannersHost = {
   settings: () => PluginSettings;
@@ -18,9 +19,16 @@ export type BannersHost = {
   openMassDeleteReview: () => void;
   retrySync: (btn: ButtonComponent) => Promise<void>;
   resumeSync: () => Promise<void>;
+  /** #44: the server refusal banner's Update: the row keeps to the versions. */
+  startServerUpdate: () => void;
 };
 
-type VersionRow = { setting: Setting; name: HTMLElement; icon: HTMLElement };
+type VersionRow = {
+  setting: Setting;
+  name: HTMLElement;
+  icon: HTMLElement;
+  button: ButtonComponent | null;
+};
 
 /** The banners above the Status rows, in a fixed order: a version refusal (a hard stop), the
  * held mass delete, the sync error, the pause, then an update hint (advisory). One headless
@@ -126,12 +134,24 @@ export class SettingsBanners {
       searchable: false,
       visible: () => this.host.versionStatus().kind === kind,
       render: (setting) => {
+        setting.settingEl.dataset.testid = kind === "blocked"
+          ? "geode-settings-version-banner"
+          : "geode-settings-hint-banner";
         // The icon and the name live in their own spans: setName()/setDesc() would replace
         // them on every update (BannerRow keeps its name the same way).
         setting.nameEl.empty();
         const name = setting.nameEl.createSpan();
         const icon = setting.nameEl.createSpan({ cls: "geode-version-warning-icon" });
-        this.versionRows[kind] = { setting, name, icon };
+        let button: ButtonComponent | null = null;
+        if (kind === "blocked") {
+          setting.addButton((btn) => {
+            button = btn;
+            btn.setCta().setButtonText(UPDATE_BUTTON);
+            btn.buttonEl.dataset.testid = "geode-settings-version-update";
+            btn.onClick(() => this.host.startServerUpdate());
+          });
+        }
+        this.versionRows[kind] = { setting, name, icon, button };
         this.describeVersion(kind);
       },
     };
@@ -152,5 +172,8 @@ export class SettingsBanners {
     );
     row.icon.toggleClass("mod-error", copy !== null);
     setIcon(row.icon, copy ? "triangle-alert" : "info");
+    // #44: the action only when this side has one, and the server refusal keeps it on the
+    // banner: a plugin update is not something this dialog can run.
+    row.button?.buttonEl.toggle(vs.kind === "blocked" && vs.side === "server");
   }
 }

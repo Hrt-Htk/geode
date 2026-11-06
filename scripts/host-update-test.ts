@@ -9,6 +9,7 @@
 // talk to it with the global fetch and WebSocket (no Caddy CA to trust).
 
 import { b64decode } from "../core/protocol.ts";
+import { fetchUpdateStatus, requestServerUpdate } from "../plugin/plumbing/update-client.ts";
 import { TestPlugin } from "../test/two-vault-driver.ts";
 import { chain, exec, freePort, sh, waitFor } from "./docker-helpers.ts";
 
@@ -484,6 +485,30 @@ console.log(JSON.stringify({ schema: schema.value, probe_table: table.n, migrate
   eq(failed[0], broken, "the recorded failure");
   if (!/^\d+$/.test(failed[1] ?? "")) throw new Error(`failed-image holds no epoch: ${failed}`);
   ok("a release that never reports healthy is rolled back", "the vault survived");
+
+  // #44: the plugin's own client code against the real stack. The POST it sends is the one the
+  // plugin sends (requestUrl on desktop, fetch here, through the same client), the job answers it
+  // exactly as cron would, and the read route reports what it wrote.
+  console.log("==> the plugin's update route");
+  const denied = await fetch(`${API}/update`, { method: "POST" });
+  eq(`${denied.status}`, "401", "a POST without the admin token");
+  if (await exists(`${dataDir}/update-request`)) throw new Error("a refused POST left a request");
+  const noToken = await fetch(`${API}/update/status`);
+  eq(`${noToken.status}`, "401", "a status read without a device token");
+  eq(`${(await fetchUpdateStatus(API, device.token)).installed}`, "true", "the job's heartbeat");
+  await allowUpdate();
+  await publish("base");
+  const posted = await requestServerUpdate(API, ADMIN);
+  if (!(await exists(`${dataDir}/update-request`))) throw new Error("the route left no request");
+  await job();
+  eq(await result(), "updated", "the job acted on the route's request");
+  eq(await running(), await imageId("base"), "the running image");
+  const after = await fetchUpdateStatus(API, device.token);
+  eq(after.result?.word ?? "", "updated", "the read route reports the result");
+  if ((after.result?.epoch ?? 0) < posted.epoch) {
+    throw new Error(`the result (${after.result?.epoch}) predates the request (${posted.epoch})`);
+  }
+  ok("the plugin's route leaves a request the job acts on", `epoch ${posted.epoch}`);
 
   console.log("==> fixed release after that");
   await update("v4");

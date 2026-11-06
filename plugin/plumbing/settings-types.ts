@@ -54,6 +54,8 @@ export interface PluginSettings {
   /** #601: the guard: hold only when BOTH this many files and this percent are gone. */
   massDeleteMinFiles: number;
   massDeleteMinPercent: number;
+  /** #44: the plugin version the server update notice was last shown for (once per version). */
+  updateNoticeVersion: string;
 }
 
 // #454: config-category keys (the mockup ConfigModal's settings categories).
@@ -97,6 +99,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   rejoinIncomplete: false,
   massDeleteMinFiles: MASS_DELETE_MIN_FILES,
   massDeleteMinPercent: MASS_DELETE_MIN_PERCENT,
+  updateNoticeVersion: "",
 };
 
 const GEODE_PLUGIN_ID = "geode";
