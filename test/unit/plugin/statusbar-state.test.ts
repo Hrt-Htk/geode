@@ -1,8 +1,8 @@
 import { SyncManager } from "../../../plugin/sync/sync-manager.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
 import { assert, assertEquals } from "@std/assert";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // Minimal transport stub: the SyncManager now subscribes to transport events, so
 // the stub must expose addEventListener (a no-op is fine here � no events are
@@ -119,7 +119,7 @@ Deno.test("statusbar-state - transition from syncing to live requires explicit u
 Deno.test("statusbar-state - handleVersion skips status update when keys are null", async () => {
   const transport = fakeTransport();
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const settings = { ...DEFAULT_SETTINGS };
 
   const sm = new SyncManager(transport, {
@@ -159,7 +159,7 @@ Deno.test("statusbar-state - handleVersion skips status update when keys are nul
 Deno.test("statusbar-state - locked pass reports pending clear but no sync (nothing committed)", async () => {
   const transport = fakeTransport();
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const settings = { ...DEFAULT_SETTINGS };
 
   const sm = new SyncManager(transport, {
@@ -202,7 +202,7 @@ Deno.test("statusbar-state - locked pass reports pending clear but no sync (noth
 Deno.test("statusbar-state - reconciler ops follow same pattern: pending → pending:0 → idle sync when locked", async () => {
   const transport = fakeTransport();
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const settings = { ...DEFAULT_SETTINGS };
 
   const sm = new SyncManager(transport, {

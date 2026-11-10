@@ -4,8 +4,8 @@ import { chunk } from "../../../core/chunker.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode, type ServerVersion, type VersionRecord } from "../../../core/protocol.ts";
 import { orchestrateMerge } from "../../../plugin/sync/merger.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { isConflictPath } from "../../../plugin/sync/conflicts.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #549: no local-files.json row (lost on a kill inside the persist window) means
 // localVersion is null. The merger must fall back to this device's newest version
@@ -72,7 +72,7 @@ function makeDeps(
 ) {
   const writes: Array<{ path: string; data: Uint8Array }> = [];
   let committed: { path: string; merged: Uint8Array; parent: number } | null = null;
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const deps = {
     vault: {
       adapter: {

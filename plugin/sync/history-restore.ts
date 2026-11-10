@@ -18,6 +18,7 @@ import {
 } from "./commit.ts";
 import { reconstructVersion } from "./history-fetch.ts";
 import type { Transport } from "./transport.ts";
+import { recordedWrite } from "./vault-io.ts";
 import { readVaultBinary, writeVaultBinary } from "./vault-io.ts";
 
 export type RestoreOutcome = "restored" | "unchanged";
@@ -86,7 +87,15 @@ export async function restoreVersion(
   for (let attempt = 0; attempt < 2; attempt++) {
     await settleAndPreserve(target, deps);
     await settleAndPreserve(target, deps);
-    await writeVaultBinary(target, bytes, Date.now(), deps.vault);
+    // #59: recorded before the write: a kill mid-restore leaves a record, not a fragment
+    // a later pass commits as the note's content.
+    await recordedWrite(
+      deps.state,
+      deps.keys,
+      target,
+      bytes,
+      () => writeVaultBinary(target, bytes, Date.now(), deps.vault),
+    );
     if (!(await commitOp({ path: target, kind: "commit" }, commitDeps(deps)))) {
       throw new RestoreUnsynced(target);
     }

@@ -2,11 +2,11 @@ import { assertEquals } from "@std/assert";
 import { b64encode, ServerVersion } from "../../../core/protocol.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, VaultKeys } from "../../../core/crypto.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { SyncManager } from "../../../plugin/sync/sync-manager.ts";
 import { Transport, TransportState } from "../../../plugin/sync/transport.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // Characterization tests for the inbound replay/apply pipeline (handleVersion,
 // versionQueue serialization, flushReplayBuffer, replayBuffer, versionCache) as
@@ -81,7 +81,7 @@ async function makeSyncManager(state: TransportState) {
     configDir: ".obsidian",
     reconnect: () => Promise.resolve(),
   });
-  const db = openStateDB();
+  const db = openSessionStateDB();
   const keys = await deriveKeys("test", crypto.getRandomValues(new Uint8Array(16)), {
     opsLimit: 1,
     memLimit: 8192,

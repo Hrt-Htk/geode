@@ -6,7 +6,8 @@ import type { HeadRecord } from "../../../core/protocol.ts";
 import { deriveKeys, type VaultKeys } from "../../../core/crypto.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import type { StateDB } from "../../../plugin/plumbing/state.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 import { rebuildFromScratch, type ResyncDeps } from "../../../plugin/sync/recovery.ts";
 import { conflictDeviceName } from "../../../plugin/sync/conflicts.ts";
 import { diskVault } from "../../helpers/disk-vault.ts";
@@ -60,7 +61,7 @@ Deno.test("rebuild-rename-carry - a case-only rename makes no conflict copy", as
     await headRecord(vaultKeys, { path: NEW, version: 1, seq: 2, body: BODY }, blobs),
   ];
 
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     const stats = await rebuild(vaultKeys, vault, heads, state, blobs);
 
@@ -88,7 +89,7 @@ Deno.test("rebuild-rename-carry - a live destination row still closes the same-b
     await headRecord(vaultKeys, { path: OLD, version: 2, seq: 1, renamedTo: NEW }, blobs),
     await headRecord(vaultKeys, { path: NEW, version: 1, seq: 2, body: BODY }, blobs),
   ];
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // The destination's head applied first (heads run 8 at a time), so its row is live when
     // the marker lands: the bytes decide, not the row, or this would keep a copy again.
@@ -123,7 +124,7 @@ Deno.test("rebuild-rename-carry - a conflict copy carries this device's name", a
     await headRecord(vaultKeys, { path: OLD, version: 2, seq: 1, renamedTo: NEW }, blobs),
   ];
 
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     await rebuild(vaultKeys, vault, heads, state, blobs);
   } finally {

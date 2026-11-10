@@ -5,8 +5,8 @@ import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../..
 import { b64encode, type ServerVersion } from "../../../core/protocol.ts";
 import { commitOp } from "../../../plugin/sync/commit.ts";
 import { ConflictHandler } from "../../../plugin/sync/conflict-handler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #630: a conflict resolution must never merge into a path whose own commit is
 // still in flight. The merge writes the server copy over the bytes that commit is
@@ -49,7 +49,7 @@ Deno.test("conflict-handler waits for an in-flight same-path commit, then resolv
   const pathHash = hashPathHex(keys.mac_key, PATH);
   const vault = new FakeVault();
   vault.write(PATH, LOCAL);
-  const state = openStateDB();
+  const state = openSessionStateDB();
   // A carried row (#583): the edit arrived with a rename, so it has no version of
   // this path and the merge has no common ancestor: the resolve writes the server
   // copy over the file (the shape that clobbers an in-flight commit).

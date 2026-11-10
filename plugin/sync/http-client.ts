@@ -3,6 +3,7 @@ import { log } from "../plumbing/log.ts";
 import { httpBase } from "../plumbing/scheme.ts";
 import { toArrayBuffer } from "../plumbing/bytes.ts";
 import { retryBusy } from "../plumbing/retry.ts";
+import { withTimeout } from "../plumbing/timeout.ts";
 import { windowGlobal } from "../plumbing/window.ts";
 
 export interface TransportHttpRequest {
@@ -41,6 +42,10 @@ export function setTransportHttp(fn: TransportHttpFn): void {
 
 const BLOB_RETRY_MAX = 3;
 const BLOB_RETRY_BASE_MS = 100;
+/** #59: a request that never answers must fail the apply BEFORE it writes anything, so the
+ * version is retried instead of holding the sync queue. No client can cancel a native
+ * request, so the bound is on waiting for it. */
+const REQUEST_TIMEOUT_MS = 60_000;
 
 export class HttpClient {
   private serverUrl: string;
@@ -54,15 +59,20 @@ export class HttpClient {
     this.blobBaseUrl = `${httpBase(serverUrl)}/blobs`;
   }
 
+  /** Every request goes through here: bounded, so a silent socket fails the caller. */
+  private send(req: TransportHttpRequest, what: string): Promise<TransportHttpResponse> {
+    return withTimeout(transportHttp(req), REQUEST_TIMEOUT_MS, what);
+  }
+
   async getBlob(hash: string): Promise<Uint8Array> {
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= BLOB_RETRY_MAX; attempt++) {
       try {
-        const res = await transportHttp({
+        const res = await this.send({
           url: `${this.blobBaseUrl}/${hash}`,
           method: "GET",
           headers: { Authorization: `Bearer ${this.deviceToken}` },
-        });
+        }, `blob GET ${hash}`);
         // 4xx are terminal (auth/not-found: retrying won't help); 5xx and
         // network errors fall through to the retry in the catch below.
         if (!res.ok) throw new Error(`blob GET ${hash}: ${res.status}`);
@@ -84,7 +94,7 @@ export class HttpClient {
   async putBlob(hash: string, body: Uint8Array): Promise<void> {
     // #680: a 503 is the server's busy budget, so retry it before giving up.
     const res = await retryBusy(() =>
-      transportHttp({
+      this.send({
         url: `${this.blobBaseUrl}/${hash}`,
         method: "POST",
         body,
@@ -92,26 +102,26 @@ export class HttpClient {
           Authorization: `Bearer ${this.deviceToken}`,
           "Content-Type": "application/octet-stream",
         },
-      })
+      }, `blob PUT ${hash}`)
     );
     if (!res.ok && res.status !== 304) throw new Error(`blob PUT ${hash}: ${res.status}`);
   }
 
   async headBlob(hash: string): Promise<boolean> {
-    const res = await transportHttp({
+    const res = await this.send({
       url: `${this.blobBaseUrl}/${hash}`,
       method: "HEAD",
       headers: { Authorization: `Bearer ${this.deviceToken}` },
-    });
+    }, `blob HEAD ${hash}`);
     return res.ok;
   }
 
   async *getHeads(afterSeq: number): AsyncGenerator<HeadRecord> {
-    const res = await transportHttp({
+    const res = await this.send({
       url: `${httpBase(this.serverUrl)}/vaults/${this.vaultId}/heads?after_seq=${afterSeq}`,
       method: "GET",
       headers: { Authorization: `Bearer ${this.deviceToken}` },
-    });
+    }, "heads GET");
     if (!res.ok) throw new Error(`heads GET: ${res.status}`);
     for (const line of (await res.text()).trim().split("\n")) {
       if (line) yield JSON.parse(line) as HeadRecord;
@@ -121,11 +131,11 @@ export class HttpClient {
   // `upTo` omitted = newest page; the server pages a chain at 100 rows.
   async getVersionChain(pathHash: string, upTo?: number): Promise<VersionRecord[]> {
     const qs = upTo === undefined ? "" : `?up_to=${upTo}`;
-    const res = await transportHttp({
+    const res = await this.send({
       url: `${httpBase(this.serverUrl)}/vaults/${this.vaultId}/versions/${pathHash}${qs}`,
       method: "GET",
       headers: { Authorization: `Bearer ${this.deviceToken}` },
-    });
+    }, "versions GET");
     if (!res.ok) throw new Error(`versions GET: ${res.status}`);
     return JSON.parse(await res.text()) as VersionRecord[];
   }

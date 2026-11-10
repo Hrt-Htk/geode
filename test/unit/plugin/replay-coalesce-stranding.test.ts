@@ -1,10 +1,10 @@
 import { assertEquals } from "@std/assert";
 import { ServerVersion } from "../../../core/protocol.ts";
 import { deriveKeys } from "../../../core/crypto.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { Transport, TransportState } from "../../../plugin/sync/transport.ts";
 import { SyncManager } from "../../../plugin/sync/sync-manager.ts";
 import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 function v(seq: number, pathHash: string, version: number): ServerVersion {
   return {
@@ -58,7 +58,7 @@ async function makeSyncManager() {
       reconnect: () => Promise.resolve(),
     },
   );
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const keys = await deriveKeys("test", crypto.getRandomValues(new Uint8Array(16)), {
     opsLimit: 1,
     memLimit: 8192,

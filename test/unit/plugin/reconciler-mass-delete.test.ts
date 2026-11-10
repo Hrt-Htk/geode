@@ -1,5 +1,5 @@
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import {
   type HeldFile,
@@ -8,6 +8,7 @@ import {
 } from "../../../plugin/sync/mass-delete-hold.ts";
 import { assert, assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * isSyncable that mirrors plugin/plumbing/settings-types.ts behavior.
@@ -45,7 +46,7 @@ function seedFile(vault: FakeVault, state: StateDB, path: string) {
 
 Deno.test("reconciler enumerates disk via adapter.list, not getAllLoadedFiles (no spurious deletes on incomplete list)", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {
@@ -91,7 +92,7 @@ Deno.test("reconciler enumerates disk via adapter.list, not getAllLoadedFiles (n
 
 Deno.test("reconciler verifies file existence via adapter.stat before deleting", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {
@@ -150,7 +151,7 @@ async function runGuard(opts: {
   mtimes: Map<string, number>;
 }> {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   let ops: ReconcileOp[] = [];
   let held: HeldFile[] | null = null;
   let totalTracked = 0;

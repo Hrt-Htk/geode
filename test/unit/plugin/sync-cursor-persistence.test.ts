@@ -1,5 +1,7 @@
 import { openStateDB } from "../../../plugin/plumbing/state.ts";
-import { assert, assertEquals } from "@std/assert";
+import { recordedWrite } from "../../../plugin/sync/vault-io.ts";
+
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { FakeTime } from "@std/testing/time";
 
 Deno.test("sync-cursor-persistence - serializeSyncCursor round-trips through openStateDB", () => {
@@ -16,7 +18,7 @@ Deno.test("sync-cursor-persistence - serializeSyncCursor round-trips through ope
   db2.close();
 });
 
-Deno.test("sync-cursor-persistence - setSyncCursorPersist hook fires eagerly on updateSyncCursor", () => {
+Deno.test("sync-cursor-persistence - setSyncCursorPersist hook fires on updateSyncCursor, unthrottled", async () => {
   const db = openStateDB();
 
   let captured: string | null = null;
@@ -25,16 +27,17 @@ Deno.test("sync-cursor-persistence - setSyncCursorPersist hook fires eagerly on 
   });
 
   db.updateSyncCursor(7);
+  await db.drainCursorWrites();
 
-  // Hook fires synchronously: no debounce wait needed
-  assert(captured !== null, "cursor persist hook should have fired immediately");
+  // The write is queued, never throttled: no debounce wait needed
+  assert(captured !== null, "cursor persist hook should have fired without a wait");
   const parsed = JSON.parse(captured!);
   assertEquals(parsed.last_seen_seq, 7);
 
   db.close();
 });
 
-Deno.test("sync-cursor-persistence - close flushes the cursor via the hook", () => {
+Deno.test("sync-cursor-persistence - close flushes the cursor via the hook", async () => {
   const db = openStateDB();
 
   let captured: string | null = null;
@@ -44,8 +47,9 @@ Deno.test("sync-cursor-persistence - close flushes the cursor via the hook", () 
 
   db.updateSyncCursor(99);
 
-  // Close should flush the cursor unconditionally
+  // Close flushes the cursor unconditionally (its write rides the queue).
   db.close();
+  await db.drainCursorWrites();
 
   assert(captured !== null, "close should flush cursor persist");
   const parsed = JSON.parse(captured!);
@@ -87,7 +91,7 @@ Deno.test("sync-cursor-persistence - recordBackup applies the next-backup rule a
   db.close();
 });
 
-Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 60s", () => {
+Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 60s", async () => {
   const time = new FakeTime();
   try {
     const db = openStateDB();
@@ -97,13 +101,16 @@ Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 
     });
 
     db.recordBackup(1);
+    await db.drainCursorWrites();
     assertEquals(stamps, [1], "first stamp persists immediately");
 
     db.recordBackup(2);
+    await db.drainCursorWrites();
     assertEquals(stamps, [1], "stamp-only write within 60s is skipped");
 
     time.tick(60_000);
     db.recordBackup(3);
+    await db.drainCursorWrites();
     assertEquals(stamps, [1, 3], "stamp-only write after 60s persists");
     db.close();
   } finally {
@@ -111,7 +118,7 @@ Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 
   }
 });
 
-Deno.test("sync-cursor-persistence - a cursor advance writes the latest stamp", () => {
+Deno.test("sync-cursor-persistence - a cursor advance writes the latest stamp", async () => {
   const db = openStateDB();
   const writes: Array<Record<string, number>> = [];
   db.setSyncCursorPersist((json) => {
@@ -120,21 +127,231 @@ Deno.test("sync-cursor-persistence - a cursor advance writes the latest stamp", 
 
   db.recordBackup(1_700_000_000_000);
   db.advanceSyncCursor(1);
+  await db.drainCursorWrites();
   const last = writes[writes.length - 1];
   assertEquals(last.last_seen_seq, 1);
   assertEquals(last.last_backup_at, 1_700_000_000_000, "advance carries the current stamp");
   db.close();
 });
 
-Deno.test("sync-cursor-persistence - close writes the latest stamp even when throttled", () => {
+Deno.test("sync-cursor-persistence - close writes the latest stamp even when throttled", async () => {
   const db = openStateDB();
   const stamps: number[] = [];
   db.setSyncCursorPersist((json) => {
     stamps.push(JSON.parse(json).last_backup_at);
   });
   db.recordBackup(42);
+  await db.drainCursorWrites();
   db.recordBackup(43);
+  await db.drainCursorWrites();
   assertEquals(stamps, [42], "second stamp-only write throttled");
   db.close();
+  await db.drainCursorWrites();
   assertEquals(stamps, [42, 43], "close flushes the throttled stamp");
+});
+
+// ── the interrupted-write record (#59) ──
+
+const ENTRY = { path: "note.md", path_hash: "hash-a", expected_plaintext_hash: "content-a" };
+
+Deno.test("state - a write is recorded before it starts and dropped once it returns", async () => {
+  const db = openStateDB();
+  const written: unknown[] = [];
+  db.setSyncCursorPersist((json) => {
+    written.push(JSON.parse(json).in_flight_apply ?? []);
+  });
+
+  await db.beginWrite(ENTRY);
+  assertEquals(written, [[ENTRY]], "the entry is durable before the write starts");
+  assertEquals(db.isTorn("hash-a"), true, "its bytes may be a fragment right now");
+
+  await db.endWrite("hash-a");
+  assertEquals(written[written.length - 1], [], "the record is gone once the write returned");
+  assertEquals(db.isTorn("hash-a"), false);
+  db.close();
+});
+
+Deno.test("state - a record read back is torn until the start pass clears it", async () => {
+  const db = openStateDB(null, null, null, [ENTRY]);
+  assertEquals(db.getInterruptedWrites(), [ENTRY], "the start pass reads it once");
+  assertEquals(db.isTorn("hash-a"), true, "the apply must treat its bytes as a fragment");
+
+  await db.clearInterruptedWrites([ENTRY]);
+  assertEquals(db.getInterruptedWrites(), []);
+  assertEquals(db.isTorn("hash-a"), false, "nothing survives the start that read it");
+  db.close();
+});
+
+Deno.test("state - a write that cannot be recorded fails closed", async () => {
+  const db = openStateDB();
+  db.setSyncCursorPersist(() => Promise.reject(new Error("disk full")));
+
+  await assertRejects(() => db.beginWrite(ENTRY), Error, "disk full");
+  assertEquals(db.isTorn("hash-a"), false, "a write that could not be recorded claims nothing");
+});
+
+Deno.test("state - a slow write keeps its place in the chain, so no stale write lands last", async () => {
+  const db = openStateDB();
+  const landed: string[] = [];
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => release = resolve);
+  let first = true;
+  db.setSyncCursorPersist(async (json) => {
+    if (first) {
+      first = false;
+      await slow; // the bridge is slow on the first write
+    }
+    landed.push((JSON.parse(json).in_flight_apply ?? []).map((e) => e.path_hash).join(","));
+  });
+
+  const begun = db.beginWrite(ENTRY);
+  await Promise.resolve();
+  // A later write must NOT overtake the slow one: it waits in the chain.
+  const next = db.beginWrite({ ...ENTRY, path_hash: "hash-b" });
+  await Promise.resolve();
+  assertEquals(landed, [], "nothing lands while the first write is unsettled");
+
+  release();
+  await Promise.all([begun, next]);
+  assertEquals(landed, ["hash-a", "hash-a,hash-b"], "then both land, in order");
+  db.close();
+});
+
+Deno.test("state - a write that throws keeps the record and drops its writer", async () => {
+  const db = openStateDB();
+  const written: Array<{ in_flight_apply?: Array<{ path_hash: string }> }> = [];
+  db.setSyncCursorPersist((json) => {
+    written.push(JSON.parse(json));
+  });
+  const pathHash = ENTRY.path_hash;
+
+  // The write throws (a locked file, a full disk): its writer must be released, or the path
+  // stays gated for the session on a writer that will never return, and the record must
+  // reach the next start so its bytes are never committed.
+  await recordedWrite(
+    db,
+    { mac_key: new Uint8Array(32) } as never,
+    ENTRY.path as string,
+    new Uint8Array([1, 2, 3]),
+    () => Promise.reject(new Error("write failed")),
+    pathHash,
+  ).catch(() => {});
+
+  assertEquals(db.isTorn(pathHash), true, "the record keeps the path gated");
+  assertEquals(
+    written[written.length - 1].in_flight_apply?.map((entry) => entry.path_hash),
+    [pathHash],
+    "and the record is persisted, so the next start resolves it",
+  );
+
+  // A retry that lands settles it, in the same session.
+  await recordedWrite(
+    db,
+    { mac_key: new Uint8Array(32) } as never,
+    ENTRY.path as string,
+    new Uint8Array([1, 2, 3]),
+    () => Promise.resolve(),
+    pathHash,
+  );
+  assertEquals(db.isTorn(pathHash), false, "a write that landed clears the record");
+  assertEquals(written[written.length - 1].in_flight_apply, undefined);
+  db.close();
+});
+
+Deno.test("state - a slow progress write does not wedge the chain", async () => {
+  const time = new FakeTime();
+  try {
+    const db = openStateDB();
+    let release!: () => void;
+    const slow = new Promise<void>((resolve) => release = resolve);
+    let first = true;
+    db.setSyncCursorPersist(async () => {
+      if (first) {
+        first = false;
+        await slow;
+      }
+    });
+
+    db.advanceSyncCursor(1); // a progress write, not a record write
+    await time.tickAsync(10_000);
+    release();
+    await time.runAllAsync();
+
+    // The chain is not wedged: a record write still lands.
+    await db.beginWrite(ENTRY);
+    await db.endWrite(ENTRY.path_hash);
+    assertEquals(db.getInterruptedWrites(), [], "the record was written and cleared");
+    db.close();
+  } finally {
+    time.restore();
+  }
+});
+
+Deno.test("state - a record write that never answers wedges the chain until it settles", async () => {
+  const time = new FakeTime();
+  try {
+    const db = openStateDB();
+    let release!: () => void;
+    const hung = new Promise<void>((resolve) => release = resolve);
+    let block = true;
+    db.setSyncCursorPersist(async () => {
+      if (block) await hung;
+    });
+
+    const stuck = db.beginWrite(ENTRY).catch((error) => error as Error);
+    await time.tickAsync(10_000);
+    assert(await stuck instanceof Error, "the record write fails closed");
+    const refused = await db.beginWrite({ ...ENTRY, path_hash: "hash-b" }).catch((e) => e as Error);
+    assertEquals(
+      (refused as Error).message.includes("wedged"),
+      true,
+      "a wedged chain refuses at once instead of waiting it out",
+    );
+
+    // The hung write finally settles: the chain is usable again.
+    block = false;
+    release();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    await db.beginWrite({ ...ENTRY, path_hash: "hash-c" });
+    await db.endWrite("hash-c");
+    db.close();
+  } finally {
+    time.restore();
+  }
+});
+
+Deno.test("state - a wedged chain fails later writes at once, not one wait each", async () => {
+  const time = new FakeTime();
+  try {
+    const db = openStateDB();
+    db.setSyncCursorPersist(() => new Promise<void>(() => {})); // the bridge never answers
+
+    const first = db.beginWrite(ENTRY).catch((error) => error);
+    await Promise.resolve();
+    time.tick(10_000);
+    assert(await first instanceof Error, "the first caller waits out the bound and fails closed");
+
+    // A drain of 45 files must not spend 45 waits on a chain that cannot move.
+    const second = db.beginWrite({ ...ENTRY, path_hash: "hash-b" }).catch((error) => error);
+    const outcome = await second; // no clock tick: it must reject on its own
+    assert(outcome instanceof Error, "the next caller fails at once");
+    assertEquals((outcome as Error).message.includes("wedged"), true);
+    db.close();
+  } finally {
+    time.restore();
+  }
+});
+
+Deno.test("state - re-attaching a state lets its writes through again", async () => {
+  const db = openStateDB();
+  const written: string[] = [];
+  db.close();
+  db.setSyncCursorPersist((json) => {
+    written.push(json);
+  });
+  // #744/#59: a session that re-attaches a closed state (re-key, resume) writes again.
+  await db.beginWrite(ENTRY);
+  assertEquals(written.length, 1);
+  await db.endWrite("hash-a");
+  assertEquals(written.length, 2);
 });

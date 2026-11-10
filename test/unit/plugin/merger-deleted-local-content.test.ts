@@ -4,7 +4,8 @@ import { chunk } from "../../../core/chunker.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode, type ServerVersion, type VersionRecord } from "../../../core/protocol.ts";
 import { orchestrateMerge } from "../../../plugin/sync/merger.ts";
-import { openStateDB, StateDB } from "../../../plugin/plumbing/state.ts";
+import { StateDB } from "../../../plugin/plumbing/state.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #590: a row can say "deleted" while the file is back on disk (a name renamed
 // away and then reused, a re-created file). A tombstone head must not resolve as
@@ -79,7 +80,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     closedRow(state);
     const { deps, writes, commits } = makeDeps(keys, state);
     const local = new TextEncoder().encode("head\nRN0-19\nbody\n");
@@ -110,7 +111,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     closedRow(state);
     const { deps, writes, commits } = makeDeps(keys, state);
 
@@ -181,7 +182,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     closedRow(state);
     const server = await contentVersion(keys, "head\nRN1-17\nbody\n", 2);
     const { deps, writes, commits } = makeDeps(keys, state, server.blobs, (p) => p === PATH);
@@ -219,7 +220,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     closedRow(state);
     const server = await contentVersion(keys, "head\nRN1-17\nbody\n", 2);
     // The adapter still answers a read for bytes it has already removed (mobile cache
@@ -250,7 +251,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     closedRow(state);
     const server = await contentVersion(keys, "head\nRN1-17\nbody\n", 2);
     // Present on disk with no bytes: a create is still a create (only the content is

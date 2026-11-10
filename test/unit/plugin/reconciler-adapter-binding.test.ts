@@ -1,7 +1,7 @@
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { assert } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * isSyncable that mirrors plugin/plumbing/settings-types.ts behavior.
@@ -80,7 +80,7 @@ Deno.test("reconciler calls adapter.list bound (mobile crash regression)", async
   vault.write("a.md", "# Hello");
   vault.write("sub/b.md", "world");
 
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {

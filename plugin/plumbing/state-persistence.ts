@@ -1,4 +1,4 @@
-import type { LocalFileRow, StateDB } from "./state.ts";
+import type { InFlightWrite, LocalFileRow, StateDB } from "./state.ts";
 
 export interface StatePaths {
   localFiles: string;
@@ -9,10 +9,12 @@ export interface PersistedState {
   persisted: LocalFileRow[] | null;
   persistedCursor: number | null;
   lastBackupAt: number;
+  /** #59: the writes a killed session left for the start pass to resolve. */
+  interruptedWrites: InFlightWrite[];
 }
 
 type ReadFn = (path: string) => Promise<ArrayBuffer | Uint8Array>;
-type WriteFn = (path: string, bytes: Uint8Array) => void;
+type WriteFn = (path: string, bytes: Uint8Array) => void | Promise<void>;
 
 function readJsonFile<T>(read: ReadFn, path: string): Promise<T | null> {
   return (async (): Promise<T | null> => {
@@ -27,13 +29,29 @@ function parseLastBackupAt(cursorObj: { last_backup_at?: unknown } | null): numb
   return typeof v === "number" ? v : 0;
 }
 
+/** #59: the recorded writes; absent, torn, or an older shape (bare path hashes) → none. */
+function parseInterruptedWrites(
+  cursorObj: { in_flight_apply?: unknown } | null,
+): InFlightWrite[] {
+  const v = cursorObj?.in_flight_apply;
+  if (!Array.isArray(v)) return [];
+  return v.filter((entry): entry is InFlightWrite =>
+    typeof entry === "object" && entry !== null &&
+    typeof (entry as InFlightWrite).path === "string" &&
+    typeof (entry as InFlightWrite).path_hash === "string" &&
+    typeof (entry as InFlightWrite).expected_plaintext_hash === "string"
+  );
+}
+
 export async function loadPersistedState(
   read: ReadFn,
   paths: StatePaths,
 ): Promise<PersistedState> {
   const [localFiles, cursorObj] = await Promise.all([
     readJsonFile<LocalFileRow[]>(read, paths.localFiles),
-    readJsonFile<{ last_seen_seq?: unknown; last_backup_at?: unknown } | null>(read, paths.cursor),
+    readJsonFile<
+      { last_seen_seq?: unknown; last_backup_at?: unknown; in_flight_apply?: unknown } | null
+    >(read, paths.cursor),
   ]);
 
   const persistedCursor: number | null =
@@ -45,6 +63,7 @@ export async function loadPersistedState(
     persisted: localFiles,
     persistedCursor,
     lastBackupAt: parseLastBackupAt(cursorObj),
+    interruptedWrites: parseInterruptedWrites(cursorObj),
   };
 }
 
@@ -61,6 +80,10 @@ export function wireStatePersistence(
   write: WriteFn,
   paths: StatePaths,
 ): void {
-  state.setPersist((json) => write(paths.localFiles, new TextEncoder().encode(json)));
+  // Rows persist on a throttle and are never awaited; the cursor is, when a batch has to
+  // be durable before it writes (#59).
+  state.setPersist((json) => {
+    void write(paths.localFiles, new TextEncoder().encode(json));
+  });
   state.setSyncCursorPersist((json) => write(paths.cursor, new TextEncoder().encode(json)));
 }

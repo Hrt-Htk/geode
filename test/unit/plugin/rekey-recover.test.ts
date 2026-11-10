@@ -6,11 +6,12 @@ import { checkVerifier, deriveKeys, makeVerifier } from "../../../core/crypto.ts
 import { hashPathHex } from "../../../core/hash.ts";
 import { b64encode } from "../../../core/protocol.ts";
 import { setHttpImpl } from "../../../plugin/plumbing/provisioning-client.ts";
-import { type LocalFileRow, openStateDB } from "../../../plugin/plumbing/state.ts";
+import { type LocalFileRow } from "../../../plugin/plumbing/state.ts";
 import {
   rebuildLocalFileRows,
   unlockAfterRemoteRekey,
 } from "../../../plugin/sync/rekey-recover.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 const FAST = { opsLimit: 1, memLimit: 8192 };
 
@@ -64,7 +65,7 @@ Deno.test("rekey-recover - unlock verifies with the new params and rebuilds the 
   const verifierB64 = b64encode(await makeVerifier(newKeys));
   stubVaultInfo({ salt: b64encode(salt), verifier: verifierB64, argon2_ops: 5, argon2_mem: 16384 });
 
-  const state = openStateDB([row(), row({ path: "b.png", last_seen_version: 7 })]);
+  const state = openSessionStateDB([row(), row({ path: "b.png", last_seen_version: 7 })]);
   state.updateSyncCursor(42);
   const result = await unlockAfterRemoteRekey({
     serverUrl: "http://geode.test",
@@ -96,7 +97,7 @@ Deno.test("rekey-recover - a wrong passphrase is refused", async () => {
   const newKeys = await deriveKeys("newpass", salt, FAST);
   const verifierB64 = b64encode(await makeVerifier(newKeys));
   stubVaultInfo({ salt: b64encode(salt), verifier: verifierB64, argon2_ops: 1, argon2_mem: 8192 });
-  const state = openStateDB([row()]);
+  const state = openSessionStateDB([row()]);
   await assertRejectsLocal(
     () =>
       unlockAfterRemoteRekey({

@@ -11,6 +11,7 @@ import { generateConflictPath } from "./conflicts.ts";
 import {
   plaintextHashOf,
   readVaultBinary,
+  recordedWrite,
   removeVaultPath,
   renameableFile,
   renameVaultFile,
@@ -128,7 +129,13 @@ async function keepNextToDestination(
   // A rename fires no create: writing the bytes at the sibling is what makes its modify
   // event commit it. Read them back first, so an autosave since the rename is not reverted.
   const bytes = (renamed ? await readVaultBinary(conflictPath, deps.vault) : null) ?? body;
-  await writeVaultBinary(conflictPath, bytes, Date.now(), deps.vault);
+  await recordedWrite(
+    deps.state,
+    deps.keys,
+    conflictPath,
+    bytes,
+    () => writeVaultBinary(conflictPath, bytes, Date.now(), deps.vault),
+  );
   if (!renamed) await dropOldName(from, to, deps);
   log.info("renamed-away edit kept next to the new name", { from, to, conflictPath });
   return { kind: "kept", conflictPath };
@@ -143,11 +150,13 @@ async function moveNextToDestination(
 ): Promise<void> {
   if (!await moveByRename(from, to, deps)) {
     deps.suppressSelfWrite(to);
-    await writeVaultBinary(
+    const mtime = deps.state.getLocalFile(from)?.mtime ?? Date.now();
+    await recordedWrite(
+      deps.state,
+      deps.keys,
       to,
       body,
-      deps.state.getLocalFile(from)?.mtime ?? Date.now(),
-      deps.vault,
+      () => writeVaultBinary(to, body, mtime, deps.vault),
     );
     await dropOldName(from, to, deps);
   }
@@ -247,7 +256,12 @@ async function dropOldName(from: string, to: string, deps: RenameCarryDeps): Pro
 export async function dropOldSpelling(
   from: string,
   to: string,
-  deps: { vault: Vault; suppressSelfWrite: (path: string) => void },
+  deps: {
+    vault: Vault;
+    state: StateDB;
+    keys: VaultKeys;
+    suppressSelfWrite: (path: string) => void;
+  },
 ): Promise<void> {
   if (await readVaultBinary(from, deps.vault) === null) return;
   const keep = await readVaultBinary(to, deps.vault);
@@ -255,7 +269,13 @@ export async function dropOldSpelling(
   await removeVaultPath(from, deps.vault);
   if (keep === null || await readVaultBinary(to, deps.vault) !== null) return;
   deps.suppressSelfWrite(to);
-  await writeVaultBinary(to, keep, Date.now(), deps.vault);
+  await recordedWrite(
+    deps.state,
+    deps.keys,
+    to,
+    keep,
+    () => writeVaultBinary(to, keep, Date.now(), deps.vault),
+  );
 }
 
 function isCaseOnlyPath(from: string, to: string): boolean {

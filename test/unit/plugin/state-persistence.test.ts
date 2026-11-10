@@ -299,7 +299,7 @@ Deno.test("readLastBackupAt - missing file / absent field → 0", async () => {
 
 // --- wireStatePersistence tests ---
 
-Deno.test("wireStatePersistence - persist callbacks wire to correct paths", () => {
+Deno.test("wireStatePersistence - persist callbacks wire to correct paths", async () => {
   const time = new FakeTime();
   try {
     const db = openStateDB();
@@ -325,6 +325,7 @@ Deno.test("wireStatePersistence - persist callbacks wire to correct paths", () =
     time.tick(2000); // local-files throttle fires
 
     db.updateSyncCursor(99); // cursor persists immediately: not throttled
+    await db.drainCursorWrites();
 
     assertEquals(calls.length, 2);
     assertEquals(calls[0].path, "data/local-files.json");

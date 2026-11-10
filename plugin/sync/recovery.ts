@@ -9,7 +9,8 @@ import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
 import { reassemble } from "../../core/reassemble.ts";
 import { mapWithConcurrency } from "../../core/concurrency.ts";
 import { hashPathHex } from "../../core/hash.ts";
-import { applyVersion } from "./apply.ts";
+import { type ApplyDeps, applyVersion } from "./apply.ts";
+import { resolveInterruptedWrites } from "./interrupted-writes.ts";
 import type { PendingMoveOut } from "../plumbing/scope-pending.ts";
 import { removeVaultPath, type Vault } from "./vault-io.ts";
 import { log } from "../plumbing/log.ts";
@@ -107,6 +108,17 @@ export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStat
   const onLocalEdit = keepAndTrust(kept, trusted);
   const isTrusted = trustPolicy(prepared, trusted);
 
+  // #59: resolve what a killed session left BEFORE the head loop. A recorded path parks an
+  // apply (its bytes are the pass's to judge), and the rebuild would then count that head as
+  // applied and jump the cursor past it.
+  await resolveInterruptedWrites({
+    state: deps.state,
+    keys: deps.keys,
+    vaultId: deps.vaultId,
+    apply: rebuildApplyDeps(deps, onLocalEdit, isTrusted),
+    chainHead: async (pathHash) => (await deps.transport.getVersionChain(pathHash))[0] ?? null,
+  });
+
   // Heads are independent per path_hash: apply with bounded concurrency.
   // Each applyVersion advances its own sync cursor; we take the max at the end.
   const indexedHeads = heads.map((h, i) => ({ head: h, index: i }));
@@ -196,7 +208,24 @@ async function applyHead(
   onLocalEdit: (path: string) => void,
   isTrusted: ((path: string) => boolean) | undefined,
 ): Promise<void> {
-  await applyVersion(headToServerVersion(head, deps.vaultId), {
+  await applyVersion(
+    headToServerVersion(head, deps.vaultId),
+    rebuildApplyDeps(
+      deps,
+      onLocalEdit,
+      isTrusted,
+    ),
+  );
+}
+
+/** The rebuild's apply deps: a head the device did not change is re-applied over its own
+ * bytes, and a rejoin trusts only the bytes it vouched for. */
+function rebuildApplyDeps(
+  deps: ResyncDeps,
+  onLocalEdit: (path: string) => void,
+  isTrusted: ((path: string) => boolean) | undefined,
+): ApplyDeps {
+  return {
     vault: deps.vault,
     state: deps.state,
     keys: deps.keys,
@@ -225,7 +254,7 @@ async function applyHead(
     // #701 review: heads apply in parallel here, so the disk can change between apply's
     // read and its write (a rename's carried edit landing): re-read before writing.
     recheckDiskBeforeWrite: true,
-  });
+  };
 }
 
 /** #584: a parked move's row is its anchor: the marker's parent version, the "still

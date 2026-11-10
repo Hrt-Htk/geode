@@ -6,6 +6,7 @@ import { normalizeForHash, normalizeMarkdownLineEndings, stripBOM } from "../../
 import { reassemble } from "../../core/reassemble.ts";
 import { log } from "../plumbing/log.ts";
 import { StateDB } from "../plumbing/state.ts";
+import { recordedWrite } from "./vault-io.ts";
 import { Transport } from "./transport.ts";
 import { conflictDeviceLabel, conflictDeviceName, generateConflictPath } from "./conflicts.ts";
 import type { ActivityRecord } from "./activity-log.ts";
@@ -196,7 +197,7 @@ export interface SurfaceConflictInput {
 // so a crash between the two never loses local content.
 export async function surfaceConflict(
   input: SurfaceConflictInput,
-  deps: { vault: Vault; state: StateDB; deviceName: string },
+  deps: { vault: Vault; state: StateDB; deviceName: string; keys: VaultKeys },
 ): Promise<string> {
   // A same-second collision would overwrite a DIFFERENT conflict's edit, so a
   // counter inside the marker disambiguates. A re-surface of the SAME conflict
@@ -224,8 +225,24 @@ export async function surfaceConflict(
     if (same) break;
     conflictPath = generateConflictPath(input.path, deps.deviceName, ts, n);
   }
-  await deps.vault.adapter.writeBinary(conflictPath, input.localContent);
-  await deps.vault.adapter.writeBinary(input.path, input.serverContent);
+  // #59: both writes are bytes the user did not type, so each is recorded before it starts.
+  // The sibling first: a crash between the two must never lose the local content.
+  const serverHash = blake3Hex(normalizeForHash(input.path, input.serverContent));
+  await recordedWrite(
+    deps.state,
+    deps.keys,
+    conflictPath,
+    input.localContent,
+    () => deps.vault.adapter.writeBinary(conflictPath, input.localContent),
+  );
+  await recordedWrite(
+    deps.state,
+    deps.keys,
+    input.path,
+    input.serverContent,
+    () => deps.vault.adapter.writeBinary(input.path, input.serverContent),
+    input.pathHash,
+  );
   deps.state.upsertLocalFile({
     path: input.path,
     path_hash: input.pathHash,
@@ -233,7 +250,7 @@ export async function surfaceConflict(
     mtime: Date.now(),
     // Same identity hash the reconciler compares (blake3Hex(normalizeForHash));
     // hashing the raw blob would differ for markdown with CRLF and re-commit.
-    plaintext_hash: blake3Hex(normalizeForHash(input.path, input.serverContent)),
+    plaintext_hash: serverHash,
     last_seen_version: input.serverVersion,
     chunk_hashes: input.chunkHashes,
   });
@@ -255,7 +272,15 @@ export async function orchestrateMerge(
 
   switch (outcome.kind) {
     case "clean": {
-      await deps.vault.adapter.writeBinary(input.path, outcome.merged);
+      // #59: a merged write is bytes the user did not type: record it before writing.
+      await recordedWrite(
+        deps.state,
+        deps.keys,
+        input.path,
+        outcome.merged,
+        () => deps.vault.adapter.writeBinary(input.path, outcome.merged),
+        input.pathHash,
+      );
       const mergedHash = blake3Hex(outcome.merged);
       deps.recordActivity?.({
         path: input.path,
@@ -293,7 +318,7 @@ export async function orchestrateMerge(
           chunkHashes: input.serverVersion.chunk_hashes,
           reason: outcome.reason,
         },
-        { vault: deps.vault, state: deps.state, deviceName: deps.deviceName },
+        { vault: deps.vault, state: deps.state, deviceName: deps.deviceName, keys: deps.keys },
       );
       deps.recordActivity?.({
         path: input.path,

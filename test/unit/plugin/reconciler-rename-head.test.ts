@@ -1,11 +1,12 @@
 import { assert, assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { RENAME_MARKER } from "../../../core/protocol.ts";
 import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #583 PR 3: the server's head decides whether a vanished tracked name is a delete at
 // all: a marker means the name was renamed away (never a delete), an unreachable head
@@ -66,7 +67,7 @@ async function reconcile(
 
 Deno.test("reconciler never deletes a name whose server head is already a rename marker", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     vault.write("a.md", "body");
     seed(vault, state, "a.md", "body");
@@ -87,7 +88,7 @@ Deno.test("reconciler never deletes a name whose server head is already a rename
 
 Deno.test("reconciler falls back to delete + create when the tracked row is stale", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // Tracked as "before the edit"; the file then took an edit and moved while the app
     // was closed, so the two sides cannot share a hash and pairing would be a guess.
@@ -115,7 +116,7 @@ Deno.test("reconciler falls back to delete + create when the tracked row is stal
 
 Deno.test("reconciler emits the plain delete when the head cannot be fetched (offline)", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     vault.write("a.md", "body");
     seed(vault, state, "a.md", "body");
@@ -137,7 +138,7 @@ Deno.test("reconciler emits the plain delete when the head cannot be fetched (of
 
 Deno.test("reconciler bounds the head lookups a delete pass issues", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // Enough live files that the batch stays under the mass-delete ratio, so the pass
     // actually emits ops instead of holding them.
@@ -174,7 +175,7 @@ Deno.test("reconciler bounds the head lookups a delete pass issues", async () =>
 
 Deno.test("reconciler pairs a rename onto a name whose row already closed (#583 reused name)", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // The source closed its row by moving away earlier; the destination name was used
     // and closed before too (a reused name), and a file is back on it now.
@@ -201,7 +202,7 @@ Deno.test("reconciler pairs a rename onto a name whose row already closed (#583 
 
 Deno.test("reconciler commits a re-created name as a create, not a modify", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     vault.write("back.md", "new content");
     seed(vault, state, "back.md", "old content");
@@ -221,7 +222,7 @@ Deno.test("reconciler commits a re-created name as a create, not a modify", asyn
 
 Deno.test("reconciler leaves a rename the event layer already holds to it", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // The user renamed X.md to Y.md with the app open: the event layer queued the
     // marker and the note. A reconcile pass that runs before they land must not pair

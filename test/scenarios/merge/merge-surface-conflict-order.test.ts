@@ -3,6 +3,14 @@ import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { surfaceConflict } from "../../../plugin/sync/merger.ts";
 import type { StateDB } from "../../../plugin/plumbing/state.ts";
+import type { VaultKeys } from "../../../core/crypto.ts";
+
+/** Keys and a state slice for the two recorded writes surfaceConflict performs (#59). */
+const KEYS = { mac_key: new Uint8Array(32) } as VaultKeys;
+const record = {
+  beginWrite: () => Promise.resolve(),
+  endWrite: () => Promise.resolve(),
+};
 
 // The shared conflict-surfacing helper (used by both orchestrateMerge and the
 // merge-retry fallback) writes the LOCAL copy to the conflict file BEFORE the
@@ -27,10 +35,16 @@ Deno.test({
       },
     } as never;
     let upserted: unknown = null;
+    const recorded: string[] = [];
     const state = {
       upsertLocalFile: (f: unknown) => {
         upserted = f;
       },
+      beginWrite: (entry: { path: string }) => {
+        recorded.push(entry.path);
+        return Promise.resolve();
+      },
+      endWrite: () => Promise.resolve(),
     } as unknown as StateDB;
 
     let threw = false;
@@ -45,7 +59,7 @@ Deno.test({
           chunkHashes: ["c1"],
           reason: "test",
         },
-        { vault, state, deviceName: "Laptop" },
+        { vault, state, deviceName: "Laptop", keys: KEYS },
       );
     } catch {
       threw = true;
@@ -53,6 +67,11 @@ Deno.test({
 
     assertEquals(threw, true, "path write crash propagates");
     assertEquals(writes.length, 2, "two writes attempted");
+    // #59: both writes are recorded, and the sibling is recorded (and written) first, so a
+    // kill between them leaves the local content recoverable and resolvable.
+    assertEquals(recorded.length, 2, "both untyped writes are recorded");
+    assertEquals(recorded[0].startsWith("note (conflict Laptop "), true, "sibling recorded first");
+    assertEquals(recorded[1], "note.md", "then the path");
     assertEquals(
       writes[0].path.startsWith("note (conflict Laptop "),
       true,
@@ -85,6 +104,7 @@ Deno.test({
       upsertLocalFile: (f: { plaintext_hash: string }) => {
         upserted = f;
       },
+      ...record,
     } as unknown as StateDB;
     const serverContent = new TextEncoder().encode("a\r\nb\r\n");
 
@@ -96,7 +116,7 @@ Deno.test({
       serverVersion: 2,
       chunkHashes: [],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(upserted!.plaintext_hash, blake3Hex(normalizeForHash("note.md", serverContent)));
   },
@@ -124,7 +144,7 @@ Deno.test({
         },
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -134,7 +154,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6} 2\)\.md$/.test(writes[0].path),
@@ -164,7 +184,7 @@ Deno.test({
         exists: () => true,
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -174,7 +194,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6}\)\.md$/.test(writes[0].path),
@@ -206,7 +226,7 @@ Deno.test({
         exists: () => true,
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -216,7 +236,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6}\)\.md$/.test(writes[0].path),
@@ -244,7 +264,7 @@ Deno.test({
         exists: () => true,
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -254,7 +274,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6}\)\.md$/.test(writes[0].path),

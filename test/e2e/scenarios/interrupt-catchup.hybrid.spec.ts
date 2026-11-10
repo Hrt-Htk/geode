@@ -17,6 +17,79 @@ const N = 90;
 
 const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
+/** Rows the phone's session tracks: null until the session has opened its state, which
+ * happens after unlock, so a read here must never assume `state` exists (#59 symptom 5). */
+async function appliedRows(phone: PhoneDevice): Promise<number | null> {
+  return await phone.eval<number | null>(
+    "app.plugins.plugins.geode.state ? app.plugins.plugins.geode.state.getAllLocalFiles().size : null",
+  );
+}
+
+/** Wait for the relaunched session to open its state before anything reads it. */
+async function waitForState(phone: PhoneDevice, timeoutMs = 120_000): Promise<void> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await appliedRows(phone) !== null) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error("timeout waiting for the session state to open after relaunch");
+}
+
+/** #59: the phone's own log, attached to a failure so the next device failure is readable
+ * without a live session. Says WHY it is empty: no plugin (not loaded), no entries (the ring
+ * is empty), or the eval error text. */
+type PhoneDiagnostics = {
+  pluginLoaded: boolean;
+  entries: number;
+  tail: string[];
+  evalError: string | null;
+  conflictFiles: string[];
+};
+
+async function diagnostics(phone: PhoneDevice): Promise<string> {
+  const diag = await phone.eval<PhoneDiagnostics>(`(() => {
+    const plugin = app.plugins.plugins.geode;
+    if (!plugin) return { pluginLoaded: false, entries: 0, tail: [], evalError: null, conflictFiles: [] };
+    let tail = [];
+    let evalError = null;
+    let count = 0;
+    try {
+      const entries = plugin.getRecentLog ? plugin.getRecentLog() : [];
+      tail = entries.slice(-40).map((entry) => JSON.stringify(entry));
+      count = entries.length;
+    } catch (error) {
+      evalError = String(error);
+      count = -1;
+    }
+    let conflictFiles = [];
+    try {
+      conflictFiles = app.vault.getFiles().map((f) => f.path).filter((p) => p.includes("(conflict"));
+    } catch (error) {
+      evalError = (evalError ? evalError + " / " : "") + String(error);
+    }
+    return { pluginLoaded: true, entries: count, tail, evalError, conflictFiles };
+  })()`).catch((error) => ({
+    pluginLoaded: false,
+    entries: -1,
+    tail: [],
+    evalError: `eval failed: ${String(error)}`,
+    conflictFiles: [],
+  }));
+  const why = !diag.pluginLoaded
+    ? "the geode plugin is not loaded (app.plugins.plugins.geode is missing)"
+    : diag.entries === 0
+    ? "the plugin is loaded but its in-memory log ring is empty"
+    : diag.entries < 0
+    ? "getRecentLog() threw"
+    : `${diag.entries} entries in the ring`;
+  return [
+    `log: ${why}${diag.evalError ? ` (${diag.evalError})` : ""}`,
+    `conflict files: ${JSON.stringify(diag.conflictFiles)}`,
+    "phone log tail:",
+    ...(diag.tail.length > 0 ? diag.tail : ["<none>"]),
+  ].join("\n");
+}
+
 /** The same first-`n` files the hybrid fixture seeds (sorted relative path, .md only). */
 async function seededFiles(n: number): Promise<{ path: string; content: string }[]> {
   const sourceDir = process.env.GEODE_SEED_VAULT_DIR!;
@@ -46,7 +119,7 @@ test("issue493 (hybrid): force-stop phone mid backlog catch-up → relaunch → 
     const startedAt = Date.now();
     let applied = 0;
     while (Date.now() - startedAt < 300_000) {
-      applied = await phone.eval<number>("app.plugins.plugins.geode.state.getAllLocalFiles().size");
+      applied = await appliedRows(phone) ?? 0;
       if (applied >= N / 2) break;
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -56,17 +129,16 @@ test("issue493 (hybrid): force-stop phone mid backlog catch-up → relaunch → 
     /* Force-stop, relaunch, re-attach. */
     await phone.relaunch();
     await unlockIfLocked(phone, PASSPHRASE);
+    await waitForState(phone);
     /* Convergence signal: the full backlog applied ("synced" can flash earlier). */
     const settleStart = Date.now();
     while (Date.now() - settleStart < 420_000) {
-      const applied = await phone.eval<number>(
-        "app.plugins.plugins.geode.state.getAllLocalFiles().size",
-      );
+      const applied = await appliedRows(phone) ?? 0;
       if (applied >= N) break;
       await new Promise((r) => setTimeout(r, 500));
     }
     expect(
-      await phone.eval<number>("app.plugins.plugins.geode.state.getAllLocalFiles().size"),
+      await appliedRows(phone),
       "full backlog must be applied after relaunch",
     ).toBeGreaterThanOrEqual(N);
     await waitForStatusBar(phone, "Geode: synced", 120_000);
@@ -83,6 +155,12 @@ test("issue493 (hybrid): force-stop phone mid backlog catch-up → relaunch → 
     expect(serverVersionCount(dataDir, vaultId)).toBe(countBefore);
     const lastSeen = await phone.eval<number>("app.plugins.plugins.geode.getLastSeenSeq()");
     expect(lastSeen, "cursor must not skip versions").toBe(serverMaxSeq(dataDir, vaultId));
+  } catch (error) {
+    await test.info().attach("phone-diagnostics", {
+      body: await diagnostics(phone),
+      contentType: "text/plain",
+    });
+    throw error;
   } finally {
     await pair.stop();
   }

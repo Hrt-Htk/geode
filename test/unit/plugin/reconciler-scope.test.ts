@@ -1,8 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // A local delete inside an excluded folder must NOT propagate (#342): the
 // reconciler's delete candidates skip out-of-scope paths.
@@ -45,7 +46,7 @@ async function runReconcile(
 
 Deno.test("reconciler - local delete inside excluded folder does not propagate", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   vault.write("excluded/a.md", "content a");
   seedFile(vault, state, "excluded/a.md");
   vault.delete("excluded/a.md"); // user deleted it locally while excluded
@@ -56,7 +57,7 @@ Deno.test("reconciler - local delete inside excluded folder does not propagate",
 
 Deno.test("reconciler - local delete in scope still propagates", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   vault.write("notes/a.md", "content a");
   seedFile(vault, state, "notes/a.md");
   vault.delete("notes/a.md");
@@ -67,7 +68,7 @@ Deno.test("reconciler - local delete in scope still propagates", async () => {
 
 Deno.test("reconciler - edits inside excluded folder are not pushed", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   vault.write("excluded/a.md", "content a");
   seedFile(vault, state, "excluded/a.md");
   vault.write("excluded/a.md", "edited while excluded");

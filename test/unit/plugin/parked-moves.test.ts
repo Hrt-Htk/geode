@@ -1,8 +1,8 @@
 import { assertEquals } from "@std/assert";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { DEFAULT_SETTINGS, type PluginSettings } from "../../../plugin/plumbing/settings-types.ts";
 import { ParkedMoves } from "../../../plugin/sync/parked-moves.ts";
 import type { PendingOp } from "../../../plugin/sync/commit-queue.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 const PARKED = {
   oldPath: "notes/x.md",
@@ -12,7 +12,7 @@ const PARKED = {
 
 /** One parked move whose destination folder is excluded, plus a live row for its name. */
 function harness(existsOnDisk: boolean) {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   state.upsertLocalFile({
     path: PARKED.oldPath,
     path_hash: "h",

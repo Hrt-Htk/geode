@@ -99,7 +99,7 @@ cursor, and `state-persistence.ts` mirrors them to JSON files in the plugin data
 | File | Holds |
 | --- | --- |
 | `local-files.json` | one row per path: `path_hash`, `size`, `mtime`, `plaintext_hash`, `last_seen_version`, `chunk_hashes`, `deleted` |
-| `sync-cursor.json` | `last_seen_seq` + `last_backup_at` (plus a fixed `vault_id: "default"`) |
+| `sync-cursor.json` | `last_seen_seq` + `last_backup_at` (plus a fixed `vault_id: "default"`), and `in_flight_apply` while a write of downloaded or merged bytes is in flight (#59) |
 | `activity-log.json` | the per-device activity log behind the activity modal |
 | `rekey-cursor.json` | resume cursor of an open re-key run (#559) |
 
@@ -107,6 +107,15 @@ Rules:
 
 - **Row writes are throttled** (2 s trailing), so a drain costs O(seconds) writes, not O(files) (#328).
   The sync cursor is written immediately: a stale cursor would replay past an applied edit.
+- **Every write of bytes this device did not type is recorded before it starts** (#59): one entry
+  `{path, path_hash, expected_plaintext_hash}`, written (and awaited) by `recordedWrite` immediately
+  before that path's write and cleared right after it returns. Rows persist on the throttle, so
+  without that record a force-stop mid-write leaves a torn file whose row never landed, which reads as
+  a local create. A write that cannot be recorded does not happen (fail closed), and cursor writes ride
+  one chain in order, so a slow one can never land after a newer one; a caller waits at most 10 s for
+  its own write and then fails closed, while the chain keeps the hung write in place. Network fetches
+  are bounded (60 s) so a silent socket fails an apply before it writes anything, and applies stay
+  serial.
 - **Ordered cursor advance**: only a contiguous run from the current cursor is persisted. An
   unaccounted seq halts the run, so a transient apply failure cannot be leap-frogged (#369).
 - **No temp-file-plus-rename on the state path**: it starved the mobile FS bridge (#181). A torn file
@@ -261,6 +270,7 @@ inputs: localFiles (state rows), disk (adapter.list, or getAllLoadedFiles + the 
 
 # Pass 1: disk → state
 for each disk file in sync scope:
+  if a download batch is writing it, or a killed one left it (#59): → nothing
   if no row, or the row is closed:            → create candidate
   if row.last_seen_version == 0:              → modify (a rename carried an edit here, #613)
   if mtime matches the row (markdown only):   → skip
@@ -270,7 +280,8 @@ for each disk file in sync scope:
 # Pass 2: state → disk (deletes)
 for each row not closed and not in scope now:
   skip if the file is on disk, if this device already queued a rename of it, if this
-  device already queued a plain delete of it, or if the server head is a rename marker;
+  device already queued a plain delete of it, if a download batch is writing it (#59),
+  or if the server head is a rename marker;
   otherwise → delete candidate
   (one server round trip per candidate, at most 8 in flight)
 
@@ -338,6 +349,47 @@ applyVersion(v):
 
   else: reassemble → write via the vault IO layer → update the row + cursor
 ```
+
+**A kill mid-write leaves a fragment, not an edit (#59).** A download, a merge result, a history
+restore, a kept conflict sibling and a rejoin backup copy all go through `recordedWrite`, which records
+the path (with the hash the bytes are meant to have) right before the write and clears it right after.
+One pass at the next connection resolves every entry, and clears each one it resolved, so no path is
+ever frozen by a stale record:
+
+| Disk holds | Resolution |
+| --- | --- |
+| nothing on disk (positively absent) | the write never reached the disk: clear; an UNREADABLE file is not absence and stays recorded |
+| the server head | the write landed: clear |
+| the row's hash | nothing was written: clear, force nothing |
+| the entry's expected hash | the write completed and the commit/merge after it did not run: clear, the normal reconciler takes the bytes (with or without a head) |
+| shorter than the entry's expected size, no head | a torn copy of this device's own: removed |
+| a strict prefix of the head's bytes | torn: the head is applied over it (the record is still up, so the apply never reads the fragment as an edit) |
+| anything else, with a head | an edit made outside Obsidian after the kill: kept as a local edit, never overwritten (the divergent-edit path merges or conflicts it) |
+| anything else, no head | somebody else's bytes on a path the server never had: kept, never deleted. Heads are never compacted away, so no head means this device's own copy at most |
+
+An entry the pass could not resolve (the server did not answer, or a vault write errored) stays
+recorded, and with it gated, and the next connection tries again: that only waits while nothing can
+sync anyway. While it is unresolved, a version for that path is **parked** (not applied; the cursor
+stays behind it), because the bytes on disk may be an edit made outside Obsidian, and only the pass
+may judge them. When the pass resolves that record in the same session, the parked versions are
+re-applied through the same serialized queue, so the cursor advances then, not at the next
+connection. A pass that a bound abandoned keeps running: the next pass skips the entries such a
+pass still owns, so two writers never resolve one path at once.
+
+The pass as a whole is bounded (10 s): it is the only thing that rewrites a file a killed process left
+mid-write, which is where a mobile FS bridge can wedge on the handle the dead process held. A wedged
+pass costs one wait, never the session; everything it did not get to stays parked and gated, and the
+abandoned pass keeps running: what it resolves in this session releases its parked versions, and the
+rest is retried at the next connection. Its verdicts are local where they can be (nothing on disk, the row's bytes,
+the bytes the write meant to leave) and otherwise need the head: the head's identity hash, and only
+for the "is this a prefix of what it was writing?" test the chunks the short file covers. Bytes with
+no head at all are removed only when they are shorter than what that write meant to leave (we know
+its hash and its length, not its bytes); anything longer is somebody else's and is kept. Fetch bounds are per request (60 s) and a blob is one chunk of at most 1 MB
+(`core/chunker.ts`), so no request a large file needs can outlast that.
+
+While a path is torn, `StateDB.isTorn` is what both the apply and the reconciler gate consult: no pass
+may commit or close it, and a rename marker does not carry it to the new name. An edit the user has
+queued or not yet flushed wins over the fragment, because that is their typing, not a dropped write.
 
 **Writes go through `vault-io.ts`**: `modifyBinary` for a file the vault index knows, `createBinary` for
 a new one, and `adapter.writeBinary` as the dot-file or pre-index fallback. The write is given the

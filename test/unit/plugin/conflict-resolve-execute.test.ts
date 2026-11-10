@@ -2,9 +2,9 @@ import { hashPathHex } from "../../../core/hash.ts";
 import { assertEquals, assertRejects } from "@std/assert";
 import { executeResolution, planResolution } from "../../../plugin/sync/conflict-resolve.ts";
 import { commitOp, waitForInFlightCommit } from "../../../plugin/sync/commit.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { deriveKeys } from "../../../core/crypto.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #432: the resolution executor must never swallow a failed commit and must
 // never drop a resolution that races another commit of the same path. A failed
@@ -29,7 +29,7 @@ async function makeDeps(_transport: FakeTransport) {
   const vault = new FakeVault();
   vault.write(PATH, "server copy");
   vault.write(CONFLICT, "local copy");
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
   // The conflict file already synced (the reconciler committed it or will), so
   // a committed delete actually reaches the server instead of being a no-op.

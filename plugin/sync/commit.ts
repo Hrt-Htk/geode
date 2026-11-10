@@ -30,7 +30,12 @@ import {
   isUnwritten,
 } from "./rename-chain.ts";
 import { noteFor, resolveNoteConflict } from "./rename-note.ts";
-import { readVaultBinary, type Vault as ApplyVault, writeVaultBinary } from "./vault-io.ts";
+import {
+  readVaultBinary,
+  recordedWrite,
+  type Vault as ApplyVault,
+  writeVaultBinary,
+} from "./vault-io.ts";
 import { mergeText, readVersionBytes, surfaceConflict } from "./merger.ts";
 import { toUint8Array } from "../plumbing/bytes.ts";
 import type { ActivityRecord } from "./activity-log.ts";
@@ -570,7 +575,14 @@ async function carryHeadEdit(
     : null;
   deps.suppressSelfWrite?.(marker.renamedTo);
   if (text && "merged" in text) {
-    await writeVaultBinary(marker.renamedTo, text.merged, Date.now(), deps.vault);
+    // #59: a merged write is bytes the user did not type either: record it before writing.
+    await recordedWrite(
+      deps.state,
+      deps.keys,
+      marker.renamedTo,
+      text.merged,
+      () => writeVaultBinary(marker.renamedTo, text.merged, Date.now(), deps.vault),
+    );
     log.info("carried an edit to the renamed file", { from: marker.path, to: marker.renamedTo });
     return true;
   }
@@ -584,7 +596,12 @@ async function carryHeadEdit(
       chunkHashes: [],
       reason: "rename_edit_race",
     },
-    { vault: deps.vault, state: deps.state, deviceName: deps.deviceName },
+    {
+      vault: deps.vault,
+      state: deps.state,
+      deviceName: deps.deviceName,
+      keys: deps.keys,
+    },
   );
   return true;
 }

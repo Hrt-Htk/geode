@@ -15,6 +15,7 @@ import type { ActivityRecord } from "./activity-log.ts";
 import {
   diskPlaintextHash,
   diskPlaintextHashIfPresent,
+  recordedWrite,
   removeVaultPath,
   renameableFile,
   type Vault,
@@ -81,6 +82,24 @@ export interface ApplyDeps {
    * the disk can change between the divergence check and the write: re-read before
    * writing and keep bytes that arrived in between. A live session applies serially. */
   recheckDiskBeforeWrite?: boolean;
+  /** #59: an edit for this path is still inside the event layer's debounce window (not in
+   * the commit queue yet). It beats a fragment: the user's typing is never overwritten. */
+  hasUnflushedEdit?: (path: string) => boolean;
+  /** #59: this caller IS the start pass, which decides what an unresolved record's bytes are.
+   * Everyone else parks a version for such a path instead of applying over them. */
+  managesInterrupted?: boolean;
+  /** #59: keep a parked version so it can be applied once the record is resolved. */
+  parkVersion?: (msg: ServerVersion) => void;
+}
+
+/** #59: do the bytes at this path belong to nobody's write (a write that has not landed, or
+ * an entry the start pass has not resolved)? The record says so (`StateDB.isTorn`), and such
+ * bytes are never merged, promoted, carried or kept as a conflict. An edit the user has
+ * queued or not yet flushed wins: that is their typing, not a fragment. */
+function isUnownedFragment(path: string, pathHash: string, deps: ApplyDeps): boolean {
+  if (!deps.state.isTorn(pathHash)) return false;
+  if (deps.hasLocalEdits(path)) return false;
+  return deps.hasUnflushedEdit?.(path) !== true;
 }
 
 /** #701: whether divergent bytes on disk are this device's own edit. */
@@ -92,6 +111,7 @@ function trustsDivergentDisk(path: string, deps: ApplyDeps): boolean {
  * untracked local edit, promoted to tracked so the reconciler can commit it. */
 async function promoteDivergentDisk(row: LocalFileRow, deps: ApplyDeps): Promise<void> {
   if (row.deleted) return;
+  if (isUnownedFragment(row.path, row.path_hash, deps)) return;
   const dh = await diskPlaintextHash(row.path, deps.vault);
   if (dh === null || dh === row.plaintext_hash) return;
   if (!trustsDivergentDisk(row.path, deps)) return;
@@ -161,6 +181,21 @@ export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise
     return;
   }
 
+  // #59: this path's record belongs to a start pass that has not settled it, and an edit made
+  // outside Obsidian may be what is on disk. Park the version (the cursor stays behind it) so
+  // nothing is applied over bytes the pass has not judged; the pass applies or keeps them.
+  if (deps.managesInterrupted !== true && deps.state.isInterrupted(msg.path_hash)) {
+    log.info("apply parked for an unresolved interrupted write", {
+      path_hash: msg.path_hash,
+      version: msg.version,
+    });
+    // Nothing advances: the seq stays received-but-unapplied, which halts the persisted cursor
+    // at the version before it, so a reconnect replays it. The pipeline keeps the version and
+    // applies it as soon as the pass resolves the record.
+    deps.parkVersion?.(msg);
+    return;
+  }
+
   const meta = await decryptMetadata(
     b64decode(msg.enc_metadata),
     deps.keys,
@@ -184,7 +219,7 @@ export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise
     // #589: an edit still inside the event debounce is not in the commit queue
     // yet, so disk divergence is what sees it: the delete must conflict (local
     // wins, #361) instead of removing the only copy.
-    if (await hasPendingEdit(meta.path, existingByHash, deps)) {
+    if (await hasPendingEdit(meta.path, msg.path_hash, existingByHash, deps)) {
       await conflictNow(meta.path, msg, deps);
       return;
     }
@@ -248,7 +283,7 @@ async function applyRenameMarker(
     {
       path: meta.path,
       renamedTo: meta.renamed_to,
-      pendingEdit: await hasPendingEdit(meta.path, row, deps),
+      pendingEdit: await hasPendingEdit(meta.path, msg.path_hash, row, deps),
     },
     deps,
   );
@@ -292,9 +327,11 @@ async function applyRenameMarker(
   }
   // #697: nothing to carry: the note only leaves this name, so the file itself follows it
   // by a real vault rename and an editor open on it survives its name closing (#695).
+  // #59: a fragment is not the note: it stays behind and is removed with the old name.
   const to = meta.renamed_to;
   if (
-    to !== undefined && deps.isSyncable?.(to) !== false && await followsNote(meta.path, to, deps)
+    to !== undefined && !isUnownedFragment(meta.path, msg.path_hash, deps) &&
+    deps.isSyncable?.(to) !== false && await followsNote(meta.path, to, deps)
   ) {
     closeName(meta.path, msg, deps);
     log.info("old name closed by a vault rename", { path: meta.path, to });
@@ -360,10 +397,13 @@ async function followCarriedEdit(from: string, to: string, deps: ApplyDeps): Pro
  * was closed), or a file with no live row at all: #589. */
 async function hasPendingEdit(
   path: string,
+  pathHash: string,
   row: LocalFileRow | null,
   deps: ApplyDeps,
 ): Promise<boolean> {
   if (deps.hasLocalEdits(path)) return true;
+  // #59: an unfinished download's bytes are this device's own write, not an edit.
+  if (isUnownedFragment(path, pathHash, deps)) return false;
   if (!trustsDivergentDisk(path, deps)) return false;
   const diskHash = await diskPlaintextHash(path, deps.vault);
   if (diskHash === null) return false;
@@ -418,7 +458,13 @@ export async function keepVersionSibling(
   const meta = await decryptMetadata(b64decode(msg.enc_metadata), deps.keys, msg.path_hash);
   const bytes = await reassemble(msg.chunk_hashes, deps.keys, deps.getBlob, meta.plaintext_hash);
   const conflictPath = await freeConflictPath(basePath, deps);
-  await writeVaultBinary(conflictPath, bytes, Date.now(), deps.vault);
+  await recordedWrite(
+    deps.state,
+    deps.keys,
+    conflictPath,
+    bytes,
+    () => writeVaultBinary(conflictPath, bytes, Date.now(), deps.vault),
+  );
   log.info("deferred version kept next to the renamed file", {
     path: meta.path,
     base: basePath,
@@ -545,6 +591,8 @@ async function keepsDivergentBytes(
   dh: string | null,
 ): Promise<boolean> {
   if (dh === null || dh === tracked || dh === meta.plaintext_hash) return false;
+  // #59: a fragment of this device's own interrupted write is not an edit to keep.
+  if (isUnownedFragment(meta.path, msg.path_hash, deps)) return false;
   if (!trustsDivergentDisk(meta.path, deps)) return false;
   deps.markLocalEdit(meta.path);
   // For binary files there is no 3-way merge, so the deferred commit would
@@ -618,7 +666,15 @@ async function applyContent(msg: ServerVersion, deps: ApplyDeps, meta: FileMeta)
   }
 
   deps.suppressSelfWrite(meta.path);
-  await writeVaultBinary(meta.path, bytes, meta.mtime, deps.vault);
+  // #59: recorded immediately before the write, cleared once it returned.
+  await recordedWrite(
+    deps.state,
+    deps.keys,
+    meta.path,
+    bytes,
+    () => writeVaultBinary(meta.path, bytes, meta.mtime, deps.vault),
+    msg.path_hash,
+  );
 
   deps.state.upsertLocalFile({
     path: meta.path,

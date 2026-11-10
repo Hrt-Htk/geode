@@ -2,8 +2,8 @@ import { assertEquals, assertRejects } from "@std/assert";
 import { hashPathHex } from "../../../core/hash.ts";
 import type { LocalFileRow } from "../../../plugin/plumbing/state.ts";
 import { commitOp, StaleHashDelete } from "../../../plugin/sync/commit.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { planStaleRows } from "../../../plugin/sync/stale-rows.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 const KEY = new Uint8Array(32).fill(1);
 const OLD_KEY = new Uint8Array(32).fill(2);
@@ -50,7 +50,7 @@ Deno.test("stale rows - a missing file this device does not sync only gets its h
 });
 
 Deno.test("stale rows - a delete under a stale hash is refused before anything is sent", async () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   state.upsertLocalFile(row("a.md", { stale: true }));
   let sent = 0;
   await assertRejects(

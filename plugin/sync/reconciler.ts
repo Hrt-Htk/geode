@@ -59,6 +59,9 @@ export class Reconciler {
     /** #609: a plain delete of `path` this device already queued (the commit queue or
      * the event debounce). */
     private pendingDelete?: (path: string) => boolean,
+    /** #59: this path's bytes may be a fragment (a write that has not landed, or one a
+     * killed session left): no pass may commit or close it. */
+    private isTorn?: (path: string) => boolean,
   ) {}
 
   start(): void {
@@ -242,6 +245,7 @@ export class Reconciler {
       // Its own queued plain delete already closes this name (#609): pairing it with a
       // create of the same bytes writes a second marker and steals that move's note.
       if (this.pendingDelete?.(path)) continue;
+      if (this.isTorn?.(path)) continue;
 
       // Stat-verify: the file might genuinely exist even if enumeration missed it.
       if (await existsOnDisk(path, this.vault.adapter)) continue;
@@ -279,6 +283,7 @@ export class Reconciler {
     ops: ReconcileOp[],
     creates: string[],
   ): Promise<void> {
+    if (this.isTorn?.(normPath)) return;
     const local = localFiles.get(normPath);
     if (!local || local.deleted) {
       // Untracked, or a name whose row closed (deleted or renamed away) with a file

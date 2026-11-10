@@ -4,7 +4,6 @@
 
 import { assertEquals } from "@std/assert";
 import { hashPathHex } from "../../../core/hash.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import {
   type CollapsedChain,
   collapseRenameChain,
@@ -16,6 +15,7 @@ import {
   rememberChain,
 } from "../../../plugin/sync/rename-chain.ts";
 import type { StateDB } from "../../../plugin/plumbing/state.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 const KEYS = new Uint8Array(32);
 
@@ -47,7 +47,7 @@ function deps(
 }
 
 Deno.test("rename-chain - no hop leaves the destination alone", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   track(state, "y.md");
   assertEquals(collapseRenameChain("x.md", "y.md", deps(state, {}, chains)), "y.md");
@@ -55,7 +55,7 @@ Deno.test("rename-chain - no hop leaves the destination alone", () => {
 });
 
 Deno.test("rename-chain - X -> Y -> Z collapses to X -> Z and remembers Y", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   // Nothing is on the server at y.md: its note never landed.
   assertEquals(
@@ -80,7 +80,7 @@ Deno.test("rename-chain - X -> Y -> Z collapses to X -> Z and remembers Y", () =
 });
 
 Deno.test("rename-chain - a three-hop chain follows every hop", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   const to = collapseRenameChain(
     "x.md",
@@ -94,7 +94,7 @@ Deno.test("rename-chain - a three-hop chain follows every hop", () => {
 });
 
 Deno.test("rename-chain - a middle name whose own note landed keeps its per-hop link", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   track(state, "y.md");
   assertEquals(
@@ -105,7 +105,7 @@ Deno.test("rename-chain - a middle name whose own note landed keeps its per-hop 
 });
 
 Deno.test("rename-chain - a round trip (X -> Y -> X) writes no link at all", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   track(state, "x.md");
   assertEquals(
@@ -117,7 +117,7 @@ Deno.test("rename-chain - a round trip (X -> Y -> X) writes no link at all", () 
 });
 
 Deno.test("rename-chain - a ping-pong chain lands on the name it comes back to", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   const to = collapseRenameChain(
     "x.md",
@@ -131,7 +131,7 @@ Deno.test("rename-chain - a ping-pong chain lands on the name it comes back to",
 });
 
 Deno.test("rename-chain - a chain that loops back to its start stays a round trip", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   // x -> y -> z -> x: nothing is left behind, so the marker closes x as a tombstone.
   assertEquals(
@@ -152,7 +152,7 @@ Deno.test("rename-chain - a live chain entry is never overwritten", () => {
 });
 
 Deno.test("rename-chain - a note skips the middle names whose own note never landed", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>([["y.md", { from: "x.md", to: "z.md" }]]);
   assertEquals(
     linkChainTo("z.md", "y.md", deps(state, {}, chains)),
@@ -161,17 +161,17 @@ Deno.test("rename-chain - a note skips the middle names whose own note never lan
   );
   // No map entry: the middle's own marker (still queued) names where it came from.
   assertEquals(
-    linkChainTo("q.md", "m.md", deps(openStateDB(), {}, new Map(), { "m.md": "p.md" })),
+    linkChainTo("q.md", "m.md", deps(openSessionStateDB(), {}, new Map(), { "m.md": "p.md" })),
     "p.md",
   );
   // A middle name with a committed row of its own keeps its per-hop link.
-  const own = openStateDB();
+  const own = openSessionStateDB();
   track(own, "m.md");
   assertEquals(linkChainTo("q.md", "m.md", deps(own, {}, new Map(), { "m.md": "p.md" })), "m.md");
 });
 
 Deno.test("rename-chain - a fresh hop beats a live chain entry for the same middle", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   // Chain A (x -> y -> z) collapsed but its note has not settled; now chain B renames the
   // same x -> y again and continues to q. The live queue is what this marker must follow.
   const chains = new Map<string, CollapsedChain>([["y.md", { from: "x.md", to: "z.md" }]]);
@@ -181,7 +181,7 @@ Deno.test("rename-chain - a fresh hop beats a live chain entry for the same midd
 });
 
 Deno.test("rename-chain - a chain entry for another note never links this one", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   // Chain A (x -> y -> z) is still live; a different file now arrives at q through y.
   const chains = new Map<string, CollapsedChain>([["y.md", { from: "x.md", to: "z.md" }]]);
   assertEquals(
@@ -192,14 +192,14 @@ Deno.test("rename-chain - a chain entry for another note never links this one", 
 });
 
 Deno.test("rename-chain - a note that comes back to its own name carries no link", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const chains = new Map<string, CollapsedChain>();
   assertEquals(linkChainTo("x.md", "y.md", deps(state, {}, chains, { "y.md": "x.md" })), "y.md");
   assertEquals(noteSource("x.md", "y.md", chains), null, "the round trip writes no note link");
 });
 
 Deno.test("rename-chain - the unwritten test covers a carried row", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   assertEquals(isUnwritten("missing.md", state), true);
   track(state, "carried.md", { lastSeen: 0 });
   assertEquals(isUnwritten("carried.md", state), true, "a carried row has no version of its own");
@@ -210,7 +210,7 @@ Deno.test("rename-chain - the unwritten test covers a carried row", () => {
 });
 
 Deno.test("rename-chain - only the rename's own close cancels a chain (#629)", () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   // The delete a rename's note became carries its source: it is the rename's own close.
   assertEquals(isRenameClose({ kind: "delete", renamedFrom: "x.md" }), true);
   // Another generation's delete of the same name carries nothing: not this rename's.

@@ -1,8 +1,8 @@
 import { assert, assertRejects } from "@std/assert";
 import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { reconnectAndWaitLive, type SyncSessionHost } from "../../../plugin/session.ts";
 import { Transport } from "../../../plugin/sync/transport.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -12,7 +12,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const transport = new Transport();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const host = {
       transport,
       state,

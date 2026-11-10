@@ -8,8 +8,8 @@ import {
 } from "../../../core/protocol.ts";
 import { deriveKeys, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { ConflictHandler } from "../../../plugin/sync/conflict-handler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #583: two names whose markers point at each other (A renamed to B, B renamed
 // back to A) and a device that is carrying an edit between them: resolving A walks
@@ -70,7 +70,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const vault = new FakeVault();
     vault.write(FROM, "edit made while the rename was pending");
     const fromHash = hashPathHex(keys.mac_key, FROM);

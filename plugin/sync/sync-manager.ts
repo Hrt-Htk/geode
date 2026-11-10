@@ -92,6 +92,7 @@ export class SyncManager {
       state: () => this.state,
       keys: () => this.keys,
       deviceId: deps.settings.deviceId,
+      vaultId: deps.settings.vaultId,
       localEditPaths: this.localEditPaths,
       hasLocalEdits: (path) => this.hasLocalEdits(path),
       markLocalEdit: (path) => this.markLocalEdit(path),
@@ -108,6 +109,8 @@ export class SyncManager {
       isParkedMove: (p) => isParkedMove(deps.settings.pendingMoveOuts, p),
       hasPendingDelete: (p) => this.hasPendingDelete(p),
       cancelPendingDelete: (p) => this.cancelPendingDelete(p),
+      hasUnflushedEdit: (p) =>
+        this.pendingEventOps().some((op) => op.path === p && op.kind !== "delete"),
     });
     this.conflictHandler = new ConflictHandler({
       vault: deps.vault,
@@ -224,6 +227,12 @@ export class SyncManager {
       // #609: a name whose plain delete this device already queued is being deleted by
       // its own op: pairing it with a create of the same bytes would close it twice.
       (path) => this.hasPendingDelete(path),
+      // #59: a path a download batch is writing (or a killed one left unfinished) may hold
+      // a fragment: no pass may commit or close it.
+      (path) =>
+        this.state !== null && this.keys !== null && this.state.isTorn(
+          hashPathHex(this.keys.mac_key, path),
+        ),
     );
     this.reconciler.start();
   }

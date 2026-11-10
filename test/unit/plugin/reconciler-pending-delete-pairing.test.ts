@@ -1,10 +1,11 @@
 import { assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #609: a name whose plain delete this device has queued is already being deleted by
 // its own op: pairing it with a create of identical bytes writes a second marker for a
@@ -59,7 +60,7 @@ async function reconcile(
 
 Deno.test("reconciler never pairs a delete the event layer is already deleting", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // `n1.md` was deleted and `dir-b/n1.md` renamed away with identical bytes: one
     // delete and one create, the shape decision 5 pairs. The delete is still queued.
@@ -83,7 +84,7 @@ Deno.test("reconciler never pairs a delete the event layer is already deleting",
 
 Deno.test("reconciler still pairs an identical delete and create with no queued op", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // The control for the test above: the same bytes with nothing queued is the
     // rename-while-closed case decision 5 exists for.

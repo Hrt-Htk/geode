@@ -52,7 +52,7 @@ Deno.test("state-persist-throttle - drain-paced upserts produce bounded local-fi
   }
 });
 
-Deno.test("state-persist-throttle - cursor persist hook fires synchronously on advance (no throttle)", () => {
+Deno.test("state-persist-throttle - cursor persist hook fires on advance (no throttle)", async () => {
   const db = openStateDB();
   const persisted: number[] = [];
   db.setSyncCursorPersist((json) => {
@@ -60,9 +60,11 @@ Deno.test("state-persist-throttle - cursor persist hook fires synchronously on a
   });
 
   db.advanceSyncCursor(1); // contiguous 0 -> 1
-  assertEquals(persisted, [1], "cursor persisted synchronously on advance: no timer tick");
+  await db.drainCursorWrites();
+  assertEquals(persisted, [1], "cursor persisted on advance: no timer tick");
 
   db.advanceSyncCursor(2);
+  await db.drainCursorWrites();
   assertEquals(persisted, [1, 2], "every advance persists immediately");
 
   db.close();
@@ -90,7 +92,7 @@ Deno.test("state-persist-throttle - close flushes the pending local-files write"
   }
 });
 
-Deno.test("state-persist-throttle - a late upsert/cursor after close() writes nothing more", () => {
+Deno.test("state-persist-throttle - a late upsert/cursor after close() writes nothing more", async () => {
   const time = new FakeTime();
   try {
     const db = openStateDB();
@@ -110,6 +112,7 @@ Deno.test("state-persist-throttle - a late upsert/cursor after close() writes no
     db.upsertLocalFile(row("b.md", 2));
     db.advanceSyncCursor(1);
     time.tick(2000);
+    await db.drainCursorWrites();
 
     assertEquals(
       writes,

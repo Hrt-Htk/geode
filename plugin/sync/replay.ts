@@ -1,6 +1,7 @@
 import { ServerVersion } from "../../core/protocol.ts";
 import { VaultKeys } from "../../core/crypto.ts";
-import { StateDB } from "../plumbing/state.ts";
+import { type InFlightWrite, StateDB } from "../plumbing/state.ts";
+import { resolveInterruptedWrites } from "./interrupted-writes.ts";
 import { Transport, TransportState } from "./transport.ts";
 import {
   ApplyDeps,
@@ -13,6 +14,7 @@ import { diskPlaintextHash, Vault } from "./vault-io.ts";
 import { CoalescedEntry, coalesceReplay } from "./replay-coalesce.ts";
 import type { ActivityRecord } from "./activity-log.ts";
 import { log } from "../plumbing/log.ts";
+import { withTimeout } from "../plumbing/timeout.ts";
 
 // The inbound replay/apply pipeline: version serialization (versionQueue),
 // replay buffering until live, interrupt handling, and the bounded version
@@ -25,6 +27,7 @@ export interface ReplayDeps {
   state: () => StateDB | null;
   keys: () => VaultKeys | null;
   deviceId: string;
+  vaultId: string;
   localEditPaths: Set<string>;
   hasLocalEdits: (path: string) => boolean;
   markLocalEdit: (path: string) => void;
@@ -53,7 +56,15 @@ export interface ReplayDeps {
   cancelPendingDelete: (path: string) => void;
   /** #584: the file at `path` is parked in an excluded folder on this device. */
   isParkedMove: (path: string) => boolean;
+  /** #59: an edit for this path is still inside the event layer's debounce window. */
+  hasUnflushedEdit: (path: string) => boolean;
 }
+
+/** #59: the start pass is the only thing that rewrites a file a killed process left mid-write,
+ * which is where a native write can wedge (the handle the dead process held). It is bounded
+ * as a whole so the session is never stuck behind it: the entry stays recorded, and with it
+ * gated, so the abandoned write cannot be read as an edit, and the next connection retries. */
+const START_PASS_MS = 10_000;
 
 export class ReplayPipeline {
   static readonly VERSION_CACHE_MAX = 256;
@@ -67,6 +78,12 @@ export class ReplayPipeline {
    * held seq must be released, and two versions of one path are two held seqs. */
   private deferredVersions = new Map<string, { msg: ServerVersion; destination: string }>();
   readonly versionCache = new Map<string, ServerVersion>();
+  /** #59: the start pass runs once per connection (N4): a failed resolution retries on the
+   * next one, not on every flush of this one. */
+  private resolvedStart = false;
+  /** #59: versions parked because their path's record was still unresolved. They are applied
+   * as soon as the pass resolves that record, in this session. */
+  private readonly parked = new Map<string, ServerVersion[]>();
 
   constructor(private deps: ReplayDeps) {
     // A disconnect mid-replay would otherwise leave the transport's in-memory
@@ -118,7 +135,20 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      const buffer = this.replayBuffer;
+      // #59: resolve what a killed session left, once per connection, before this
+      // connection's versions are applied. Bounded: see START_PASS_MS.
+      const pass = this.resolveStartRecord(state, keys);
+      try {
+        this.reapplyParked(await withTimeout(pass, START_PASS_MS, "interrupted-write pass"));
+      } catch (error) {
+        log.warn("interrupted-write pass did not finish, retrying at the next connection", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // The abandoned pass keeps running: what it resolves must not strand the versions
+        // parked for those paths.
+        void pass.then((resolved) => this.reapplyParked(resolved)).catch(() => {});
+      }
+      const entries = coalesceReplay(this.replayBuffer);
       this.replayBuffer = [];
       const deps = this.buildApplyDeps(state, keys);
       // Snapshot which paths already tracked a local edit. Applying only the winner
@@ -128,7 +158,6 @@ export class ReplayPipeline {
       // replayed latest version conflicting with a local edit still merges/conflicts
       // instead of silently overwriting (#192/#283).
       const before = new Set(this.deps.localEditPaths);
-      const entries = coalesceReplay(buffer);
       const total = entries.length;
       let applied = 0;
       const drainStart = performance.now();
@@ -230,6 +259,52 @@ export class ReplayPipeline {
     return run;
   }
 
+  /** #59: the record a killed session left is resolved once per connection, before its
+   * first drain: see `resolveInterruptedWrites`. */
+  private async resolveStartRecord(state: StateDB, keys: VaultKeys): Promise<InFlightWrite[]> {
+    if (this.resolvedStart) return [];
+    this.resolvedStart = true;
+    return await resolveInterruptedWrites({
+      state,
+      keys,
+      vaultId: this.deps.vaultId,
+      apply: this.buildApplyDeps(state, keys),
+      chainHead: async (pathHash) =>
+        (await this.deps.transport.getVersionChain(pathHash))[0] ?? null,
+    });
+  }
+
+  /** #59: a record the pass resolved releases the versions parked for its path, through the
+   * same serialized queue every other apply uses. */
+  private reapplyParked(resolved: InFlightWrite[]): void {
+    const state = this.deps.state();
+    const keys = this.deps.keys();
+    if (!state || !keys || resolved.length === 0) return;
+    const released: ServerVersion[] = [];
+    for (const entry of resolved) {
+      const versions = this.parked.get(entry.path_hash);
+      if (versions === undefined) continue;
+      this.parked.delete(entry.path_hash);
+      released.push(...versions);
+    }
+    if (released.length === 0) return;
+    const deps = this.buildApplyDeps(state, keys);
+    void this.enqueueApply(async () => {
+      for (const msg of released) {
+        try {
+          await applyVersion(msg, deps);
+        } catch (error) {
+          log.warn("parked version not applied, left for the next connection", {
+            path_hash: msg.path_hash,
+            seq: msg.seq,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    });
+    log.info("re-applied parked versions", { files: released.length });
+  }
+
   private async promoteDeleteDivergence(
     entry: CoalescedEntry,
     row: { path: string; deleted: boolean; plaintext_hash: string } | null,
@@ -284,6 +359,24 @@ export class ReplayPipeline {
       hasPendingDelete: this.deps.hasPendingDelete,
       cancelPendingDelete: this.deps.cancelPendingDelete,
       isParkedMove: this.deps.isParkedMove,
+      parkVersion: (msg) => {
+        const versions = this.parked.get(msg.path_hash);
+        if (versions === undefined) this.parked.set(msg.path_hash, [msg]);
+        else versions.push(msg);
+      },
+      // #59: the predicates around one version ask repeatedly: read the event layer's pending
+      // ops once per path per apply, not once per check.
+      hasUnflushedEdit: (() => {
+        const answers = new Map<string, boolean>();
+        return (path: string) => {
+          let answer = answers.get(path);
+          if (answer === undefined) {
+            answer = this.deps.hasUnflushedEdit(path);
+            answers.set(path, answer);
+          }
+          return answer;
+        };
+      })(),
       renameHeadOf: (pathHash) => renameHeadOf(this.deps.transport, pathHash),
       parkDeferred: (msg, destination) => {
         const key = `${msg.path_hash}:${msg.seq}`;
@@ -306,6 +399,9 @@ export class ReplayPipeline {
 
   private onReplayInterrupt(state: TransportState): void {
     if (state === "live" || state === "syncing") return;
+    // #59: leaving live gives the next connection its own chance to resolve what a kill
+    // left (a head fetch that failed is retried then, not once per flush).
+    this.resolvedStart = false;
     if (this.replayBuffer.length === 0) return;
     // Everything buffered is > the contiguous persisted cursor. Rewind the
     // in-memory cursor to the persisted one so the next reconnect re-requests
