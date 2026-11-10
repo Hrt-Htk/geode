@@ -125,17 +125,18 @@ JSON lines to stdout, one line per event (`ts` is an ISO string, then `level`, `
 fields):
 
 ```json
-{"ts":"2026-10-23T09:20:12.345Z","level":"info","msg":"geode server started","port":8080,"dataDir":"/opt/geode/data"}
+{"ts":"2026-10-23T09:20:12.345Z","level":"info","msg":"geode server started","port":8080,"dataDir":"/data"}
 {"ts":"2026-10-23T09:21:04.010Z","level":"info","msg":"blob put","hash":"94c5…","vault_id":"…"}
 {"ts":"2026-10-23T09:22:30.777Z","level":"warn","msg":"ws auth rejected","vault_id":"…","reason":"unknown_token"}
 {"ts":"2026-10-23T09:24:01.500Z","level":"error","msg":"ws handler error","vault_id":"…","error":"…"}
 ```
 
-journald captures it (`StandardOutput=journal` in the systemd unit). Query:
+Docker captures it in the server container's bounded `json-file` log (`compose.yaml`). Query, from the
+compose directory:
 
 ```
-journalctl -u geode -f --output=json-pretty
-journalctl -u geode -o cat --since "1 hour ago" | jq 'select(.level=="error")'
+docker compose logs -f geode
+docker compose logs --no-log-prefix geode | jq 'select(.level=="error")'
 ```
 
 ### Plugin-side (`plugin/plumbing/log.ts`)
@@ -326,8 +327,8 @@ The five used daily (the full list is in `deno.json`):
 - [ ] `deno task ci` is green.
 - [ ] Schema migrations applied cleanly on a copy of the prod DB.
 - [ ] Backup of `data/` taken.
-- [ ] systemd unit reloads cleanly (`systemctl daemon-reload && systemctl restart geode`).
-- [ ] `journalctl -u geode -n 50` shows no errors after restart.
+- [ ] `docker compose up -d --wait` recreates the container cleanly.
+- [ ] `docker compose logs --tail 50 geode` shows no errors after the restart.
 - [ ] One smoke test from each connected device: edit a file, see it sync to the other.
 
 ---
@@ -360,7 +361,7 @@ The five used daily (the full list is in `deno.json`):
    - [ ] "Export decrypted vault" produces a complete plaintext copy.
 6. **Observability**
    - [ ] The Logs section has diagnosed at least one real failure.
-   - [ ] Server logs are queryable via journalctl and jq.
+   - [ ] Server logs are queryable via `docker compose logs` and jq.
 
-When all six are checked the release is shippable; the version bump and deploy are
+When all six are checked the release is shippable; the version bump and tag are
 `deno task release` (skill `geode-release`).

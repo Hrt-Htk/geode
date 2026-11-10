@@ -31,8 +31,7 @@ export function deviceDescText(
 
 // #526: settings help row: the admin token is rotated server-side (no button).
 export const ROTATE_ADMIN_TOKEN_NAME = "Rotate admin token";
-export const ROTATE_ADMIN_TOKEN_DESC =
-  "Run the rotate admin token script in the deploy folder on your server.";
+export const ROTATE_ADMIN_TOKEN_DESC = "Set a new token in the server's .env, then restart Geode.";
 
 // Settings summary row: behind counts only devices that ARE behind (a
 // never-synced device isn't behind, even with a higher vault head).

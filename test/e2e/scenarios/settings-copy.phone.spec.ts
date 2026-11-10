@@ -75,6 +75,26 @@ test("phone copy: no settings description runs three or more lines", async () =>
     await clearNotices(obsidian);
     await new Promise((r) => setTimeout(r, 1_500));
 
+    // #526: the rotate admin token row. It tells the user to rotate in the server's
+    // .env, so it must stay a short line: the phone allows two where the desktop
+    // requires one (#479).
+    const rotate = await obsidian.eval<{ text: string; lines: number } | null>(`
+      (() => {
+        const row = document.querySelector('[data-testid="geode-settings-rotate-admin-token"]');
+        if (!row) return null;
+        row.scrollIntoView({ block: "center" });
+        const desc = row.querySelector(".setting-item-description");
+        const lh = parseFloat(getComputedStyle(desc).lineHeight) || 20;
+        return { text: desc.textContent.trim(), lines: Math.round(desc.getBoundingClientRect().height / lh) };
+      })()
+    `);
+    expect(rotate?.text).toBe("Set a new token in the server's .env, then restart Geode.");
+    expect(rotate?.lines, "the rotate description stays two lines or fewer on the phone")
+      .toBeLessThanOrEqual(2);
+    await new Promise((r) => setTimeout(r, 600));
+    await clearNotices(obsidian);
+    await obsidian.screenshot(shotPath("479-03-phone-rotate-admin-token.png"));
+
     // The tab, then its Advanced and Logs pages (#16): every row is checked once.
     const tall = await tallDescriptions(obsidian);
     for (const page of ["Advanced", "Logs"] as const) {

@@ -111,6 +111,20 @@ test("UI surfaces unchanged by #387 type/promise edits", async () => {
     const rotateRow = o.win.locator('[data-testid="geode-settings-rotate-admin-token"]');
     await expect(rotateRow).toBeVisible();
     await expect(rotateRow.locator(".setting-item-name")).toHaveText("Rotate admin token");
+    await expect(rotateRow.locator(".setting-item-description")).toHaveText(
+      "Set a new token in the server's .env, then restart Geode.",
+    );
+    // One line, measured: the row breaks its model when the description wraps.
+    const desc = await o.eval(`(() => {
+      const el = document.querySelector(
+        '[data-testid="geode-settings-rotate-admin-token"] .setting-item-description');
+      if (!el) return null;
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || el.clientHeight;
+      return { lines: Math.round(el.clientHeight / lh), clipped: el.scrollWidth > el.clientWidth + 1 };
+    })()`);
+    expect(desc, "the rotate row's description is rendered").not.toBeNull();
+    expect(desc?.lines, "the rotate description is one line").toBe(1);
+    expect(desc?.clipped, "the rotate description is not clipped").toBe(false);
     await o.eval(
       `document.querySelector('[data-testid="geode-settings-rotate-admin-token"]')?.scrollIntoView({ block: "center" }); return true;`,
     );

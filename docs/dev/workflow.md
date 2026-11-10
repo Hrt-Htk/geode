@@ -209,7 +209,7 @@ Every doc under `docs/` declares the code it attests in its frontmatter, under o
 
 ```
 ---
-covers: [server/*.ts, db/migrations/*.sql, deploy/*]
+covers: [server/*.ts, db/migrations/*.sql]
 watches: [test/scenarios/**]
 ---
 ```

@@ -15,9 +15,9 @@ ARG VERSION=0.0.0
 
 WORKDIR /app
 
-# Production-only package.json, the way deploy/install.sh writes it: the server
-# imports it for pkg.version alone, and the repo's copy would resolve the dev
-# toolchain (Playwright, Obsidian typings, eslint) onto the image.
+# Production-only package.json: the server imports it for pkg.version alone, and
+# the repo's copy would resolve the dev toolchain (Playwright, Obsidian typings,
+# eslint) onto the image.
 RUN printf '{"name":"geode","private":true,"license":"Apache-2.0","version":"%s"}\n' "$VERSION" \
   > package.json
 COPY deno.json deno.lock ./
@@ -43,9 +43,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["deno", "eval", "--allow-net=127.0.0.1:8080", \
   "const r = await fetch('http://127.0.0.1:8080/version'); Deno.exit(r.ok ? 0 : 1)"]
 
-# The deploy/geode.service permission set. --allow-ffi stays unscoped: server/fs-usage.ts
-# opens "libc.so.6" by soname, and a path-scoped allowlist does not admit a bare soname
-# (Deno resolves it against the working directory and the load fails).
+# The systemd unit's permission set, which this image replaces: --allow-ffi stays
+# unscoped because server/fs-usage.ts opens "libc.so.6" by soname, and a path-scoped
+# allowlist does not admit a bare soname (Deno resolves it against the working
+# directory and the load fails).
 ENTRYPOINT ["/tini", "--", "deno", "run", \
   "--allow-net=0.0.0.0:8080", \
   "--allow-read=/data,/app/server,/app/core,/app/db,/update-status", \

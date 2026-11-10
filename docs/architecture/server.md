@@ -1,5 +1,5 @@
 ---
-covers: [server/*.ts, db/migrations/*.sql, deploy/*, Dockerfile, compose.yaml, .dockerignore, .env.docker.example, scripts/docker-smoke.ts, scripts/docker-helpers.ts, scripts/host-update-test.ts, geode-update.sh]
+covers: [server/*.ts, db/migrations/*.sql, Dockerfile, compose.yaml, .dockerignore, .env.docker.example, scripts/docker-smoke.ts, scripts/docker-helpers.ts, scripts/host-update-test.ts, geode-update.sh]
 ---
 
 # Server
@@ -19,7 +19,7 @@ no total LOC cap; `server/` stays at or below **300 code lines per file** (CLAUD
 - **Dependencies** are declared in `deno.json` `imports` (`jsr:` and `npm:` specifiers) with
   `nodeModulesDir: "auto"`; `deno install` writes `node_modules/`. `libsodium-wrappers-sumo` is aliased
   to its CJS build because the package's ESM entry is broken upstream. Do not revert that alias.
-- **The server installs its own dependency surface, not the dev toolchain.** `deploy/install.sh` writes
+- **The server installs its own dependency surface, not the dev toolchain.** `Dockerfile` writes
   a `package.json` with the version only (the server imports it solely for `pkg.version`) and runs
   `deno install`, which then resolves the server's graph: five npm packages, and reduces the
   lockfile to it. Shipping the repo `package.json` instead makes that install resolve the dev set
@@ -27,7 +27,7 @@ no total LOC cap; `server/` stays at or below **300 code lines per file** (CLAUD
 - **SQLite** is `@db/sqlite` over FFI: the process needs `--allow-ffi`, and the system `libsqlite3` is
   found through `DENO_SQLITE_PATH`.
 - Dev: `deno task dev` runs `deno run --allow-net --allow-read --allow-write=./data --allow-env
-  --allow-ffi --watch server/main.ts`. Prod: the systemd unit in §10.
+  --allow-ffi --watch server/main.ts`. Prod: the image in §11.
 
 Flags: `--data-dir` (default `./data`), `--port` (8080), `--host` (default `0.0.0.0`), parsed by
 `server/args.ts`. Any other argument is **refused** with exit 64: silently skipping one used to start
@@ -36,8 +36,8 @@ env-only (`GEODE_ADMIN_TOKEN`) and `--admin-token` fails with a message that nam
 argv is world-readable in `/proc/<pid>/cmdline` (#680 L-4); a missing token logs a startup warning. Env
 knobs: `GEODE_ADMIN_TOKEN`,
 `GEODE_TRASH_RETENTION_DAYS`, `GEODE_COMPACT_FLOOR_DAYS`, `GEODE_COMPACT_THROTTLE_MS`,
-`GEODE_MIN_PLUGIN_VERSION`, `GEODE_VAULT_MAX_BYTES`, `GEODE_TRUST_PROXY` (the last two a systemd
-drop-in, not `geode.env`, see §10), `DENO_SQLITE_PATH`. `GEODE_TRUST_PROXY` is on only for the exact
+`GEODE_MIN_PLUGIN_VERSION`, `GEODE_VAULT_MAX_BYTES`, `GEODE_TRUST_PROXY` (the last two in the compose
+`.env`, see §10), `DENO_SQLITE_PATH`. `GEODE_TRUST_PROXY` is on only for the exact
 value `1` (§8).
 
 ---
@@ -214,8 +214,8 @@ request.
    lifecycle, so a failure in the write, the fsync, the link or the rename removes the temp file. A
    crash mid-write runs no `finally`, so the next startup removes every `.tmp-*` left behind
    (`removeStrandedTempFiles`, called from `main.ts` before the listener accepts anything; nothing is
-   in flight at that point). This needs hard link support on the data dir, which plain ext4 or xfs as
-   `deploy/` creates it has; a data dir on FAT/exFAT or an SMB/CIFS mount does not.
+   in flight at that point). This needs hard link support on the data dir, which plain ext4 or xfs has;
+   a data dir on FAT/exFAT or an SMB/CIFS mount does not.
 
 **`putBlob` does not verify `blake3(body) == hash`.** The stored body is ciphertext and the URL hash is
 the plaintext chunk hash; the client verifies integrity during reassembly.
@@ -238,9 +238,8 @@ counter and what a full vault still accepts; nothing else touches `vaults.stored
 
 - **Cap**: `GEODE_VAULT_MAX_BYTES`, default **20 GiB**, read per call, so a change applies to the next
   request. A real personal vault is a few GB at most, so an existing deployment never hits the default
-  by accident, while a device token in a loop stays bounded. Set it with a systemd drop-in
-  (`sudo systemctl edit geode`), not in `/etc/geode/geode.env`: `deploy/install.sh` and
-  `deploy/rotate-admin-token.sh` rewrite that file and would drop the line.
+  by accident, while a device token in a loop stays bounded. Set it in the compose directory's
+  `.env` and `docker compose up -d` (§10).
 - **Counter**: `vaults.stored_bytes` (migration 017, `NOT NULL DEFAULT 0`) is everything the vault
   keeps on the server: the blob files plus the payload of its version rows (`enc_metadata`,
   `path_ciphertext`, `chunk_hashes`) and its trash rows (`head_json`). It is measured in full for every
@@ -341,8 +340,8 @@ single process and take every vault down (#676).
 | `POST …/rekey/rows` | `MAX_REKEY_ROWS_BODY` (~46 MB) | 64 rows of `MAX_CHUNK_HASHES` (10 000) hashes at their escaped wire size + `MAX_ENC_METADATA_LEN`; a batch is 50 rows (`plugin/sync/rekey-run.ts`) |
 
 An absent body on `purge-expired` and on `DELETE …/trash/:pathHash` still means "server retention" /
-"no chain", not 400. These in-process caps are the only body limit: `deploy/Caddyfile` sets no
-`request_body` (it needs Caddy 2.10+, which `deploy/install.sh` never upgrades an existing host to).
+"no chain", not 400. These in-process caps are the only body limit: the Caddy config in
+`compose.yaml` sets no `request_body`.
 
 A cap bounds one body, not the process: `Deno.serve` has no concurrency limit, so a device token can
 hold many bodies in flight at once (#680). Before its first read, each read reserves the route's cap
@@ -547,7 +546,7 @@ boxes would not see each other live.
 | `compaction.ts` | old-version folding, expired-trash purge, blob GC |
 | `version-gate.ts` | `SERVER_VERSION`, protocol + minimum-plugin-version checks |
 | `fs-usage.ts` | `statvfs` via FFI for the storage route |
-| `log.ts` | JSON-line logger to stdout (journald) |
+| `log.ts` | JSON-line logger to stdout (Docker's log, §10) |
 
 ---
 
@@ -604,8 +603,9 @@ boxes would not see each other live.
   for the exact value `1`; it reads the last `X-Forwarded-For` entry from any peer, and falls back to
   the socket peer when the header is absent. **Never set it while Geode's port is directly reachable**:
   a client could then spoof a fresh address per request and dodge the admin rate limit. Supported
-  topologies are the ones `deploy/install.sh` produces (Caddy on the same host, loopback peer), a
-  direct LAN/Tailscale client, or a proxy in another container that is the only route to the port.
+  topologies are the ones `compose.yaml` produces (Caddy in its own container behind the internal
+  network, loopback peer for the forwarder), a direct LAN/Tailscale client, or a proxy in another
+  container that is the only route to the port.
 
 ### Validation flow
 
@@ -632,7 +632,7 @@ A device joins a vault with the long-lived admin token. Per-device revocation is
 
 ### Provisioning UX
 
-1. SSH to the server and read the admin token (`deploy/print-admin-token.sh`).
+1. Read the admin token: `GEODE_ADMIN_TOKEN` in the compose directory's `.env`.
 2. The plugin's setup wizard does the rest: `POST /vaults` → `{ vault_id, salt }`, `POST …/devices` for
    this device, derive keys with the chosen params, then `PUT …/verifier` (verifier + params,
    write-once). Joining a second device repeats the device creation and derives with the vault's stored
@@ -703,15 +703,13 @@ A device joins a vault with the long-lived admin token. Per-device revocation is
 
 ## 9. Caddy + TLS
 
-`deploy/Caddyfile`:
+The `caddyfile` config block in `compose.yaml` (§11), for the `https` profile:
 
 ```caddy
-# Managed by Geode (deploy/install.sh) - edits here are overwritten on update.
-geode.example.com {
+{$GEODE_DOMAIN} {
 	encode gzip
-	reverse_proxy 127.0.0.1:8080
+	reverse_proxy geode:8080
 	log {
-		output file /var/log/caddy/geode.log
 		format filter {
 			wrap json
 			fields {
@@ -725,12 +723,11 @@ geode.example.com {
 }
 ```
 
-Caddy fetches and renews the certificate and proxies HTTP and WebSocket. There is deliberately no
-`request_body` limit here: it needs Caddy 2.10+ and `deploy/install.sh` never upgrades an existing
-host, so an older Caddy would fail to start after a reboot. The server's own caps (§5) answer 413.
-`deploy/install.sh` writes a `Caddyfile.generated` from this template when `GEODE_DOMAIN` is set. The
-template is in `caddy fmt` form (tab indentation), so a reload logs no format warning, and its first
-line is the `# Managed by Geode` marker that says who owns the installed copy.
+Compose interpolates its own file, so the site address is written `{$$GEODE_DOMAIN}` there and Caddy
+receives `{$GEODE_DOMAIN}`. The block is in `caddy fmt` form (tab indentation), so a start logs no
+format warning. Caddy fetches and renews the certificate and proxies HTTP and WebSocket to the `geode`
+container by name, which is why the server listens on `0.0.0.0` inside the internal network. There is
+deliberately no `request_body` limit here: the server's own caps (§5) answer 413.
 
 **No credential reaches the access log.** Caddy's log redacts `Authorization` and cookies and records
 every other header, so an unfiltered log hands out working secrets. Three channels carry one:
@@ -747,107 +744,41 @@ back. Field names match the logged casing exactly, and Caddy logs the request co
 `Sec-Websocket-Protocol` and the response copy as `Sec-WebSocket-Protocol`; a wrong case deletes
 nothing and silently leaves the secret in the log. `scripts/docker-smoke.ts` sends every one of these
 headers with a distinctive value and asserts no value reaches the log, which is what keeps the casing
-honest. **An existing install picks this up** by re-running `deploy/install.sh` (#736): it regenerates
-`Caddyfile.generated`, installs it to `/etc/caddy/Caddyfile` and runs `systemctl reload-or-restart
-caddy`. It takes that file over only when
-Geode owns it: absent, first line is the marker, or identical to what the last install generated, so
-a Caddyfile that also serves other sites is left alone and the `cp` line to add the Geode block is
-printed instead. A log written before the update still holds tokens, so delete it, and revoke any
-device whose token was in it.
+honest. **An existing install picks this up** by updating its `compose.yaml` and running `docker
+compose up -d` (with the `https` profile): that file lives in the compose directory and is not pulled
+with the image. A log written before the update still holds tokens, so revoke any device whose token
+was in it.
 
 ---
 
-## 10. systemd unit
+## 10. Runtime settings
 
-`deploy/geode.service`, placeholders filled by `deploy/install.sh`:
+The server is configured by the compose directory: `.env` next to `compose.yaml` (§11). Nothing
+rewrites that file, so a value put there stays.
 
-```ini
-[Unit]
-Description=Geode sync server
-After=network.target
+**Admin token**: `GEODE_ADMIN_TOKEN` in that `.env`, required by compose, which refuses to start
+without it. It is never in the image: the image is public and `docker inspect` shows a container's
+environment. Keep `.env` root-owned and 0600: it holds the whole token, and no narrower record exists
+(#680 N-8). Treat the token as root (§8).
 
-[Service]
-Type=simple
-User=geode
-WorkingDirectory=/opt/geode
-EnvironmentFile=/etc/geode/geode.env
-Environment=HOME=/opt/geode
-Environment=DENO_DIR=/opt/geode/.deno-cache
-Environment=DENO_SQLITE_PATH=@SQLITE_LIB@
-ExecStart=/usr/local/bin/deno run \
-    --allow-net=@HOST@:@GEODE_PORT@ \
-    --allow-read=/opt/geode/data,/opt/geode/server,/opt/geode/core,/opt/geode/db,@SQLITE_DIR@ \
-    --allow-write=/opt/geode/data \
-    --allow-ffi \
-    --allow-env=GEODE_ADMIN_TOKEN,GEODE_TRASH_RETENTION_DAYS,DENO_SQLITE_PATH,DENO_SQLITE_LOCAL,GEODE_MIN_PLUGIN_VERSION,GEODE_VAULT_MAX_BYTES,GEODE_TRUST_PROXY \
-    /opt/geode/server/main.ts --data-dir /opt/geode/data --host @HOST@ --port @GEODE_PORT@
-Restart=on-failure
-RestartSec=5s
-StandardOutput=journal
-StandardError=journal
-LimitNOFILE=65536
+**Rotating it**: put the new value in `.env`, then `docker compose up -d`. Compose recreates the
+container with the new environment, the old token stops working, and device tokens are untouched.
 
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-PrivateTmp=yes
-ReadWritePaths=/opt/geode/data
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
-ProtectKernelModules=yes
-ProtectClock=yes
-ProtectHostname=yes
-ProtectKernelLogs=yes
-RestrictSUIDSGID=yes
-RestrictRealtime=yes
-LockPersonality=yes
-CapabilityBoundingSet=
-PrivateDevices=yes
+**Other env knobs** go in the same `.env`, followed by `docker compose up -d`: the storage cap (§4),
+`GEODE_TRUST_PROXY` (§8), the retention and compaction knobs (§1). A knob also has to be in the
+image's `--allow-env` list (`Dockerfile`), or the server reads it as unset.
 
-[Install]
-WantedBy=multi-user.target
-```
+**Logs**: the server writes JSON lines to stdout, which Docker keeps in a bounded `json-file` log
+(`compose.yaml`: 10 MB, 3 files). Read them with `docker compose logs geode`, `-f` to follow. The bound
+matters: Docker's default `json-file` driver grows until the disk is full, where journald capped its
+own files.
 
-`geode` is a `--no-create-home` user, so `HOME` and `DENO_DIR` point at writable dirs under `/opt/geode`.
-`@db/sqlite` needs `--allow-ffi` and `DENO_SQLITE_PATH` (the library path differs per architecture).
+**Bind address**: the container runs `--host 0.0.0.0 --port 8080` on an `internal: true` network and
+publishes nothing, so only a front reaches it (§11). `--host` defaults to `0.0.0.0` when the server is
+run by hand too (§1).
 
-**Admin token**: lives in `/etc/geode/geode.env` (mode 600, root:root), loaded via `EnvironmentFile=`.
-Never put it in the unit: the unit is world-readable and its environment is exposed through
-`/proc/<pid>/environ`. `deploy/install.sh` mirrors `/opt/geode/.admin-token` into it on every run, so
-re-runs keep the token, and re-hardens the source file to 600 root:root after its repo-wide
-`chown -R` (a re-run would otherwise hand it to the service user, which could then read the admin
-token back; #680 N-8). That narrows the exposure a compromised service process has, it does not close
-it: `/opt/geode` belongs to the service user, so such a process could still replace the token file and
-the next install re-run would reuse what it finds there. Closing it means moving the token out of the
-service user's tree (for example `/etc/geode/admin-token`) and pointing `print-admin-token.sh` and
-`rotate-admin-token.sh` at it, which is a deploy change beyond N-8 and is accepted for now. It prints
-only the first four characters of the token (#735), so an install log does not carry it; the whole
-value comes from `deploy/print-admin-token.sh`.
-
-**Rotating the admin token**: `sudo bash deploy/rotate-admin-token.sh` writes a new token to both files,
-restarts the service, and proves the old token is refused and the new one accepted. Device tokens are
-untouched.
-
-**Other env knobs** (the storage cap in §4, `GEODE_TRUST_PROXY` in §8) do **not** go in `geode.env`:
-`install.sh` and `rotate-admin-token.sh` rewrite that file and would drop them. Use `sudo systemctl
-edit geode` and add `[Service]` / `Environment=GEODE_VAULT_MAX_BYTES=<bytes>`, then `sudo systemctl
-restart geode`.
-
-**An existing install must update its unit first.** The template's `--allow-env` gained
-`GEODE_VAULT_MAX_BYTES` and `GEODE_TRUST_PROXY`, but `deploy/deploy.sh` copies code only and never
-regenerates `/etc/systemd/system/geode.service`, so a unit written before either knob denies it: the
-cap stays at the default and `GEODE_TRUST_PROXY` reads as off. Re-run `deploy/install.sh` (it rewrites
-the unit and presets) or add the names to that unit's `--allow-env` by hand. The server logs the
-effective cap at startup (`vault storage budget`), which is how to confirm it took.
-
-**Re-runs restart the service.** `install.sh` runs `systemctl enable geode` and then
-`systemctl restart geode`, so a re-run replaces the running process with the code it just copied.
-(`enable --now` leaves a running unit alone, so an update would not take effect.)
-
-**Bind address**: `--host` defaults to `0.0.0.0`. `install.sh` sets `127.0.0.1` when `GEODE_DOMAIN` is
-set (Caddy fronts it) and `0.0.0.0` otherwise (direct LAN or Tailscale clients), printing a warning never
-to open that port to the internet. It gives no firewall commands. `--allow-net` matches the bind host. `/opt/geode/data` is chmod 700, because the SQLite DB
-holds device tokens. Logs go to journald (`journalctl -u geode -f`).
+**Data**: `./data` next to `compose.yaml`, owned by uid 1993 (§11). It holds the SQLite database, so it
+holds device tokens.
 
 ---
 
@@ -859,11 +790,11 @@ Docker: no clone, no build.
 - **Image.** `denoland/deno:debian-2.9.7` plus Debian's `libsqlite3-0`, the library `@db/sqlite` loads
   over FFI. Debian keeps it under an arch-specific directory (`x86_64-linux-gnu`, `aarch64-linux-gnu`),
   so the build copies it to `/usr/local/lib/geode-sqlite.so` and `DENO_SQLITE_PATH` names that one path
-  on both architectures. The flags are §10's list with `--host 0.0.0.0`, because the front is another
-  container, and `--allow-ffi` unscoped: `server/fs-usage.ts` opens `libc.so.6` by soname, which a
-  path-scoped allowlist does not admit, so scoping it needs that call to name an absolute,
-  architecture-specific path. `deno install` runs at build time, so the container never fetches
-  anything; `--build-arg VERSION` is the version `/version` reports.
+  on both architectures. `--host 0.0.0.0` because the front is another container, and `--allow-ffi`
+  unscoped: `server/fs-usage.ts` opens `libc.so.6` by soname, which a path-scoped allowlist does not
+  admit, so scoping it needs that call to name an absolute, architecture-specific path. `deno install`
+  runs at build time, so the container never fetches anything; `--build-arg VERSION` is the version
+  `/version` reports.
 - **Release.** `release.yml` builds amd64 on `ubuntu-latest` and arm64 on `ubuntu-24.04-arm`, merges the
   two digests into one manifest tagged `X.Y.Z` and `latest`, and attests them. The GitHub release
   `needs` that manifest, so a broken image blocks the plugin release too (skill `geode-release`).
@@ -873,12 +804,13 @@ Docker: no clone, no build.
   with no `COMPOSE_PROFILES` nothing is reachable. `.env.docker.example` holds the three setups. The
   front publishes on `127.0.0.1` unless `GEODE_PUBLISH` says otherwise, since a published port bypasses
   ufw.
-- **Hardening** is §10's, as container options: uid 1993 on a read-only rootfs, `/tmp` on a tmpfs,
-  `cap_drop: ALL`, `no-new-privileges`, `nofile` 65536. `./data` must belong to uid 1993 (compose
-  creates it as root, which is the first start's failure) and SMB/CIFS shares do not work: the blob
-  store hard-links inside a vault's directory. No curl in the image, so the healthcheck is `deno eval`.
-- **The admin token** is `GEODE_ADMIN_TOKEN` in `.env`, required by compose, read from the environment
-  as in §10 until #36 hashes it.
+- **Hardening** restates the old systemd unit's, as container options: uid 1993 on a read-only rootfs,
+  `/tmp` on a tmpfs, `cap_drop: ALL`, `no-new-privileges`, `nofile` 65536. `./data` must belong to
+  uid 1993 (compose creates it as root, which is the first start's failure) and SMB/CIFS shares do not
+  work: the blob store hard-links inside a vault's directory. No curl in the image, so the healthcheck
+  is `deno eval`.
+- **The admin token** is `GEODE_ADMIN_TOKEN` in `.env`, required by compose and read from the
+  environment as in §10 until #36 hashes it.
 
 ### Host update job (#43)
 
