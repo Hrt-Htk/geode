@@ -315,13 +315,13 @@ export class GeodeSettingTab extends PluginSettingTab {
         rows: this.advancedRows(),
         visible: shown("advanced"),
       },
-      // #453/#434: after Advanced, only while Debug logging is on.
+      // #453/#434/#64: after Advanced, reachable while unlocked without any setting.
       {
         id: "logs",
         heading: "Logs",
         kind: "page",
         rows: logsSection.rows(),
-        visible: () => shown("advanced")() && this.plugin.pluginSettings.debugLogging,
+        visible: shown("logs"),
       },
     ];
   }

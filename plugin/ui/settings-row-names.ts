@@ -3,5 +3,5 @@
  * `obsidian`-free, so the specs can import them. */
 export const AUTO_LOCK_ROW = "Auto lock after (hours)";
 export const TRASH_RETENTION_ROW = "Trash retention (days)";
-export const DEBUG_LOGGING_ROW = "Debug logging";
+export const DEVELOPER_CONSOLE_ROW = "Developer console";
 export const SYNC_CONFIG_ROW = "Sync config folder";

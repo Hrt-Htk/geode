@@ -5,7 +5,7 @@ import type { Evaluatable } from "./device-abstraction";
 // compile time instead of silently mis-targeting a row.
 export {
   AUTO_LOCK_ROW,
-  DEBUG_LOGGING_ROW,
+  DEVELOPER_CONSOLE_ROW,
   SYNC_CONFIG_ROW,
   TRASH_RETENTION_ROW,
 } from "../../../plugin/ui/settings-row-names.ts";

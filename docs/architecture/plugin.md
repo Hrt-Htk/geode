@@ -513,7 +513,7 @@ Anything importing `obsidian` lives here. The logic it needs is extracted into `
 (`statusbar-icon.ts`, `sync-status.ts`, `tab-state.ts`, …) and unit-tested there.
 
 **Settings tab** (`settings-tab.ts` plus one module per section): Status, Vault, Devices, Sync scope,
-Trash, Advanced, and Logs (only while debug logging is on). Banners (`settings-banners.ts`) above the
+Trash, Advanced, and Logs (a page of the unlocked tab, no setting needed). Banners (`settings-banners.ts`) above the
 Status rows carry a version refusal, a held mass delete, a sync error, a pause, and the update hint:
 one headless section whose row order is that fixed order, each row shown only while its state holds.
 
@@ -533,8 +533,9 @@ Each section yields rows (`settings-legacy.ts` `SettingsRow`): a `render` row de
   render rows, number and toggle controls, `visible`, cleanups (run on `hide()`).
 
 Four rows are real controls, searchable and bound through `getControlValue`/`setControlValue` onto
-`pluginSettings` + `saveSettings()`: Auto lock after (hours), Trash retention (days), Debug logging
-(also sets the log level; the Logs page follows `visible`) and Sync config folder (also calls
+`pluginSettings` + `saveSettings()`: Auto lock after (hours), Trash retention (days), Developer
+console (also mirrors the log to the DevTools console; the last row of the Logs page) and Sync
+config folder (also calls
 `setSyncObsidianConfig` and reconciles; Config to sync follows `visible`). Their names live in
 `settings-row-names.ts` because the E2E drives the rows by name (a control row cannot carry a testid
 on 1.13+), and a refused number puts the stored value back and shows the reason on both paths

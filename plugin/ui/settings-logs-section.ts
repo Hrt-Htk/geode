@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import type { SettingsRow } from "./settings-legacy.ts";
 import { type LogEntry, subscribeLog } from "../plumbing/log.ts";
+import { DEVELOPER_CONSOLE_ROW } from "./settings-row-names.ts";
 import {
   connectionLabel,
   filterLogEntries,
@@ -59,6 +60,10 @@ export class SettingsLogsSection {
           });
         });
       },
+    }, {
+      name: DEVELOPER_CONSOLE_ROW,
+      desc: "Also print the log in the developer console.",
+      control: { type: "toggle", key: "debugLogging" },
     }];
   }
 

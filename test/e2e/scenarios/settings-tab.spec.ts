@@ -7,7 +7,7 @@ import { shotPath } from "../helpers/shots";
 import {
   AUTO_LOCK_ROW,
   closeSettingsPage,
-  DEBUG_LOGGING_ROW,
+  DEVELOPER_CONSOLE_ROW,
   openSettingsPage,
   rowShown,
   setRowControl,
@@ -86,9 +86,9 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
       { timeout: 10_000 },
     ).toBe("Unlocked. Locking requires the passphrase to sync again.");
 
-    /* ---- Step 1.5: sections render in order; Advanced is a sub-page (#16) ---- */
+    /* ---- Step 1.5: sections render in order; Advanced and Logs are sub-pages (#16, #64) ---- */
     expect(await shownSections(obsidian)).toEqual(
-      ["Vault", "Devices", "Sync scope", "Trash", "Advanced"],
+      ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"],
     );
     await expect(obsidian.win.locator('[data-testid="geode-settings-resync"]')).toHaveCount(0);
 
@@ -117,7 +117,7 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     await expect(obsidian.win.locator('[data-testid="geode-settings-reconcile"]')).toBeVisible();
     await expect(obsidian.win.locator('[data-testid="geode-settings-push"]')).toBeVisible();
 
-    /* Resync + Debug logging live on the Advanced page: open it first. */
+    /* Resync lives on the Advanced page: open it first. */
     await openSettingsPage(obsidian, "Advanced");
     await expect(obsidian.win.locator('[data-testid="geode-settings-resync"]')).toBeVisible();
 
@@ -134,13 +134,15 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
         await obsidian.win.screenshot({ path: shotPath("settings-no-add-device.png") });
       });
 
-    /* ---- Step 3: Toggle Debug logging ---- */
+    /* ---- Step 3: Toggle Developer console (the Logs page, #64) ---- */
     const readSetting = <T>(key: string) =>
       obsidian.eval<T>(`app.plugins.plugins.geode.pluginSettings.${key}`);
+    await closeSettingsPage(obsidian);
+    await openSettingsPage(obsidian, "Logs");
     const originalDebugLogging = await readSetting<boolean>("debugLogging");
-    await setRowControl(obsidian, DEBUG_LOGGING_ROW);
+    await setRowControl(obsidian, DEVELOPER_CONSOLE_ROW);
     await expect.poll(() => readSetting<boolean>("debugLogging")).toBe(!originalDebugLogging);
-    await setRowControl(obsidian, DEBUG_LOGGING_ROW);
+    await setRowControl(obsidian, DEVELOPER_CONSOLE_ROW);
     await expect.poll(() => readSetting<boolean>("debugLogging")).toBe(originalDebugLogging);
 
     /* Back to the tab: the next steps drive its groups. */
@@ -224,7 +226,7 @@ test("settings tab: buttons, toggles, auto-lock, advanced section, lock/unlock, 
     ).toBe("Unlocked. Locking requires the passphrase to sync again.");
     await expect(obsidian.win.locator('[data-testid="geode-settings-vault-rename"]')).toBeVisible();
     await expect.poll(() => shownSections(obsidian)).toEqual(
-      ["Vault", "Devices", "Sync scope", "Trash", "Advanced"],
+      ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"],
     );
 
     /* ---- Step 9: Click "Reconcile now" and "Push now": no error notice ---- */

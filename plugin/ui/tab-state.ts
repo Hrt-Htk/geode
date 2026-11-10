@@ -2,7 +2,14 @@
 
 export type TabState = "locked" | "unlocked" | "notset";
 
-export type SectionId = "status" | "vault" | "devices" | "scope" | "trash" | "advanced";
+export type SectionId =
+  | "status"
+  | "vault"
+  | "devices"
+  | "scope"
+  | "trash"
+  | "advanced"
+  | "logs";
 export type StatusRowId = "status" | "storage" | "actions";
 export type VaultRowId = "vault-name" | "vault-lock" | "autolock" | "passphrase";
 
@@ -31,7 +38,7 @@ export function tabVisibility(state: TabState): TabVisibility {
       return { sections: ["status", "vault"], statusRows: ["status"], vaultRows: ["vault-name"] };
     case "unlocked":
       return {
-        sections: ["status", "vault", "devices", "scope", "trash", "advanced"],
+        sections: ["status", "vault", "devices", "scope", "trash", "advanced", "logs"],
         statusRows: ["status", "storage", "actions"],
         vaultRows: ["vault-name", "vault-lock", "autolock", "passphrase"],
       };
