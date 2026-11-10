@@ -7,6 +7,8 @@ name: geode
 
 services:
   geode:
+    # `latest` is the promoted release, the one the community directory serves. To follow
+    # the betas BRAT installs, use `ghcr.io/hrt-htk/geode:beta` (#65).
     image: ghcr.io/hrt-htk/geode:latest
     restart: unless-stopped
     # Nothing to escalate into, nothing writable but /data.

@@ -111,7 +111,9 @@ jobs:
       - name: Merge and tag
         working-directory: /tmp/digests
         # Exactly two, or the tag would ship one architecture. The digests arrive as bare
-        # hex; imagetools wants the `sha256:` prefix back.
+        # hex; imagetools wants the `sha256:` prefix back. #65: a release never tags
+        # `latest`: directory users follow it, so it moves only when
+        # `deno task promote X.Y.Z` retags it onto a tested release (promote-image.yml).
         run: |
           digests=()
           for file in *; do digests+=("ghcr.io/hrt-htk/geode@sha256:$file"); done
@@ -121,7 +123,7 @@ jobs:
           fi
           docker buildx imagetools create \
             --tag ghcr.io/hrt-htk/geode:${{ github.ref_name }} \
-            --tag ghcr.io/hrt-htk/geode:latest \
+            --tag ghcr.io/hrt-htk/geode:beta \
             "${digests[@]}"
 
       - name: Read the manifest digest

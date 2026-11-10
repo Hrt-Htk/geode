@@ -33,10 +33,13 @@ the plugin as a **pre-release** (→ BRAT) and the server image to GHCR. The scr
 
 **The tag also builds the server image, and a failed image job blocks the plugin release.**
 `release.yml` builds `Dockerfile` for amd64 and arm64, merges the two digests into one manifest, attests
-them and pushes `ghcr.io/hrt-htk/geode:X.Y.Z` plus `latest`; the `release` job `needs` that manifest.
+them and pushes `ghcr.io/hrt-htk/geode:X.Y.Z` plus `beta`; the `release` job `needs` that manifest.
 So a broken image means no BRAT release either. Recover by re-running the failed jobs of that tag's run
 (`gh run list --workflow=Release`, then `gh run rerun <run-id> --failed`): never delete and re-push the
 tag, and never cut a new version for it.
+
+**`latest` does not move here.** A release tags `X.Y.Z` and `beta` only: `latest` is what directory
+users pull, and a beta that bumps the wire protocol would stop their sync. It moves in Promote, below.
 
 **The root manifest does not move here.** `manifest.json` and `versions.json` are untouched: they are
 what the community directory reads off `main`, so a beta must not move them. The build stamps
@@ -59,7 +62,8 @@ has no flag to skip any of it, and the image is not optional.
 
 The release does not touch a running server. Wait for that tag's `release.yml` run to finish, so the
 image is published (`gh run list --workflow=Release`), then update through the host job, which is what
-gives you the rollback:
+gives you the rollback. The job pulls whatever tag `compose.yaml` pins: `latest`, a promoted release,
+by default; `beta` on a host that follows the betas.
 
 - **The plugin's own button**: Geode settings, **Server update** → **Update** (asks for the admin
   token). It answers in about a minute.
@@ -90,13 +94,17 @@ Runs `scripts/promote.ts`:
 2. `gh api repos/{owner}/{repo}/releases/generate-notes`: notes for every change since the previously
    promoted version (`previous_tag_name` = the current root `manifest.json` version, resolved to its
    `v`-prefixed tag when it predates #12).
-3. Sets root `manifest.json` `version`, appends `versions.json` `X.Y.Z -> minAppVersion` (never edits
+3. `gh workflow run promote-image.yml -f version=X.Y.Z`, then `gh run watch --exit-status` on it: the
+   job copies that release's image index onto `ghcr.io/hrt-htk/geode:latest`. Same digest, no rebuild,
+   and the run fails if the digest moved, so `latest` stays behind an attested image. It runs **before**
+   the manifest commit: the directory must never offer a plugin whose server image has not caught up.
+4. Sets root `manifest.json` `version`, appends `versions.json` `X.Y.Z -> minAppVersion` (never edits
    an existing row).
-4. Commits `chore(release): promote X.Y.Z`, pushes `main`.
-5. `gh release edit X.Y.Z --prerelease=false --latest --notes <body>`.
+5. Commits `chore(release): promote X.Y.Z`, pushes `main`.
+6. `gh release edit X.Y.Z --prerelease=false --latest --notes <body>`.
 
-No rebuild, no image push: directory users get the exact build testers ran, versions in between
-are skipped for them (1.0 → 1.3).
+No rebuild and no new image bytes: `latest` becomes a second tag on the exact build testers ran, and
+versions in between are skipped for directory users (1.0 → 1.3).
 
 **Promote only after a release has been out for a while and no bug surfaced.** A bad beta is never
 promoted: fix it and ship the next beta. Never promote a version at or below the root manifest's.
@@ -154,7 +162,10 @@ touches a server.
 - **A half-done promote:** if `gh release edit` fails after the push, `main` already advertises
   `X.Y.Z` with the old body and the pre-release flag still set. Rerunning refuses (the version is no
   longer above the manifest's): finish it by hand with `gh release edit X.Y.Z --prerelease=false
-  --latest --notes-file <file>`.
+  --latest --notes-file <file>`. The image retag is idempotent, so finishing by hand needs nothing there;
+  a retag that failed left `latest` and `main` untouched, and rerunning the promote redoes it.
+- **The retag workflow must be on `main`:** `gh workflow run promote-image.yml` dispatches the default
+  branch's copy, so a promote fails (before touching `main`) on a checkout that predates it.
 - **Check the published artifacts, not the tag.** Verify with `gh release view X.Y.Z --json
   assets,isPrerelease` (expect `main.js`/`manifest.json` and `isPrerelease: true`); allow ~1-2 min lag,
   empty `assets` right after release ≠ failure. The image is a separate job: `gh run view` shows it, and

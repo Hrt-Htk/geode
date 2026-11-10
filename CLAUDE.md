@@ -243,14 +243,16 @@ intermediate ones. CI hard-fails on bad commit format, branch name, or a missing
 **Release to users**: `deno task release X.Y.Z` is the manual release path: bumps the shared version
 line (`package.json` only), commits `chore(release): X.Y.Z`, pushes `main`, tags the bare `X.Y.Z`.
 `release.yml` then publishes two things from that tag: the plugin as an attested pre-release (BRAT) and
-the server image to GHCR. The release script deploys nothing. A version difference does not block sync:
-the server gates on wire protocol + minimum version only, and a compatible difference shows an update
+the server image to GHCR, tagged `X.Y.Z` and `beta`: never `latest`, which directory users pull. The
+release script deploys nothing. A version difference does not block sync: the server gates on wire
+protocol + minimum version only, and a compatible difference shows an update
 hint instead. The build stamps `package.json`'s version into `plugin-dist/manifest.json`, so the release
 asset says `X.Y.Z` while the root `manifest.json` keeps the last promoted version. **Every release is a
 pre-release:** BRAT picks it up, the community directory does not. `deno task promote X.Y.Z` moves a
 tested release to the directory: root `manifest.json` + `versions.json`, commit
 `chore(release): promote X.Y.Z`, push `main`, clear the pre-release flag, mark it latest, notes since the
-last promoted version. No rebuild and no image push. No `--no-deploy` mode. `after-merge` calls
+last promoted version. No rebuild: `latest` moves onto that release's existing digest through
+`promote-image.yml`. No `--no-deploy` mode. `after-merge` calls
 `release` automatically (step 5); promote is always manual. Updating your own server after a release is
 a separate step, through the host update job (skill `geode-release`). Skill `geode-release`. While
 `RELEASE_HOLD` exists at the repo root, `after-merge` skips the release and `deno task release` /

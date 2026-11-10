@@ -26,6 +26,15 @@ case "$1 $2" in
     echo "* promoted notes"
     ;;
   "release edit") echo "https://example.invalid/releases/tag/$3" ;;
+  "workflow run") ;;
+  "run list") echo '[{"databaseId":7,"name":"Promote image 0.0.2"}]' ;;
+  "run watch")
+    if [ "\${GH_RUN_FAIL:-}" = "true" ]; then
+      echo "X Promote image 0.0.2 failed" >&2
+      exit 1
+    fi
+    echo "OK Promote image 0.0.2"
+    ;;
   *)
     echo "gh stub: unhandled: $*" >&2
     exit 1
@@ -169,6 +178,49 @@ Deno.test("promote: clears the pre-release flag, marks it latest, rewrites the n
     const notes = log.split("\n").find((l) => l.includes("generate-notes")) ?? "";
     assertStringIncludes(notes, "tag_name=0.0.2");
     assertStringIncludes(notes, "previous_tag_name=v0.0.1");
+  } finally {
+    await Deno.remove(fx.base, { recursive: true });
+  }
+});
+
+// #65: a release never moves the image's `latest` tag, so a promote does it, onto
+// the digest it already attested.
+Deno.test("promote: retags the image latest onto the release", async () => {
+  const fx = await tempRepo();
+  try {
+    const res = await runPromote(fx);
+    assertEquals(res.code, 0, `promote failed\n${res.stdout}${res.stderr}`);
+    const lines = (await Deno.readTextFile(fx.log)).split("\n");
+    const dispatch = lines.findIndex((l) => l.startsWith("workflow run"));
+    assert(dispatch >= 0, `promote must dispatch the retag\n${lines.join("\n")}`);
+    assertStringIncludes(lines[dispatch], "promote-image.yml");
+    assertStringIncludes(lines[dispatch], "version=0.0.2");
+    const watch = lines.findIndex((l) => l.startsWith("run watch"));
+    assertStringIncludes(lines[watch], "7");
+    assertStringIncludes(lines[watch], "--exit-status");
+    assert(dispatch < watch, "the dispatch comes before the watch");
+  } finally {
+    await Deno.remove(fx.base, { recursive: true });
+  }
+});
+
+Deno.test("promote: a failed image retag leaves main and the manifest alone", async () => {
+  const fx = await tempRepo();
+  try {
+    fx.env.GH_RUN_FAIL = "true";
+    const res = await runPromote(fx);
+    assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
+    assertStringIncludes(res.stderr, "promote-image");
+    assertEquals(
+      JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`)).version,
+      "0.0.1",
+      "an image retag that failed must not move the manifest",
+    );
+    assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release)")), "no promote commit");
+    assert(
+      !(await Deno.readTextFile(fx.log)).includes("release edit"),
+      "the release is not promoted without its image",
+    );
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
