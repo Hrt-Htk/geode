@@ -39,8 +39,6 @@ export interface SyncSessionStatusBar {
   updateState(state: string): void;
   /** #601: the held mass delete, rendered as its own status (not a connecting spinner). */
   setMassDeleteHold(hold: MassDeleteHold | null): void;
-  /** #54: a persisted resync stop: no session starts until the user retries. */
-  setStoppedResync(reason: string): void;
   updateReconnectDelay(ms: number): void;
   clearOffline(): void;
 }
@@ -48,6 +46,10 @@ export interface SyncSessionStatusBar {
 export interface SyncSessionHost {
   keys: VaultKeys | null;
   pluginSettings: PluginSettings;
+  /** #54: bumped whenever this session ends or is replaced (disposeRuntime, a new server
+   * address). A resync run reports only to the epoch it started in, so a settle cannot land
+   * in the next session. */
+  syncEpoch: number;
   manifest: { version: string };
   app: {
     vault: { adapter: unknown; configDir: string };

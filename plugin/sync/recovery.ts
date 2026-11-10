@@ -48,7 +48,7 @@ export interface ResyncDeps {
   onProgress?: (progress: ProgressInfo) => void;
   /** #54: from here (the head list is read) the rebuild may change rows and files, so a
    * caller must not answer a later failure by restarting a session on the old rows. */
-  onRowsMayChange?: () => void;
+  onRowsMayChange?: () => Promise<void> | void;
 }
 
 export interface ExportDeps {
@@ -81,7 +81,7 @@ const HEAD_APPLY_LIMIT = 8;
 
 export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStats> {
   const heads = await readCurrentHeads(deps.transport);
-  deps.onRowsMayChange?.();
+  await deps.onRowsMayChange?.();
   // #701: a rejoin copies what the server cannot vouch for out of the vault before the
   // heads overwrite or remove it, keeps a real edit in place, and keeps an unreadable file
   // it could not copy. `kept` is never pruned (#590).

@@ -9,6 +9,7 @@ import type { StateDB } from "../plumbing/state.ts";
 import { openSessionState, reconnectAndWaitLive } from "../session.ts";
 import { disposeRuntime, type VaultLockHost } from "../plumbing/vault-lock.ts";
 import { rebuildFromScratch, type RecoveryStats, type ResyncDeps } from "./recovery.ts";
+import { RESYNC_UNFINISHED } from "../ui/resync-status.ts";
 
 type RebuildHost = VaultLockHost & {
   app: { vault: { configDir: string } };
@@ -65,13 +66,13 @@ export async function rebuildVault(
     await reconnectAndWaitLive(host);
   }
   let freshState: StateDB | null = null;
-  /** From the head list on the rebuild may change rows and files. */
-  let rowsMayChange = false;
+  /** The rebuild finished: its rows are consistent, whatever happens to the restart. */
+  let completed = false;
   try {
     // #701 review: dispose first: the old instance's close() flushes its rows as a
     // fire-and-forget write, and a stale flush landing after the rebuild would restore
     // them. Both are inside the try so a failure here stops sync too.
-    disposeRuntime(host, { clearKeys: false, updateStatus: true });
+    disposeRuntime(host, { clearKeys: false, updateStatus: true, keepEpoch: true });
     freshState = await openSessionState(host);
     const result = await rebuildFromScratch({
       vault: host.app.vault as unknown as ResyncDeps["vault"],
@@ -84,8 +85,11 @@ export async function rebuildVault(
       parkedMoves: () => host.pluginSettings.pendingMoveOuts,
       rejoin,
       onProgress,
-      onRowsMayChange: () => {
-        rowsMayChange = true;
+      onRowsMayChange: async () => {
+        // #54 (crash): persist before the first row can change. A force quit or an OOM mid
+        // rebuild then leaves the marker, so the next start does not replay half-restored
+        // rows as deletes. The reason is replaced if the rebuild fails.
+        await setResyncMarker(host, RESYNC_UNFINISHED);
       },
     });
     log.info("rebuild done", {
@@ -100,37 +104,40 @@ export async function rebuildVault(
       host.statusBar?.setMassDeleteHold(null);
       await host.saveSettings();
     }
-    if (rejoin) {
-      // #701: clear the marker that would send the next session back here, and lift the
-      // pause only when this rejoin set it: a pause the user chose survives.
-      if (host.pluginSettings.rejoinIncomplete) host.pluginSettings.pauseAt = 0;
-      host.pluginSettings.rejoinIncomplete = false;
-      await host.saveSettings();
-    }
-    // #54: a completed rebuild is the way out of the stopped state it left earlier.
-    if (host.pluginSettings.resyncIncomplete) await clearResyncMarker(host);
+    if (rejoin) await finishRejoin(host);
+    // #54: the rows are consistent again, so the stop must not survive this run's own
+    // restart: a crash from here on starts a normal session on rebuilt rows.
+    await setResyncMarker(host, null);
+    completed = true;
     await host.restartUnlockedSession(freshState);
     return result;
   } catch (error) {
-    await answerRebuildFailure(host, freshState, { rejoin, rowsMayChange, error });
+    if (rejoin) await pauseForIncompleteRejoin(host, freshState);
+    else if (completed) disposeRuntime(host, { clearKeys: false, updateStatus: true });
+    else if (host.pluginSettings.resyncStop !== "") {
+      await setResyncMarker(host, failureMessage(error));
+    } else await restartAfterFailedRebuild(host, freshState);
     throw error;
   }
 }
 
-/** #54: the failure answer. A rejoin pauses and leaves its marker (#701). Any other rebuild
- * restarts only while the persisted rows are exactly what a normal start opens; when this
- * rebuild may have changed rows (or an earlier one did and its marker is still set), it
- * persists the stop instead, so even a reload or an unlock lands on it. */
-async function answerRebuildFailure(
-  host: RebuildHost,
-  state: StateDB | null,
-  failure: { rejoin: boolean; rowsMayChange: boolean; error: unknown },
-): Promise<void> {
-  if (failure.rejoin) return await pauseForIncompleteRejoin(host, state);
-  if (failure.rowsMayChange || host.pluginSettings.resyncIncomplete) {
-    return await markResyncIncomplete(host, failure.error);
-  }
-  await restartAfterFailedRebuild(host, state);
+/** #701: clear the marker that would send the next session back here, and lift the pause
+ * only when this rejoin set it: a pause the user chose survives. */
+async function finishRejoin(host: RebuildHost): Promise<void> {
+  if (host.pluginSettings.rejoinIncomplete) host.pluginSettings.pauseAt = 0;
+  host.pluginSettings.rejoinIncomplete = false;
+  await host.saveSettings();
+}
+
+/** #54: the persisted stop, or its clearing (`null`). It is written before the rebuild can
+ * change a row, so a crash mid rebuild still lands on the stopped state. */
+async function setResyncMarker(host: RebuildHost, reason: string | null): Promise<void> {
+  host.pluginSettings.resyncStop = reason ?? "";
+  await host.saveSettings();
+}
+
+function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** #701: a rejoin that dies part way must not leave the old rows armed for the next session:
@@ -144,20 +151,6 @@ async function pauseForIncompleteRejoin(
   state?.close();
   host.pluginSettings.pauseAt = Date.now();
   host.pluginSettings.rejoinIncomplete = true;
-  await host.saveSettings();
-}
-
-/** #54: persist the stop. The reason is the engine's own words; the surfaces map it. */
-async function markResyncIncomplete(host: RebuildHost, error: unknown): Promise<void> {
-  host.pluginSettings.resyncIncomplete = true;
-  host.pluginSettings.resyncStopMessage = error instanceof Error ? error.message : String(error);
-  await host.saveSettings();
-}
-
-/** #54: a completed rebuild clears the marker that kept the session stopped. */
-async function clearResyncMarker(host: RebuildHost): Promise<void> {
-  host.pluginSettings.resyncIncomplete = false;
-  host.pluginSettings.resyncStopMessage = "";
   await host.saveSettings();
 }
 
@@ -175,6 +168,6 @@ async function restartAfterFailedRebuild(
     log.error("rebuild restart failed", { error: formatError(error) });
     // #54 review: a restart can die after it created the transport. Leave the truth (nothing
     // is syncing), not a bar that describes a live session.
-    disposeRuntime(host, { clearKeys: false, updateStatus: true });
+    disposeRuntime(host, { clearKeys: false, updateStatus: true, keepEpoch: true });
   }
 }

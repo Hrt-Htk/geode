@@ -107,16 +107,15 @@ async function partialRebuild(): Promise<Partial> {
 Deno.test("resync - a partial rebuild sends no deletes, and a reload does not start a session", async () => {
   const { B, server, vaultId, stop } = await partialRebuild();
   try {
-    const reason = B.pluginSettings.resyncStopMessage;
-    assertEquals(B.pluginSettings.resyncIncomplete, true, "the stop is persisted");
-    assertEquals(reason.includes("resync failed for"), true, `reason: ${reason}`);
+    const reason = B.pluginSettings.resyncStop;
+    assertEquals(reason.includes("resync failed for"), true, `the stop is persisted: ${reason}`);
 
     // A reload: a fresh plugin, the persisted rows and settings.
     const fresh = await restartPlugin(B, server);
     try {
       await sleep(1_500);
       assertEquals(fresh.transport, null, "no session starts on the rows the rebuild left");
-      assertEquals(fresh.pluginSettings.resyncIncomplete, true, "the marker survives the reload");
+      assertEquals(fresh.pluginSettings.resyncStop !== "", true, "the marker survives the reload");
       assertEquals(
         deletedVersions(server, vaultId, fresh, LOST),
         0,
@@ -152,7 +151,7 @@ Deno.test("resync - the marker survives a lock and unlock, and a completed rebui
       transport.stop();
     }
     await waitFor(() => B.isLive(), "the completed rebuild restarts the session");
-    assertEquals(B.pluginSettings.resyncIncomplete, false, "a completed rebuild clears the stop");
+    assertEquals(B.pluginSettings.resyncStop, "", "a completed rebuild clears the stop");
     assertEquals(deletedVersions(server, vaultId, B, LOST), 0, "no delete reached the server");
   } finally {
     await stop();

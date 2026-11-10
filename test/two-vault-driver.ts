@@ -456,7 +456,7 @@ export class TestPlugin {
     return restartSession(this, existingState).then(() => {
       // Nothing goes live behind a marker: release the test's live-wait the way a held
       // device does. Otherwise re-attach the listeners to the fresh Transport.
-      if (this.pluginSettings.resyncIncomplete) this.liveResolve();
+      if (this.pluginSettings.resyncStop !== "") this.liveResolve();
       if (this.transport) this.attachTestListeners();
     });
   }

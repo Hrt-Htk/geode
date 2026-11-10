@@ -99,6 +99,15 @@ function headsGarbage(count: number): Transport {
   } as unknown as Transport;
 }
 
+/** A transport with no heads: the rebuild applies nothing and completes. */
+function noHeads(): Transport {
+  return {
+    getHeads: async function* () {},
+    getBlob: () => Promise.reject(new Error("unused")),
+    getVersionChain: () => Promise.resolve([]),
+  } as unknown as Transport;
+}
+
 /** A live session to borrow, for the held-mass-delete path (it reconnects before rebuilding). */
 const liveTransport = () =>
   ({
@@ -119,13 +128,12 @@ Deno.test("rebuild-flow - a rebuild that never read its heads restarts on the pe
   assertEquals(restartCalls.length, 1, "sync must run again after a failed resync");
   assertEquals(restartCalls[0]?.getAllLocalFiles() instanceof Map, true);
   // The persisted rows are untouched, so no marker: a normal start opens exactly them.
-  assertEquals(settings.resyncIncomplete, false);
+  assertEquals(settings.resyncStop, "");
 });
 
 Deno.test("rebuild-flow - an earlier stop keeps a later failure stopped too", async () => {
   const { host, restartCalls, settings } = makeHost();
-  settings.resyncIncomplete = true;
-  settings.resyncStopMessage = "resync failed for 1 file(s): abc";
+  settings.resyncStop = "resync failed for 1 file(s): abc";
 
   await assertRejects(
     () => rebuildVault(host, headsFail("server still away")),
@@ -135,7 +143,7 @@ Deno.test("rebuild-flow - an earlier stop keeps a later failure stopped too", as
 
   // The rows the earlier rebuild left open are still open: no restart may touch them.
   assertEquals(restartCalls.length, 0);
-  assertEquals(settings.resyncStopMessage, "server still away");
+  assertEquals(settings.resyncStop, "server still away");
 });
 
 Deno.test("rebuild-flow - a partially applied rebuild persists the stop", async () => {
@@ -150,8 +158,7 @@ Deno.test("rebuild-flow - a partially applied rebuild persists the stop", async 
   // A restart here would replay the failed heads as local deletes over the server, and a
   // reload would do the same: the marker keeps every session start off those rows.
   assertEquals(restartCalls.length, 0, "a partially applied rebuild must not restart");
-  assertEquals(settings.resyncIncomplete, true);
-  assertEquals(settings.resyncStopMessage.includes("resync failed for 3 file(s)"), true);
+  assertEquals(settings.resyncStop.includes("resync failed for 3 file(s)"), true);
 });
 
 Deno.test("rebuild-flow - a held rebuild that dies part way keeps the hold and stays stopped", async () => {
@@ -175,7 +182,23 @@ Deno.test("rebuild-flow - a held rebuild that dies part way keeps the hold and s
     1,
     "the hold stays in force until a rebuild returns",
   );
-  assertEquals(settings.resyncIncomplete, true);
+  assertEquals(settings.resyncStop !== "", true);
+});
+
+Deno.test("rebuild-flow - the marker is persisted before the first head is applied", async () => {
+  const { host, settings } = makeHost();
+  const marksBeforeApply: string[] = [];
+
+  await assertRejects(() =>
+    rebuildVault(host, headsGarbage(3), {
+      // onProgress runs per head, before that head is applied: a crash there leaves the
+      // marker behind, so the next start cannot replay half-restored rows as deletes.
+      onProgress: () => marksBeforeApply.push(settings.resyncStop),
+    })
+  );
+
+  assertEquals(marksBeforeApply.length, 3);
+  assertEquals(marksBeforeApply.every((mark) => mark !== ""), true);
 });
 
 Deno.test("rebuild-flow - a held paused rebuild is refused before it touches anything", async () => {
@@ -195,6 +218,17 @@ Deno.test("rebuild-flow - a held paused rebuild is refused before it touches any
 
   assertEquals(restartCalls.length, 0);
   assertEquals(settings.massDeleteHold?.files.length, 1);
+});
+
+Deno.test("rebuild-flow - a completed rebuild whose restart throws leaves no marker", async () => {
+  const { host, settings } = makeHost();
+  host.restartUnlockedSession = () => Promise.reject(new Error("restart blew up"));
+
+  await assertRejects(() => rebuildVault(host, noHeads()), Error, "restart blew up");
+
+  // The rows are consistent, so the stop must not survive a restart that only failed to
+  // start a session: a reload opens a normal session on rebuilt rows.
+  assertEquals(settings.resyncStop, "");
 });
 
 Deno.test("rebuild-flow - a failed rejoin keeps its pause and stays stopped", async () => {

@@ -46,7 +46,11 @@ export type VaultLockHost = SyncSessionHost & {
   rekeyElsewhere: boolean;
   settingTab: { applyLockState(): void; refresh(): void } | null;
   statusBar:
-    | (SyncSessionHost["statusBar"] & { setVersionStatus(status: VersionStatus): void })
+    | (SyncSessionHost["statusBar"] & {
+      setVersionStatus(status: VersionStatus): void;
+      /** #54: a persisted resync stop: no session starts until the user retries. */
+      setStoppedResync(reason: string): void;
+    })
     | null;
   restartUnlockedSession(existingState?: StateDB): Promise<void>;
   /** #464: the in-memory keys changed (locked, left, re-keyed): close surfaces
@@ -125,6 +129,9 @@ export async function unlockAfterRemoteRekeyFlow(
   await host.saveSettings();
   registerAuthTofu(host.pluginSettings, result.keys);
   await host.restartUnlockedSession(state);
+  // #54: a resync marker keeps the session from starting, so the state opened here has no
+  // owner: close it rather than leave its persistence wired to a dead session.
+  if (!host.transport) state.close();
   host.settingTab?.applyLockState();
 }
 
@@ -177,11 +184,15 @@ export async function restartUnlockedSession(
   host: VaultLockHost,
   existingState?: StateDB,
 ): Promise<void> {
-  // #54: a resync that died after it may have changed rows leaves sync stopped. A session
-  // on those rows would read the files it never restored as local deletes (the mass-delete
-  // guard stays silent below 20 files), so a reload or an unlock lands on the stop instead.
-  if (host.pluginSettings.resyncIncomplete) {
-    host.statusBar?.setStoppedResync(host.pluginSettings.resyncStopMessage);
+  // #54: a resync that may have changed rows and has not finished leaves sync stopped. A
+  // session on those rows would read the files it never restored as local deletes (the
+  // mass-delete guard stays silent below 20 files), so a reload or an unlock lands on the
+  // stop instead. A held mass delete is still announced: it is what a retry has to clear.
+  if (host.pluginSettings.resyncStop !== "") {
+    if (host.pluginSettings.massDeleteHold) {
+      host.onMassDeleteHold(host.pluginSettings.massDeleteHold);
+    }
+    host.statusBar?.setStoppedResync(host.pluginSettings.resyncStop);
     return;
   }
   await startUnlockedSession(host, existingState);
@@ -242,8 +253,11 @@ function notifyKeysChanged(host: VaultLockHost): void {
 
 export function disposeRuntime(
   host: VaultLockHost,
-  opts: { clearKeys: boolean; updateStatus: boolean },
+  opts: { clearKeys: boolean; updateStatus: boolean; keepEpoch?: boolean },
 ): void {
+  // #54: a teardown is a session boundary. A rebuild's own teardown is not (keepEpoch):
+  // its run keeps reporting to the epoch it started in.
+  if (!opts.keepEpoch) host.syncEpoch += 1;
   disposeSession(host);
   host.blockedNoticeShown = false;
   if (opts.clearKeys) {
