@@ -6,6 +6,7 @@ import { normalizeForHash, normalizeMarkdownLineEndings, stripBOM } from "../../
 import { reassemble } from "../../core/reassemble.ts";
 import { log } from "../plumbing/log.ts";
 import { StateDB } from "../plumbing/state.ts";
+import { recordedWrite } from "./apply.ts";
 import { Transport } from "./transport.ts";
 import { conflictDeviceLabel, conflictDeviceName, generateConflictPath } from "./conflicts.ts";
 import type { ActivityRecord } from "./activity-log.ts";
@@ -255,7 +256,12 @@ export async function orchestrateMerge(
 
   switch (outcome.kind) {
     case "clean": {
-      await deps.vault.adapter.writeBinary(input.path, outcome.merged);
+      // #59: a merged write is bytes the user did not type: record it before writing.
+      await recordedWrite(
+        deps.state,
+        input.pathHash,
+        () => deps.vault.adapter.writeBinary(input.path, outcome.merged),
+      );
       const mergedHash = blake3Hex(outcome.merged);
       deps.recordActivity?.({
         path: input.path,

@@ -20,7 +20,7 @@ import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { Transport } from "./transport.ts";
 import { acquirePathLock } from "./path-lock.ts";
 import type { CommitResult } from "./commit-channel.ts";
-import { renameHeadOf } from "./apply.ts";
+import { recordedWrite, renameHeadOf } from "./apply.ts";
 import { carryLocalEdit } from "./rename-carry.ts";
 import { isLateSave } from "./late-save.ts";
 import {
@@ -570,7 +570,12 @@ async function carryHeadEdit(
     : null;
   deps.suppressSelfWrite?.(marker.renamedTo);
   if (text && "merged" in text) {
-    await writeVaultBinary(marker.renamedTo, text.merged, Date.now(), deps.vault);
+    // #59: a merged write is bytes the user did not type either: record it before writing.
+    await recordedWrite(
+      deps.state,
+      hashPathHex(deps.keys.mac_key, marker.renamedTo),
+      () => writeVaultBinary(marker.renamedTo, text.merged, Date.now(), deps.vault),
+    );
     log.info("carried an edit to the renamed file", { from: marker.path, to: marker.renamedTo });
     return true;
   }

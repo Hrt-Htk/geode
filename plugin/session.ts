@@ -92,8 +92,14 @@ export function disposeSession(host: SyncSessionHost): void {
   host.syncManager = null;
   host.transport?.stop();
   host.transport = null;
-  host.state?.close();
+  const state = host.state;
   host.state = null;
+  if (state) {
+    state.close();
+    // The cursor writes are queued now: a leave must not delete the state files under a
+    // write still in the queue (#744), so the queue drains with the other state writes.
+    void trackStateWrite(state.drainCursorWrites());
+  }
 }
 
 export async function openSessionState(host: SyncSessionHost): Promise<StateDB> {
@@ -140,6 +146,11 @@ function writeStateFile(
   const write = host.isMobile
     ? adapter.writeBinary(path, bytes)
     : atomicWriteBinary(adapter, path, bytes);
+  return trackStateWrite(write);
+}
+
+/** Keep a state write (or the cursor queue's drain) visible to `awaitStateWrites`. */
+function trackStateWrite(write: Promise<void>): Promise<void> {
   inFlightStateWrites.add(write);
   const settle = () => {
     inFlightStateWrites.delete(write);

@@ -66,13 +66,16 @@ Deno.test("sync-cursor-contiguous - persist fires only when the cursor actually 
   db.setSyncCursorPersist(() => persists++);
 
   db.advanceSyncCursor(1); // cursor 0 -> 1
+  await db.drainCursorWrites();
   assertEquals(persists, 1);
 
   db.advanceSyncCursor(3); // gap at 2: no cursor change, no persist
   db.advanceSyncCursor(4); // still gapped at 2: no cursor change, no persist
+  await db.drainCursorWrites();
   assertEquals(persists, 1);
 
   db.advanceSyncCursor(2); // 2,3,4 flush in one step
+  await db.drainCursorWrites();
   assertEquals(persists, 2);
   assertEquals(db.getSyncCursor(), 4);
 

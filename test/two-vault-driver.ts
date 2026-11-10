@@ -1232,7 +1232,13 @@ export async function restartWithDiskChange(
 export async function restartPlugin(
   old: TestPlugin,
   server: { url: string },
-  opts?: { unlocked?: boolean; settings?: Partial<PluginSettings> },
+  opts?: {
+    unlocked?: boolean;
+    settings?: Partial<PluginSettings>;
+    /** Install fault injection on the fresh vault before its session starts (a kill
+     * inside a write, a failed download). */
+    prepare?: (plugin: TestPlugin) => void;
+  },
 ): Promise<TestPlugin> {
   const files = new Map(old.fakeVault.files);
   const mtimes = new Map(old.fakeVault.mtimes);
@@ -1256,6 +1262,7 @@ export async function restartPlugin(
   // Settings survive a restart (data.json in the real plugin): the persisted settings come
   // with them, markers included, and `opts.settings` overrides what a scenario needs.
   Object.assign(fresh.pluginSettings, old.pluginSettings, opts?.settings ?? {});
+  opts?.prepare?.(fresh);
   if (opts?.unlocked !== false) await fresh.start();
   return fresh;
 }

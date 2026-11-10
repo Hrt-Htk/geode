@@ -10,6 +10,7 @@ import { normalizeForHash } from "../../core/normalize.ts";
 import { REJOIN_BACKUP_FOLDER } from "../plumbing/settings-types.ts";
 import type { StateDB } from "../plumbing/state.ts";
 import { log } from "../plumbing/log.ts";
+import { recordedWrite } from "./apply.ts";
 import { enumerateDisk, type EnumerateDiskVault } from "./enumerate-disk.ts";
 import { readVaultBinary, type Vault, writeVaultBinary } from "./vault-io.ts";
 
@@ -174,7 +175,14 @@ async function writeBackup(copies: Doubtful[], deps: RejoinDeps): Promise<Rejoin
   for (const copy of copies) {
     const bytes = await readVaultBinary(copy.path, deps.vault);
     if (bytes === null) continue;
-    await writeVaultBinary(`${folder}/${copy.path}`, bytes, Date.now(), deps.vault);
+    const backupPath = `${folder}/${copy.path}`;
+    // #59: a recorded write, so a kill mid-copy leaves a record instead of a fragment a
+    // later pass commits as a new note.
+    await recordedWrite(
+      deps.state,
+      hashPathHex(deps.keys.mac_key, backupPath),
+      () => writeVaultBinary(backupPath, bytes, Date.now(), deps.vault),
+    );
     written++;
   }
   log.info("rejoin backed up doubtful files", { folder, count: written });

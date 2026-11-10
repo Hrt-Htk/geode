@@ -110,6 +110,11 @@ export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStat
   // Heads are independent per path_hash: apply with bounded concurrency.
   // Each applyVersion advances its own sync cursor; we take the max at the end.
   const indexedHeads = heads.map((h, i) => ({ head: h, index: i }));
+  // #59: one record write for the whole rebuild, before its first file write: a kill
+  // mid-rebuild then leaves a record the next start finishes instead of committing
+  // fragments. Recorded paths whose head fails stay recorded.
+  await deps.state.beginApply(heads.map((head) => head.path_hash));
+  const written: string[] = [];
   let appliedFiles = 0;
   let deletedFiles = 0;
   await mapWithConcurrency(
@@ -119,6 +124,7 @@ export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStat
       deps.onProgress?.({ current: index + 1, total: heads.length });
       try {
         await applyHead(head, deps, onLocalEdit, isTrusted);
+        written.push(head.path_hash);
         if (head.deleted) deletedFiles++;
         else appliedFiles++;
       } catch (err) {
@@ -132,6 +138,9 @@ export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStat
       await yieldToUi(index);
     },
   );
+
+  // #59: the heads that landed are accounted for; a failed one keeps its record.
+  await deps.state.endApply(written);
 
   // A failed head is a permanent (post-retry) fetch/apply failure. Do NOT prune
   // or advance the cursor on a partial resync: that would delete files and skip

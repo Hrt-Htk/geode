@@ -1,3 +1,4 @@
+import { withTimeout } from "./timeout.ts";
 import { windowGlobal } from "./window.ts";
 
 export interface LocalFileRow {
@@ -61,11 +62,26 @@ export class StateDB {
   private persist: ((json: string) => void) | null = null;
   private syncCursorPersist: ((json: string) => void | Promise<void>) | null = null;
   private persistTimer: number | null = null;
-  /** #59: the paths a download batch is writing (their disk bytes may be a fragment). */
-  private readonly inFlightApply: Set<string>;
+  /** #59: the paths whose write may have left a fragment (this session), so no pass may
+   * commit them: a batch adds its paths before writing, and only a write that landed, or a
+   * version that turned out not to need one, leaves the set. */
+  private readonly writing = new Set<string>();
+  /** #59: what the cursor file must carry for the next start: every path a batch has not
+   * confirmed, whether or not it ever wrote. Separate from `writing` because a deferred or
+   * out-of-scope path wrote nothing (so it must not block a pass) yet is still owed. */
+  private readonly pending = new Set<string>();
+  /** Set by close(): a queued write that lands afterwards must not touch the state files
+   * the next session (or a leave) owns. */
+  private closed = false;
+  /** #59: the paths a batch of the last session was writing when the app died: their disk
+   * bytes are this device's own unfinished write. Cleared only once each is resolved. */
+  private readonly interrupted: Set<string>;
+  /** Cursor writes run one at a time, in order: a slow one can never land after a newer
+   * one and put a cleared record back. */
+  private cursorWrites: Promise<void> = Promise.resolve();
 
-  constructor(inFlightApply: string[] = []) {
-    this.inFlightApply = new Set(inFlightApply);
+  constructor(interruptedApply: string[] = []) {
+    this.interrupted = new Set(interruptedApply);
   }
 
   getLocalFile(path: string): LocalFileRow | null {
@@ -222,7 +238,8 @@ export class StateDB {
       last_backup_at: this.lastBackupAt,
     };
     // Only while a batch is writing: an idle cursor file keeps its three keys.
-    if (this.inFlightApply.size > 0) cursor.in_flight_apply = [...this.inFlightApply];
+    const inFlight = this.getInFlightApply();
+    if (inFlight.length > 0) cursor.in_flight_apply = inFlight;
     return JSON.stringify(cursor);
   }
 
@@ -235,32 +252,91 @@ export class StateDB {
   }
 
   /** #59: the paths a download batch is about to write, flushed BEFORE its first write so
-   * a kill mid-write leaves a record instead of a fragment with no row. Awaits the write:
-   * the record is durable when this resolves. */
+   * a kill mid-write leaves a record instead of a fragment with no row. Rejects when the
+   * record could not be written: a batch must not write bytes it could not record. */
   async beginApply(pathHashes: string[]): Promise<void> {
     if (pathHashes.length === 0) return;
-    for (const pathHash of pathHashes) this.inFlightApply.add(pathHash);
-    await this.flushCursor();
-  }
-
-  /** #59: the batch's downloads are all accounted for: drop the record, durably. */
-  async endApply(): Promise<void> {
-    if (this.inFlightApply.size === 0) return;
-    this.inFlightApply.clear();
-    await this.flushCursor();
-  }
-
-  /** #59: paths of a download batch that never finished (read back at the next start). */
-  getInFlightApply(): string[] {
-    return [...this.inFlightApply];
-  }
-
-  private async flushCursor(): Promise<void> {
-    try {
-      await this.syncCursorPersist?.(this.serializeSyncCursor());
-    } catch {
-      // non-critical
+    const added = pathHashes.filter((pathHash) => !this.pending.has(pathHash));
+    for (const pathHash of pathHashes) {
+      this.pending.add(pathHash);
+      this.writing.add(pathHash);
     }
+    try {
+      await this.flushCursor(true);
+    } catch (error) {
+      for (const pathHash of added) {
+        this.pending.delete(pathHash);
+        this.writing.delete(pathHash);
+      }
+      throw error;
+    }
+  }
+
+  /** #59: these paths' downloads are accounted for (written, deleted, or already tracked):
+   * the only way a record is dropped. */
+  async endApply(doneHashes: string[]): Promise<void> {
+    let cleared = false;
+    for (const pathHash of doneHashes) {
+      if (this.writing.delete(pathHash)) cleared = true;
+      if (this.pending.delete(pathHash)) cleared = true;
+      if (this.interrupted.delete(pathHash)) cleared = true;
+    }
+    if (cleared) await this.flushCursor();
+  }
+
+  /** #59: this path's version was deferred or out of scope, so nothing was written: it
+   * stops blocking a pass, and stays owed in the record for the next start. */
+  releaseWrite(pathHash: string): void {
+    this.writing.delete(pathHash);
+  }
+
+  /** #59: every path a download batch is writing or left unfinished last session. */
+  getInFlightApply(): string[] {
+    return [...new Set([...this.interrupted, ...this.pending])];
+  }
+
+  /** #59: paths read back from a killed session, whose disk bytes may be a fragment: the
+   * apply writes their head over it instead of merging or keeping it. */
+  getInterruptedApply(): string[] {
+    return [...this.interrupted];
+  }
+
+  isInterrupted(pathHash: string): boolean {
+    return this.interrupted.has(pathHash);
+  }
+
+  /** #59: may this path's disk bytes be a fragment? No pass may commit or close it. */
+  isWriting(pathHash: string): boolean {
+    return this.writing.has(pathHash) || this.interrupted.has(pathHash);
+  }
+
+  /** Wait until every queued cursor write has landed: a leave must not delete the state
+   * files under a write still in the queue. */
+  async drainCursorWrites(): Promise<void> {
+    for (;;) {
+      const pending = this.cursorWrites;
+      await pending;
+      if (pending === this.cursorWrites) return;
+    }
+  }
+
+  /** Queue a cursor write that serializes the state as it is when it runs, so the file
+   * always reflects the last state. `strict` propagates the write's failure; `final` is
+   * the one write close() still owes after the hook is gone. A bounded write: a bridge that
+   * stops answering must not hold the queue (and with it every later apply) forever. */
+  private flushCursor(strict = false, final = false): Promise<void> {
+    const hook = this.syncCursorPersist;
+    if (hook === null) return Promise.resolve();
+    const run = this.cursorWrites.then(() => {
+      if (this.closed && !final) return;
+      return withTimeout(
+        Promise.resolve(hook(this.serializeSyncCursor())),
+        CURSOR_WRITE_TIMEOUT_MS,
+        "state write",
+      );
+    });
+    this.cursorWrites = run.catch(() => {});
+    return strict ? run : run.catch(() => {});
   }
 
   private schedulePersist(): void {
@@ -291,13 +367,20 @@ export class StateDB {
         // non-critical
       }
     }
-    void this.flushCursor();
-    // Null the hooks so a drain still in flight after dispose can't re-arm a
-    // timer / write stale state over the next session's files (#328).
+    // The final cursor write still lands; every write queued before it is superseded by
+    // it, and any queued or later one is dropped so nothing writes stale state over the
+    // next session's files (#328).
+    void this.flushCursor(false, true);
+    this.closed = true;
     this.persist = null;
     this.syncCursorPersist = null;
   }
 }
+
+/** How long a state write may take before the queue moves on without it. A small JSON
+ * through the mobile FS bridge is milliseconds; a write that outlives this is a dead
+ * bridge, and the batch must fail closed rather than freeze the sync. */
+const CURSOR_WRITE_TIMEOUT_MS = 10_000;
 
 // local-files persistence trailing-throttle window (#328).
 const STATE_PERSIST_INTERVAL_MS = 2000;

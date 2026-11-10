@@ -1,10 +1,6 @@
 import { openStateDB } from "../../../plugin/plumbing/state.ts";
-import {
-  loadPersistedState,
-  type StatePaths,
-  wireStatePersistence,
-} from "../../../plugin/plumbing/state-persistence.ts";
-import { assert, assertEquals } from "@std/assert";
+
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { FakeTime } from "@std/testing/time";
 
 Deno.test("sync-cursor-persistence - serializeSyncCursor round-trips through openStateDB", () => {
@@ -21,7 +17,7 @@ Deno.test("sync-cursor-persistence - serializeSyncCursor round-trips through ope
   db2.close();
 });
 
-Deno.test("sync-cursor-persistence - setSyncCursorPersist hook fires eagerly on updateSyncCursor", () => {
+Deno.test("sync-cursor-persistence - setSyncCursorPersist hook fires on updateSyncCursor, unthrottled", async () => {
   const db = openStateDB();
 
   let captured: string | null = null;
@@ -30,16 +26,17 @@ Deno.test("sync-cursor-persistence - setSyncCursorPersist hook fires eagerly on 
   });
 
   db.updateSyncCursor(7);
+  await db.drainCursorWrites();
 
-  // Hook fires synchronously: no debounce wait needed
-  assert(captured !== null, "cursor persist hook should have fired immediately");
+  // The write is queued, never throttled: no debounce wait needed
+  assert(captured !== null, "cursor persist hook should have fired without a wait");
   const parsed = JSON.parse(captured!);
   assertEquals(parsed.last_seen_seq, 7);
 
   db.close();
 });
 
-Deno.test("sync-cursor-persistence - close flushes the cursor via the hook", () => {
+Deno.test("sync-cursor-persistence - close flushes the cursor via the hook", async () => {
   const db = openStateDB();
 
   let captured: string | null = null;
@@ -49,8 +46,9 @@ Deno.test("sync-cursor-persistence - close flushes the cursor via the hook", () 
 
   db.updateSyncCursor(99);
 
-  // Close should flush the cursor unconditionally
+  // Close flushes the cursor unconditionally (its write rides the queue).
   db.close();
+  await db.drainCursorWrites();
 
   assert(captured !== null, "close should flush cursor persist");
   const parsed = JSON.parse(captured!);
@@ -92,7 +90,7 @@ Deno.test("sync-cursor-persistence - recordBackup applies the next-backup rule a
   db.close();
 });
 
-Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 60s", () => {
+Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 60s", async () => {
   const time = new FakeTime();
   try {
     const db = openStateDB();
@@ -102,13 +100,16 @@ Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 
     });
 
     db.recordBackup(1);
+    await db.drainCursorWrites();
     assertEquals(stamps, [1], "first stamp persists immediately");
 
     db.recordBackup(2);
+    await db.drainCursorWrites();
     assertEquals(stamps, [1], "stamp-only write within 60s is skipped");
 
     time.tick(60_000);
     db.recordBackup(3);
+    await db.drainCursorWrites();
     assertEquals(stamps, [1, 3], "stamp-only write after 60s persists");
     db.close();
   } finally {
@@ -116,7 +117,7 @@ Deno.test("sync-cursor-persistence - stamp-only writes are throttled to one per 
   }
 });
 
-Deno.test("sync-cursor-persistence - a cursor advance writes the latest stamp", () => {
+Deno.test("sync-cursor-persistence - a cursor advance writes the latest stamp", async () => {
   const db = openStateDB();
   const writes: Array<Record<string, number>> = [];
   db.setSyncCursorPersist((json) => {
@@ -125,67 +126,146 @@ Deno.test("sync-cursor-persistence - a cursor advance writes the latest stamp", 
 
   db.recordBackup(1_700_000_000_000);
   db.advanceSyncCursor(1);
+  await db.drainCursorWrites();
   const last = writes[writes.length - 1];
   assertEquals(last.last_seen_seq, 1);
   assertEquals(last.last_backup_at, 1_700_000_000_000, "advance carries the current stamp");
   db.close();
 });
 
-Deno.test("sync-cursor-persistence - close writes the latest stamp even when throttled", () => {
+Deno.test("sync-cursor-persistence - close writes the latest stamp even when throttled", async () => {
   const db = openStateDB();
   const stamps: number[] = [];
   db.setSyncCursorPersist((json) => {
     stamps.push(JSON.parse(json).last_backup_at);
   });
   db.recordBackup(42);
+  await db.drainCursorWrites();
   db.recordBackup(43);
+  await db.drainCursorWrites();
   assertEquals(stamps, [42], "second stamp-only write throttled");
   db.close();
+  await db.drainCursorWrites();
   assertEquals(stamps, [42, 43], "close flushes the throttled stamp");
 });
 
 // ── interrupted downloads (#59) ──
 
-Deno.test("sync-cursor-persistence - the paths of a batch are durable before its first write", async () => {
+Deno.test("sync-cursor-persistence - a batch is durable before its first write, cleared per path", async () => {
   const db = openStateDB();
   const written: string[][] = [];
   db.setSyncCursorPersist((json) => {
     written.push(JSON.parse(json).in_flight_apply ?? []);
   });
 
-  // A batch begins: one write carrying every path it is about to write.
+  // One write for the whole batch, before the first file write.
   await db.beginApply(["hash-a", "hash-b"]);
-  assertEquals(written, [["hash-a", "hash-b"]], "beginApply flushes the whole batch, once");
+  assertEquals(written, [["hash-a", "hash-b"]], "beginApply flushes the batch once");
   assertEquals(db.getInFlightApply(), ["hash-a", "hash-b"]);
 
-  // A second batch mid-drain must not lose the first batch's paths.
-  await db.beginApply(["hash-c"]);
-  assertEquals(db.getInFlightApply(), ["hash-a", "hash-b", "hash-c"]);
+  // Only a path whose download landed is cleared: a failed, deferred or headless one stays.
+  await db.endApply(["hash-a"]);
+  assertEquals(db.getInFlightApply(), ["hash-b"]);
+  assertEquals(written[written.length - 1], ["hash-b"], "the record names the unfinished path");
 
-  // The batch completed: the record is gone, durably.
-  await db.endApply();
-  assertEquals(written[written.length - 1], [], "endApply clears the record");
+  await db.endApply(["hash-b"]);
   assertEquals(db.getInFlightApply(), []);
+  assertEquals(written[written.length - 1], [], "the finished batch leaves no record");
+});
+
+Deno.test("sync-cursor-persistence - a path read back from the last session is interrupted", async () => {
+  const db = openStateDB(null, null, null, ["hash-old"]);
+  assertEquals(db.getInterruptedApply(), ["hash-old"], "its bytes may be a fragment");
+  assertEquals(db.isInterrupted("hash-old"), true);
+  assertEquals(db.isInterrupted("hash-now"), false);
+
+  await db.beginApply(["hash-now"]);
+  assertEquals(
+    db.isInterrupted("hash-now"),
+    false,
+    "this session's own batch is not a fragment: the apply decides divergence itself",
+  );
+  assertEquals(db.getInFlightApply(), ["hash-old", "hash-now"], "both are off limits to a pass");
+
+  // A version that was deferred or out of scope wrote nothing: it stops blocking a pass
+  // but stays owed in the record for the next start.
+  await db.beginApply(["hash-deferred"]);
+  db.releaseWrite("hash-deferred");
+  assertEquals(db.isWriting("hash-deferred"), false, "nothing was written, nothing to block");
+  assertEquals(db.getInFlightApply(), ["hash-old", "hash-now", "hash-deferred"], "still owed");
+
+  await db.endApply(["hash-old"]);
+  assertEquals(db.isInterrupted("hash-old"), false);
+  assertEquals(
+    db.getInFlightApply(),
+    ["hash-now", "hash-deferred"],
+    "this session's batch is still owed",
+  );
   db.close();
 });
 
-Deno.test("sync-cursor-persistence - an in-flight record survives a reopen", async () => {
-  const files = new Map<string, Uint8Array>();
-  const write = (path: string, bytes: Uint8Array) => {
-    files.set(path, bytes);
-  };
-  const paths: StatePaths = { localFiles: "local-files.json", cursor: "sync-cursor.json" };
+Deno.test("sync-cursor-persistence - a record that cannot be written fails closed", async () => {
   const db = openStateDB();
-  wireStatePersistence(db, write, paths);
-  db.updateSyncCursor(7);
-  await db.beginApply(["hash-a"]);
-  db.close();
+  db.setSyncCursorPersist(() => Promise.reject(new Error("disk full")));
 
-  // The next start reads the cursor file before anything else touches the disk.
-  const loaded = await loadPersistedState(
-    (path) => Promise.resolve(files.get(path)!),
-    paths,
+  await assertRejects(() => db.beginApply(["hash-a"]), Error, "disk full");
+  assertEquals(db.getInFlightApply(), [], "a batch that could not be recorded claims nothing");
+
+  // Clearing is best effort: a leftover record is safe, the next start would re-apply it.
+  await db.endApply(["hash-a"]);
+});
+
+Deno.test("sync-cursor-persistence - a slow cursor write cannot resurrect a cleared record", async () => {
+  const db = openStateDB();
+  const landed: string[] = [];
+  let release!: () => void;
+  const stalled = new Promise<void>((resolve) => release = resolve);
+  let first = true;
+  db.setSyncCursorPersist(async (json) => {
+    if (first) {
+      first = false;
+      await stalled; // the disk is busy on the first write
+    }
+    landed.push((JSON.parse(json).in_flight_apply ?? []).join(","));
+  });
+
+  const begun = db.beginApply(["hash-a"]);
+  const cleared = db.endApply(["hash-a"]);
+  release();
+  await Promise.all([begun, cleared]);
+
+  const finishedAt = landed.findIndex((entry) => entry === "");
+  assert(finishedAt >= 0, `the clearing write landed: ${JSON.stringify(landed)}`);
+  assert(
+    !landed.slice(finishedAt).some((entry) => entry !== ""),
+    `a cleared record never comes back: ${JSON.stringify(landed)}`,
   );
-  assertEquals(loaded.persistedCursor, 7);
-  assertEquals(loaded.inFlightApply, ["hash-a"], "the killed batch's path is read back");
+  assertEquals(db.getInFlightApply(), []);
+});
+
+Deno.test("sync-cursor-persistence - a cursor write that never answers does not hold the queue", async () => {
+  const time = new FakeTime();
+  try {
+    const db = openStateDB();
+    const landed: string[] = [];
+    let hang = true;
+    db.setSyncCursorPersist((json) => {
+      if (hang) return new Promise<void>(() => {}); // the bridge stops answering
+      landed.push(json);
+    });
+
+    const begun = db.beginApply(["hash-a"]).catch((error) => error);
+    await Promise.resolve();
+    time.tick(10_000);
+    const error = await begun;
+    assert(error instanceof Error, "the batch fails closed instead of waiting forever");
+
+    // The queue moved on: the next batch records, and the cursor keeps being written.
+    hang = false;
+    await db.beginApply(["hash-a"]);
+    assertEquals(JSON.parse(landed.at(-1)!).in_flight_apply, ["hash-a"]);
+    db.close();
+  } finally {
+    time.restore();
+  }
 });

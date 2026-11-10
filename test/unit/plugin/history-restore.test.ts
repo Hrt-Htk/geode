@@ -55,7 +55,7 @@ async function fixtures() {
   return { keys, record, vault, plaintextHash, blobs };
 }
 
-/** The slice commitFileBytes + the in-flight wait touch. */
+/** The slice commitFileBytes, the in-flight wait and the #59 record touch. */
 function fakeState(
   row: { plaintext_hash: string; last_seen_version: number } | null,
   onUpsert: (row: { path: string; plaintext_hash: string }) => void,
@@ -63,6 +63,8 @@ function fakeState(
   return {
     getLocalFile: () => row,
     upsertLocalFile: onUpsert,
+    beginApply: () => Promise.resolve(),
+    endApply: () => Promise.resolve(),
   } as unknown as StateDB;
 }
 

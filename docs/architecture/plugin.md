@@ -99,7 +99,7 @@ cursor, and `state-persistence.ts` mirrors them to JSON files in the plugin data
 | File | Holds |
 | --- | --- |
 | `local-files.json` | one row per path: `path_hash`, `size`, `mtime`, `plaintext_hash`, `last_seen_version`, `chunk_hashes`, `deleted` |
-| `sync-cursor.json` | `last_seen_seq` + `last_backup_at` (plus a fixed `vault_id: "default"`), and `in_flight_apply` while a download batch is writing (#59) |
+| `sync-cursor.json` | `last_seen_seq` + `last_backup_at` (plus a fixed `vault_id: "default"`), and `in_flight_apply` while a download batch is writing, or was killed writing (#59) |
 | `activity-log.json` | the per-device activity log behind the activity modal |
 | `rekey-cursor.json` | resume cursor of an open re-key run (#559) |
 
@@ -108,8 +108,14 @@ Rules:
 - **Row writes are throttled** (2 s trailing), so a drain costs O(seconds) writes, not O(files) (#328).
   The sync cursor is written immediately: a stale cursor would replay past an applied edit.
 - **A download batch records its paths before its first write** (#59): `beginApply` awaits one cursor
-  write for the whole batch, `endApply` clears it. Rows persist on the throttle, so without that record
-  a force-stop mid-write leaves a torn file whose row never landed, which reads as a local create.
+  write for the whole batch, and `endApply(done)` removes only the paths whose write landed. Rows
+  persist on the throttle, so without that record a force-stop mid-write leaves a torn file whose row
+  never landed, which reads as a local create. A batch whose record cannot be written does not write
+  at all (fail closed), cursor writes are queued in order so a slow one cannot put a cleared record
+  back, and a state write is bounded (10 s): the sync queue can never wait on a dead FS bridge. That
+  bound is part of a wider rule: every await in the drain path (`apply` per version, the
+  interrupted-download pass per path and as a whole) is bounded, so a hung socket or bridge fails into
+  the replay retry instead of freezing the sync.
 - **Ordered cursor advance**: only a contiguous run from the current cursor is persisted. An
   unaccounted seq halts the run, so a transient apply failure cannot be leap-frogged (#369).
 - **No temp-file-plus-rename on the state path**: it starved the mobile FS bridge (#181). A torn file
@@ -264,6 +270,7 @@ inputs: localFiles (state rows), disk (adapter.list, or getAllLoadedFiles + the 
 
 # Pass 1: disk → state
 for each disk file in sync scope:
+  if a download batch is writing it, or a killed one left it (#59): → nothing
   if no row, or the row is closed:            → create candidate
   if row.last_seen_version == 0:              → modify (a rename carried an edit here, #613)
   if mtime matches the row (markdown only):   → skip
@@ -273,7 +280,8 @@ for each disk file in sync scope:
 # Pass 2: state → disk (deletes)
 for each row not closed and not in scope now:
   skip if the file is on disk, if this device already queued a rename of it, if this
-  device already queued a plain delete of it, or if the server head is a rename marker;
+  device already queued a plain delete of it, if a download batch is writing it (#59),
+  or if the server head is a rename marker;
   otherwise → delete candidate
   (one server round trip per candidate, at most 8 in flight)
 
@@ -342,14 +350,18 @@ applyVersion(v):
   else: reassemble → write via the vault IO layer → update the row + cursor
 ```
 
-**A kill mid-download leaves a fragment, not an edit (#59).** A drain batch (and a live apply, which is
-a batch of one) records its path hashes in `sync-cursor.json` before its first file write and clears
-them when it finishes. The next start resolves that record in front of the drain, before any version
-applies: each listed path's server head is fetched and applied with `tornDownload`, which skips the
-divergence promotion (those bytes are this device's own write, not an edit) and writes the head over the
-fragment, or records only the row when the bytes already match it. Nothing of the fragment is committed
-or kept as a conflict copy. A listed path whose head cannot be fetched stays recorded for the next
-connection.
+**A kill mid-download leaves a fragment, not an edit (#59).** Every write of bytes this device did not
+type records its path first: the drain batch and the live apply (a batch of one), the rebuild's head
+loop, a rejoin backup copy, a history restore, a merge result and a kept conflict sibling
+(`recordedWrite`). The record clears per path once that write returned. The next start resolves what is
+still recorded in front of the drain, before any version applies: each path's server head is fetched and
+applied with `force`, and because the path is *interrupted* the apply skips the divergence promotion
+(those bytes are this device's own write, not an edit), writes the head over the fragment, or records
+only the row when the bytes already match it. Nothing of the fragment is committed or kept as a conflict
+copy: a rename marker does not carry it to the new name, and while it is recorded no reconciler pass may
+commit or close it. A path whose download failed, was deferred, or has no head stays recorded (and stays
+out of sync) rather than being committed as a fragment; a fragment the user is already editing wins over
+the head, as their typing is an edit still inside the event debounce, not a fragment.
 
 **Writes go through `vault-io.ts`**: `modifyBinary` for a file the vault index knows, `createBinary` for
 a new one, and `adapter.writeBinary` as the dot-file or pre-index fallback. The write is given the

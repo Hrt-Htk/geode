@@ -5,7 +5,7 @@
 // first. The appended row is plain content, never a rename link (hard rule 6).
 
 import { decryptMetadata, type VaultKeys } from "../../core/crypto.ts";
-import { blake3Hex } from "../../core/hash.ts";
+import { blake3Hex, hashPathHex } from "../../core/hash.ts";
 import { normalizeForHash } from "../../core/normalize.ts";
 import { b64decode, RENAME_MARKER, type VersionRecord } from "../../core/protocol.ts";
 import type { StateDB } from "../plumbing/state.ts";
@@ -16,6 +16,7 @@ import {
   type Vault as CommitVault,
   waitForInFlightCommit,
 } from "./commit.ts";
+import { recordedWrite } from "./apply.ts";
 import { reconstructVersion } from "./history-fetch.ts";
 import type { Transport } from "./transport.ts";
 import { readVaultBinary, writeVaultBinary } from "./vault-io.ts";
@@ -86,7 +87,13 @@ export async function restoreVersion(
   for (let attempt = 0; attempt < 2; attempt++) {
     await settleAndPreserve(target, deps);
     await settleAndPreserve(target, deps);
-    await writeVaultBinary(target, bytes, Date.now(), deps.vault);
+    // #59: recorded before the write: a kill mid-restore leaves a record, not a fragment
+    // a later pass commits as the note's content.
+    await recordedWrite(
+      deps.state,
+      hashPathHex(deps.keys.mac_key, target),
+      () => writeVaultBinary(target, bytes, Date.now(), deps.vault),
+    );
     if (!(await commitOp({ path: target, kind: "commit" }, commitDeps(deps)))) {
       throw new RestoreUnsynced(target);
     }
