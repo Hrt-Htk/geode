@@ -307,7 +307,9 @@ merged-equals-remote case, conflict write order and a missing local row.
   started applying leaves sync stopped, and no delete version reaches the server for the files it
   never restored: not in the same process, not after a reload, and not after a lock and unlock (the
   persisted marker keeps every session start off those rows). A completed rebuild clears the marker
-  and sync comes back.
+  and sync comes back. `test/unit/plugin/vault-lock-resync-marker.test.ts` covers the gate itself and
+  the epoch; `test/unit/plugin/rebuild-flow-failure.test.ts` shows the marker is written before the
+  first head is applied.
 - `test/scenarios/recovery/export-vault.test.ts`: the exported tree is byte-identical to the vault;
   `export-includes-obsidian.test.ts` covers synced `.obsidian/` files.
 
@@ -320,8 +322,9 @@ merged-equals-remote case, conflict write order and a missing local row.
 - `test/e2e/scenarios/resync-surfaces.spec.ts` (+ `.phone`): the resync surfaces in real Obsidian:
   the confirm dialog, the running notice and rows, done, and the stop with its reason and Try again.
   The desktop run also fires the palette command mid run and asserts one monotonic run (a second
-  resync joins, it does not restart), a stopped resync with its reason and Try again, and a retry
-  against a healthy server that comes back up to date.
+  resync joins, it does not restart), a stopped resync with its reason and Try again, a retry
+  against a healthy server that comes back up to date, and a crash-style stop that survives a plugin
+  disable and enable (the marker) until a retry clears it.
 - `test/e2e/scenarios/gate6-export-vault.spec.ts` (+ `.phone`): `exportDecryptedVault(dir)` writes
   every seeded file into the target folder, byte-equal to the vault.
 

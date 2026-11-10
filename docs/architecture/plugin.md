@@ -446,14 +446,24 @@ the held connection, since a rejoin runs over its own transport).
 A rebuild that is not a rejoin (Resync from settings or the palette, Resume) that dies BEFORE it reads
 its head list restarts the session on the persisted rows before rethrowing: the dispose above is the
 rebuild's first step, so without that restart sync would stay stopped until a reload, and those rows are
-exactly what a normal start reads. Past the head list it does not restart: `rebuildFromScratch` reports
-`onRowsMayChange`, and from there the rebuild may have rows open whose files it never restored, which a
-session would read as local deletes (the mass-delete guard stays silent below 20 files). It persists
-`resyncIncomplete` plus the engine's own message instead (the `rejoinIncomplete` pattern), and that
-marker is what keeps every later session start off those rows: a reload and an unlock both come up
-stopped, showing `Resync stopped. <reason>` with Try again, until a resync completes or the vault is
-left (both clear it). A retry with no session behind it (the reload case) drives its own transport, as
-a rejoin does; a retry that cannot even start is shown as a stop, never only logged.
+exactly what a normal start reads. Past the head list it does not restart. `rebuildFromScratch` reports
+`onRowsMayChange` there, and the rebuild PERSISTS `resyncStop` (the `rejoinIncomplete` pattern) before it
+can change a row: a force quit, an OOM or a reload mid rebuild then lands on the stopped state instead of
+replaying half-restored rows as deletes (the mass-delete guard stays silent below 20 files). The value is
+the engine's own message, replaced with it when the rebuild fails and `Resync did not finish.` when a
+crash left no message. A retry that fails before its head list still sees the marker a previous failure
+left, so it keeps the session stopped instead of restarting on rows that one may have changed.
+
+The marker is cleared by a completed resync (before its own restart, so a restart that throws leaves no
+marker: the rows are consistent by then, and that failure is answered with the dispose path), by leaving
+the vault, and by a new vault identity (`withVaultIdentity`: create or join). While it is set, every
+session start lands on the stop: a reload and an unlock both come up showing `Resync stopped. <reason>`
+with Try again, and a held mass delete is still announced behind it. That state also outranks the user
+pause, because "changes upload when you resume" would be false with no session behind it; every other
+state keeps its usual order. Resync always drives its own transport (the session it disposes is about to
+be torn down, or never started for a paused vault), so Try again works with no session at all; a retry
+that cannot even start is shown as a stop, never only logged. A rebuild that can never complete is left
+with one way out, like a stuck rejoin: leave the vault and join again.
 
 A rejoin whose cause cannot be fixed (no space for the backup folder, a file named `Geode backup` in the
 vault root, or a blob the server can no longer serve) has one way out: free the space (or rename the file),
@@ -624,10 +634,11 @@ stopped row is the whole answer). A stop keeps its reason until the next resync,
 the persisted marker brings it back on the next reload or unlock. A reason from a failed head list is
 cut at 96 characters: a status row and a notice are not a place for dozens of hashes. Progress
 publishing is throttled to about four renders a second, with the first and last count always shown, and
-the palette joins a run already in flight instead of starting a second one. A run belongs to the
-session generation it started in: a lock, a leave or an unload ends it, so a late settle cannot land in
-the next session. A rejoin shows the same running surfaces but keeps its own failure answer: the pause
-and its notice.
+the palette joins a run already in flight instead of starting a second one. A run reports only to the
+session epoch it started in, bumped by `disposeRuntime` (a lock, a leave, an unload, a re-key lock; the
+rebuild's own teardown opts out) and by a new server address: a late settle cannot land in the next
+session. A rejoin shows the same running surfaces but keeps its own failure answer: the pause and its
+notice.
 
 **Modals & views**: setup wizard, passphrase/forgot, config scope, folders, conflicts, trash, history
 (view + modal), activity, mass-delete review, re-key, rename vault, server address, export.
