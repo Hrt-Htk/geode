@@ -84,8 +84,8 @@ flowchart TD
 - Change the passphrase at any time. Geode estimates the run first, and resumes it if it is
   interrupted.
 - Choose the encryption strength per vault, from the wizard or later in settings.
-- Rotate the admin token with a script on your server, rename or leave the vault, and change
-  the server address.
+- Rotate the admin token by changing it in the server's `.env`, rename or leave the vault, and
+  change the server address.
 - Self-hosted: a VPS or a computer at home, with Tailscale for access from outside.
 - No telemetry.
 
@@ -97,87 +97,109 @@ Every other screen, and the command that reshoots them all: [`docs/screenshots/R
 
 ## Requirements
 
-- A server running Debian or Ubuntu (x86_64 or ARM64). The smallest VPS plan is enough, and a
-  computer at home works too.
+- A server with Docker and Docker Compose: a VPS, or a computer at home (x86_64 or ARM64). The
+  smallest VPS plan is enough.
 - Obsidian 1.8.7 or newer on each device. Geode is tested on desktop (Windows, macOS, Linux) and on
   Android. iOS is not tested yet.
-- The admin token the server creates during install. You need it to add devices.
+- The admin token you set in the server's `.env`. You need it to add devices.
 
 Use one sync tool per vault. Don't sync a Geode vault with iCloud or Google Drive at the same time.
 
 ## Install the server
 
+Geode runs from a published image, so there is nothing to clone and nothing to build. It needs a
+machine with Docker and Compose v2, and a directory of its own.
+
 ### On a VPS with a domain
 
-1. At your DNS provider, add an A record that points your domain at the VPS IP address, and delete
-   any AAAA record for the same name. Caddy gets its certificate for the address DNS hands out, so a
-   leftover IPv6 record pointing at an old server stops HTTPS. Check what the name resolves to:
+1. At your DNS provider, add an A record that points your domain at the VPS IP address, and delete a
+   leftover AAAA record for the same name. Caddy, which Geode starts for HTTPS, gets its certificate
+   for the address DNS hands out.
+
+2. On the server, make the directory and fetch the two files:
 
    ```bash
-   sudo apt install dnsutils          # once, for dig
-   dig +short A geode.example.com     # the VPS IP address
-   dig +short AAAA geode.example.com  # prints nothing when the name has no IPv6 record
+   mkdir geode && cd geode
+   curl -fsSLO https://raw.githubusercontent.com/Hrt-Htk/geode/main/compose.yaml
+   curl -fsSL https://raw.githubusercontent.com/Hrt-Htk/geode/main/.env.docker.example -o .env
    ```
 
-2. Connect to the VPS over SSH and run:
+3. Open `.env` and fill in two things: the `GEODE_ADMIN_TOKEN` value, and the VPS block below it
+   (uncomment `COMPOSE_PROFILES=https` and `GEODE_TRUST_PROXY`, set `GEODE_DOMAIN`). Generate the
+   token with:
 
    ```bash
-   git clone https://github.com/Hrt-Htk/geode.git
-   cd geode
-   sudo GEODE_DOMAIN=geode.example.com bash deploy/install.sh
+   openssl rand -base64 36 | tr -d '\n/+=' | cut -c1-40
    ```
 
-   The script installs Deno and Caddy, installs the generated Caddy config, creates the admin token
-   and starts Geode as a systemd service. It downloads only what the server runs, not the
-   development toolchain.
-
-3. Geode uses ports 80 and 443.
-4. Print the admin token and keep it somewhere safe. The installer shows only the start of it:
+4. Create the data folder for the container's user, then start Geode. It is 0700 because the
+   database holds device tokens:
 
    ```bash
-   sudo bash deploy/print-admin-token.sh
+   mkdir -p data && sudo chown 1993:1993 data && sudo chmod 700 data
+   docker compose up -d
    ```
 
 5. Open `https://geode.example.com/version` in a browser. It shows the server version. If it fails
-   with a TLS error, Caddy is still getting the certificate: open it again after 15 seconds. If it
-   keeps failing, work down this list and open it again after each fix: does `dig +short A
-   geode.example.com` show the VPS IP address, does `dig +short AAAA geode.example.com` print
-   anything, does your provider's firewall or security group allow ports 80 and 443?
+   with a TLS error, Caddy is still getting the certificate: open it again after 15 seconds.
+
 6. Check that the server answers as an admin, not just that it is up. This is the request the plugin
-   makes when it lists vaults, so it also proves the admin token and the database work:
+   makes when it lists vaults, so it also proves the admin token and the database work. `[]` is the
+   right answer on a fresh server: the database holds no vaults yet. After the setup wizard it lists
+   your vault instead.
 
    ```bash
-   curl -s -H "Authorization: Bearer $(sudo cat /opt/geode/.admin-token)" \
-     http://127.0.0.1:8080/vaults
+   curl -s -H "Authorization: Bearer <the token from .env>" \
+     https://geode.example.com/vaults
    ```
-
-   `[]` is the right answer on a fresh server: the database holds no vaults yet. After the setup
-   wizard it lists your vault instead.
 
 Use `wss://geode.example.com` as the server address. `geode.example.com` works too: an address with
 no scheme gets `https`, unless it is a private or local one.
 
-Geode and Caddy both start again after a reboot.
+Geode and Caddy both come back after a reboot.
 
 ### On a computer at home
 
-Run the same install script without `GEODE_DOMAIN`. Geode then listens on `0.0.0.0:8080`.
+The same two files and steps, with the home block in `.env` instead: uncomment
+`COMPOSE_PROFILES=forward` and `GEODE_PUBLISH=0.0.0.0:8080`, and leave the domain lines alone.
 
 On your home network, use `http://192.168.1.20:8080` as the server address, with your server's LAN
-IP in place of `192.168.1.20` (`ip addr` shows it). Plain `http` is fine inside your own network.
-Typed without a scheme, a private or local address (localhost, 10.x, 192.168.x, 172.16 to 31.x,
-100.64 to 127.x) also defaults to `http`; any other address defaults to `https`.
-Open `http://192.168.1.20:8080/version` in a browser to check the server: it shows the server
-version. The admin `curl` from the domain steps works here too: run it on the server itself.
+IP in place of `192.168.1.20`. Plain `http` is fine inside your own network. Typed without a scheme, a
+private or local address (localhost, 10.x, 192.168.x, 172.16 to 31.x, 100.64 to 127.x) also defaults
+to `http`; any other address defaults to `https`. Open `http://192.168.1.20:8080/version` in a browser
+to check the server.
 
 To reach the server from outside your home, use [Tailscale](https://tailscale.com). Install it on
 the server and on every device, then use `http://TAILSCALE_IP:8080` as the server address.
 Tailscale encrypts the traffic between your devices.
 
-Never open port 8080 to the internet.
-
 Phones connecting to a plain `http` address have not been tested yet. If your phone can't connect,
 use the domain setup with HTTPS.
+
+### Coming from the old install script
+
+Geode used to install as a systemd service, and that path is gone. To move the same server to
+Docker:
+
+1. Do steps 2 and 3 above, with your existing admin token as `GEODE_ADMIN_TOKEN`: it is in
+   `/etc/geode/geode.env`. If the old script set up Caddy for your domain, keep it and use the own
+   proxy block in `.env` (`COMPOSE_PROFILES=forward`, `GEODE_PUBLISH=127.0.0.1:8080`,
+   `GEODE_TRUST_PROXY=1`): that Caddy already forwards to `127.0.0.1:8080`. Without a domain, use
+   the home block.
+
+2. Instead of step 4, stop the old server, copy its data and start Geode:
+
+   ```bash
+   sudo systemctl disable --now geode
+   sudo cp -a /opt/geode/data ./data
+   sudo chown -R 1993:1993 data
+   sudo chmod 700 data
+   docker compose up -d
+   ```
+
+Your devices reconnect by themselves: their tokens are in the copied data. The old install is left
+where it is; delete `/opt/geode`, `/etc/geode` and `/etc/systemd/system/geode.service` once the new
+one works.
 
 ## Install the plugin
 
@@ -259,20 +281,17 @@ only when the wire protocol changed or the server requires a newer plugin. The s
 **Update required** or **Server update required**. Update the side the message names, then reload
 Obsidian.
 
-**Server:** from the `geode` folder on the server, pull the new code and run the install script
-again. It keeps your data and admin token, and it installs `/etc/caddy/Caddyfile` and reloads Caddy,
-so Caddy fixes in a release reach a server that is already running. It only replaces that file when
-Geode owns it: it is missing, it is what an earlier install generated, or it starts with Geode's
-`# Managed by Geode` line, so on a server whose Caddyfile also serves other sites the installer
-leaves it alone and prints the `cp` line that adds the Geode block.
+**Server:** Geode's settings have a **Server update** row. With the update job installed (optional,
+[`docs/architecture/server.md`](./docs/architecture/server.md) §11) its **Update** button pulls the new
+image, waits for Geode to report healthy, and puts the old image back if it does not come up. Without
+the job, the row's copy button gives the command to run in the compose directory:
 
 ```bash
-cd geode
-git pull --ff-only
-sudo GEODE_DOMAIN=geode.example.com bash deploy/install.sh
+docker compose pull geode && docker compose up -d
 ```
 
-For a home server, leave out `GEODE_DOMAIN`.
+Either way your data and admin token stay, and Caddy keeps serving. A new image only exists when a
+release is cut, and `/version` reports the one that is running.
 
 **Plugin:** in BRAT's settings, click **Update** next to Geode, or replace the three files with the
 ones from the latest release. BRAT installs every release, including pre-releases: a new build
@@ -282,58 +301,49 @@ listed there.
 
 ## Backup and restore
 
-The server keeps everything in `/opt/geode/data`: a SQLite database and the encrypted blobs. The
-data is encrypted, so you can store backups anywhere, such as another computer, a USB drive or
-object storage. The database itself is not: it holds vault names and device tokens, so keep a
+Everything the server keeps is in `data/` next to `compose.yaml`: a SQLite database and the encrypted
+blobs. The data is encrypted, so you can store backups anywhere, such as another computer, a USB drive
+or object storage. The database itself is not: it holds vault names and device tokens, so keep a
 backup about as private as the server.
 
-Back up regularly with a consistent copy of the database plus the blobs:
+Back up with a consistent copy of the database plus the blobs, from the compose directory:
 
 ```bash
-sudo apt install sqlite3 rsync   # once, for the database copy and the blobs
-sudo mkdir -p /srv/geode-backup
-sudo sqlite3 /opt/geode/data/geode.db ".backup /srv/geode-backup/geode.db"
-sudo rsync -a --no-o --no-g --no-p --exclude 'geode.db*' --exclude 'before-migration.sqlite*' \
-  /opt/geode/data/ /srv/geode-backup/
+sudo apt install -y sqlite3 rsync   # once
+sudo mkdir -p /path/to/backup
+sudo sqlite3 data/geode.db ".backup /path/to/backup/geode.db"
+sudo rsync -a --exclude 'geode.db*' --exclude 'before-migration.sqlite*' \
+  data/ /path/to/backup/
 ```
-
-Keep `--no-o --no-g --no-p`: `rsync -a` also copies the source directory's owner and mode onto the
-destination, which leaves `/srv/geode-backup` owned by `geode` with mode `700`, unreadable by any
-other user or backup job. The flags leave the backup directory's own attributes alone.
 
 The two excludes drop the live database, which `sqlite3 .backup` already copied consistently, and
 `before-migration.sqlite`: the copy the server writes before a pending migration (see
-[`docs/architecture/server.md`](./docs/architecture/server.md) §3). That one is a stopgap for going
-back straight after an update, as large as the database, and stale as soon as the server runs again,
-so it does not belong in a backup.
+[`docs/architecture/server.md`](./docs/architecture/server.md) §3). That one is a stopgap for going back
+straight after an update, and stale as soon as the server runs again, so it does not belong in a
+backup.
 
-To restore, stop the service, copy the backup over `data/` and delete what the backup does not have:
+To restore, stop Geode, copy the backup over `data/` and start it again:
 
 ```bash
-sudo systemctl stop geode
-sudo rsync -a --delete --no-o --no-g --no-p /srv/geode-backup/ /opt/geode/data/
-sudo chown -R geode:geode /opt/geode/data
-sudo systemctl start geode
+docker compose down
+sudo rsync -a --delete /path/to/backup/ data/
+sudo chown -R 1993:1993 data
+docker compose up -d
 ```
 
 `--delete` is what makes the restore restore. A running server keeps its newest changes in
-`geode.db-wal` beside the database, and SQLite replays that file over whatever database it finds, so
-a restore that leaves the old `-wal` in place comes back holding the *newer* state even though the
+`geode.db-wal` beside the database, and SQLite replays that file over whatever database it finds, so a
+restore that leaves the old `-wal` in place comes back holding the *newer* state even though the
 restored `geode.db` is the backup's. `--delete` removes `geode.db-wal` and `geode.db-shm`, and with
 them the blobs of files and vaults created after the backup: the server then serves exactly the
-backup's state. If you would rather keep those blobs, delete `geode.db`, `geode.db-wal` and
-`geode.db-shm` yourself and copy without `--delete`; the leftover blobs stay on disk unreferenced.
+backup's state.
 
-`--delete` also removes a `before-migration.sqlite` the server left in `data/`, which is what you
-want: it belongs to the database you just replaced it with. The next update that migrates writes a
-fresh one.
-
-Then check what the server actually serves. `[]` is correct when the backup held no vaults;
-otherwise it lists the vaults the backup contained:
+Then check what the server serves. `[]` is correct when the backup held no vaults; otherwise it lists
+the vaults the backup contained:
 
 ```bash
-curl -s -H "Authorization: Bearer $(sudo cat /opt/geode/.admin-token)" \
-  http://127.0.0.1:8080/vaults
+curl -s -H "Authorization: Bearer <the token from .env>" \
+  https://geode.example.com/vaults
 ```
 
 Try a restore at least once so you know the backup works. Full procedure:
@@ -343,11 +353,11 @@ Try a restore at least once so you know the backup works. Full procedure:
 
 The admin token lets you add devices and manage the server. Keep it private, like a password.
 
-- Print it: `sudo bash deploy/print-admin-token.sh`. This is the only place the whole token is
-  shown: `deploy/install.sh` prints its first four characters, so an install log or a screenshot of
-  the install output does not hand out the token.
-- Rotate it: `sudo bash deploy/rotate-admin-token.sh`. The old token stops working. Existing devices
-  keep syncing; use the new token to join devices and for admin actions.
+- Where it is: `GEODE_ADMIN_TOKEN` in the `.env` next to `compose.yaml`. That file holds the whole
+  token, so keep it private (`chmod 600 .env`), and copy the token from there when the setup wizard
+  asks for it.
+- Rotate it: put a new value in `.env`, then `docker compose up -d`. The old token stops working.
+  Existing devices keep syncing; use the new token to join devices and for admin actions.
 
 ## Lost or stolen device
 
@@ -361,21 +371,16 @@ device.
 
 ## Uninstall
 
-**Server:**
+**Server:** from the compose directory:
 
 ```bash
-sudo systemctl disable --now geode
-sudo rm -rf /opt/geode /etc/systemd/system/geode.service /etc/geode
-sudo systemctl daemon-reload
-sudo userdel geode
+docker compose down -v
+cd .. && rm -rf geode
 ```
 
-Geode's site stays in `/etc/caddy/Caddyfile`, so Caddy keeps the domain and answers 502. Remove the
-Geode block, or put back the Caddyfile Caddy shipped with, then reload:
-
-```bash
-sudo systemctl reload caddy
-```
+`-v` removes Caddy's certificate volume as well. Geode's own data is a bind mount, not a volume: it
+goes with the directory. The image stays on disk until you remove it:
+`docker image rm ghcr.io/hrt-htk/geode:latest`.
 
 **Plugin:** disable Geode under **Settings → Community plugins**, then delete the
 `<vault>/.obsidian/plugins/geode/` folder.
@@ -384,8 +389,8 @@ sudo systemctl reload caddy
 
 | Problem | What to do |
 |---------|------------|
-| Can't reach the server | Check the service with `sudo systemctl status geode` and its logs with `journalctl -u geode -f`. Then query the server: `curl -v https://geode.example.com/version` (home server: `curl -v http://192.168.1.20:8080/version`). It should answer with JSON that includes the server version. If it does, check that an admin request works: `curl -s -H "Authorization: Bearer $(sudo cat /opt/geode/.admin-token)" http://127.0.0.1:8080/vaults` answers `[]` or your vaults. |
-| "That admin token isn't valid" | Print the token again with `deploy/print-admin-token.sh` and paste it exactly. |
+| Can't reach the server | `docker compose ps` shows what runs and `docker compose logs geode` what the server says. Then query it: `curl -v https://geode.example.com/version` (home server: `curl -v http://192.168.1.20:8080/version`). It answers with JSON that includes the server version. If it does, check that an admin request works: `curl -s -H "Authorization: Bearer <the token from .env>" https://geode.example.com/vaults` answers `[]` or your vaults. |
+| "That admin token isn't valid" | Copy it again from `GEODE_ADMIN_TOKEN` in `.env` and paste it exactly. |
 | Wrong passphrase when joining | Geode rejects it right away. Passphrases are case sensitive. |
 | Notes don't appear after joining | Give the first sync a moment. If nothing arrives, run **Resync from scratch** from the command palette. |
 | Replay loops or repeated conflicts after copying a vault | Two devices share one identity. See [Add another device](#add-another-device). |
@@ -444,18 +449,16 @@ Found a security problem? Report it privately, not in a public issue: [`SECURITY
 - One vault stores at most **20 GiB** on the server by default: its chunks plus the metadata of every
   change it keeps. Past that, uploads and trash restores are refused (blob POST answers `507`, a commit
   or restore `storage_full`). Deleting frees space only once compaction and blob garbage collection
-  have run, so the quick way back is a bigger cap: set `GEODE_VAULT_MAX_BYTES` (bytes) with
-  `sudo systemctl edit geode` (not in `/etc/geode/geode.env`, which `deploy/install.sh` rewrites) and
-  restart the service. On a server installed before this option existed, re-run `deploy/install.sh`
-  first (or add the name to the unit's `--allow-env`), because `deploy/deploy.sh` does not rewrite the
-  unit; the server logs the cap it actually uses at startup. A commit is also bounded per file: 10 000
+  have run, so the quick way back is a bigger cap: set `GEODE_VAULT_MAX_BYTES` (bytes) in `.env` and
+  run `docker compose up -d`. The server logs the cap it actually uses at startup. A commit is also
+  bounded per file: 10 000
   chunks, 64 KB of encrypted metadata and 8 KB of encrypted path. At the chunker's 256 KB average that
   caps a single file at about **2.5 GB** (640 MB if every chunk were the 64 KB minimum, 10 GB if every
   chunk hit the 1 MB maximum), and a larger file cannot be committed.
 
 ## How it is built
 
-- **Server:** Deno, SQLite and a blob store on disk, behind Caddy for HTTPS.
+- **Server:** Deno, SQLite and a blob store on disk, in a Docker image behind Caddy for HTTPS.
 - **Plugin:** TypeScript, libsodium for encryption, FastCDC for chunking and `node-diff3` for
   merging.
 - The encryption and chunking code is shared by the server and the plugin.

@@ -171,6 +171,10 @@ CI runs no job on a draft PR: the local `deno task ci` before every push is the 
 a PR ready runs CI once; a new commit or a body edit on a ready PR runs it again, in full. A newer run
 for the same PR cancels the older one; pushes to `main` always run to the end.
 
+Auto-ship only merges. No release decision and no server update happen in Actions: the agent prunes
+and runs `deno task release X.Y.Z` after the merge, and the server update is a step of its own
+(skill `geode-release`).
+
 ### Runner
 
 Every job runs on `${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}`, except the two `Docker smoke` matrix
@@ -209,7 +213,7 @@ Every doc under `docs/` declares the code it attests in its frontmatter, under o
 
 ```
 ---
-covers: [server/*.ts, db/migrations/*.sql, deploy/*]
+covers: [server/*.ts, db/migrations/*.sql]
 watches: [test/scenarios/**]
 ---
 ```

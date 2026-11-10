@@ -98,8 +98,8 @@ device's restore reads `Restored from trash on <device>`.
 
 `PROTOCOL_VERSION` is 6 as a result: a protocol-5 plugin would skip its own restore and lose the
 file, so the gate blocks it with an update prompt (#529) rather than let it through. A protocol bump
-ships only through a full release: `deno task release` bumps, tags and deploys plugin and server
-together, never a server-only `deploy/deploy.sh`.
+ships only through a full release: `deno task release` bumps and tags, and `release.yml` publishes the
+plugin and the server image from that tag, never a server-only update.
 
 ## 4. Auto-purge
 

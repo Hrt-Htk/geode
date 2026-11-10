@@ -329,9 +329,9 @@ merged-equals-remote case, conflict write order and a missing local row.
 
 ---
 
-## Gate 7: Auth, TLS, systemd
+## Gate 7: Auth, TLS, Docker
 
-**Code:** `server/auth.ts`, `deploy/Caddyfile`, `deploy/geode.service`.
+**Code:** `server/auth.ts`, `compose.yaml`, `Dockerfile`.
 
 ### Tests
 
@@ -352,23 +352,24 @@ immediately.
 
 ### Manual checks (on a real Linux box)
 
-- [ ] Deploy with `deploy/deploy.sh` and the systemd unit; `systemctl status geode` shows active.
-- [ ] `journalctl -u geode -f` shows structured JSON logs.
+- [ ] Install with `docker compose up -d --wait`; `docker compose ps geode` shows it running and
+      healthy.
+- [ ] `docker compose logs geode` shows structured JSON logs.
 - [ ] Caddy fronts HTTPS; `curl -I https://geode.example.com/blobs/<hash>` returns 401.
 - [ ] The certificate is valid.
-- [ ] `kill -9` the deno process; systemd restarts it within 5 s (`RestartSec=5s`).
-- [ ] Reboot the box; `systemctl is-enabled geode` shows enabled and the service comes up.
+- [ ] `docker kill` the Geode container; `restart: unless-stopped` brings it back.
+- [ ] Reboot the box; both containers come back without anyone logging in.
 - [ ] Delete a device token via SQL; the next request fails immediately, not after a cache window.
 
 ### E2E (Playwright, real Obsidian)
 
 No spec covers auth or TLS. The token and revocation behaviour is pinned by the integration and unit
-tests above, and the deploy checks stay manual.
+tests above, and the Docker checks stay manual.
 
 ### Pass criteria
 
 - All integration tests green.
-- All manual deploy checks pass.
+- All manual Docker checks pass.
 - A real device on the open internet can sync against the deployed server.
 
 ---
@@ -519,7 +520,7 @@ The "name moved on" refusal (#583 §13, #596) has no E2E spec: it is server-side
 
 **Code:** `plugin/ui/setup-wizard.ts`, `plugin/plumbing/provisioning-client.ts`,
 `plugin/sync/transport.ts`, `plugin/plumbing/scheme.ts`, `plugin/plumbing/commands.ts`,
-`deploy/install.sh`.
+`compose.yaml`.
 
 This gate covers the first run: install the plugin (BRAT or zip), open an unconfigured vault, run
 the in-plugin setup wizard to create or join a vault, and sync live, all through Obsidian's renderer

@@ -9,7 +9,7 @@ services:
   geode:
     image: ghcr.io/hrt-htk/geode:latest
     restart: unless-stopped
-    # deploy/geode.service restated: nothing to escalate into, nothing writable but /data.
+    # Nothing to escalate into, nothing writable but /data.
     read_only: true
     tmpfs: [/tmp]
     # The image's uid, restated: hardening must not depend on what the image says.
@@ -18,6 +18,13 @@ services:
     security_opt: ["no-new-privileges:true"]
     ulimits:
       nofile: 65536
+    # Bounded on purpose: the default json-file driver grows until the disk is full.
+    # Read it with `docker compose logs geode`.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       GEODE_ADMIN_TOKEN: ${GEODE_ADMIN_TOKEN:?set GEODE_ADMIN_TOKEN in .env}
       GEODE_TRUST_PROXY: ${GEODE_TRUST_PROXY:-0}
@@ -28,8 +35,8 @@ services:
       - ./update-status:/update-status:ro
     networks: [internal]
 
-  # HTTPS front for a public domain: stock Caddy, default timeouts, the deploy/Caddyfile
-  # log filter inline below. Floating on the major tag on purpose: it is stock Caddy, the
+  # HTTPS front for a public domain: stock Caddy, default timeouts, the log filter
+  # inline below. Floating on the major tag on purpose: it is stock Caddy, the
   # smoke test catches a regression, and users get its security fixes without a Geode
   # release.
   https:
@@ -67,10 +74,10 @@ services:
     networks: [egress, internal]
 
 configs:
-  # deploy/Caddyfile, minus the file output (Docker collects stdout) and with the site
-  # address from GEODE_DOMAIN. Every credential header the client sends is deleted before
-  # the json encoder writes: the device token rides Sec-WebSocket-Protocol on both sides of
-  # the handshake, and the admin and re-key headers are bearer secrets (server.md §9).
+  # Caddy's site config: the address from GEODE_DOMAIN, its access log on stdout (Docker
+  # collects it), and every credential header deleted before the json encoder writes: the
+  # device token rides Sec-WebSocket-Protocol on both sides of the handshake, and the admin
+  # and re-key headers are bearer secrets (server.md §9).
   caddyfile:
     content: |
       {$$GEODE_DOMAIN} {

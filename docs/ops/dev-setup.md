@@ -104,7 +104,7 @@ Holds the import map (aliases for `@noble/hashes/*`, `libsodium-wrappers-sumo`, 
 | --- | --- |
 | `deno task dev` | Server with `--watch`; `--allow-ffi` is needed by `@db/sqlite` |
 | `deno task build:plugin` | esbuild bundle, then copies the manifest (stamped with `package.json`'s version), `versions.json` and `styles.css` into `plugin-dist/` |
-| `deno task release` | `scripts/release.ts`: bump, commit, tag, push, deploy. A pre-release (#22) |
+| `deno task release` | `scripts/release.ts`: bump, commit, push, tag. A pre-release (#22) |
 | `deno task promote` | `scripts/promote.ts`: move the root manifest/versions to a tested release (#22) |
 | `deno task test` | `deno test --allow-all` |
 | `deno task test:ci` | The suite CI runs, with a wall-clock cap (`scripts/test-timeout.ts`) |
@@ -192,7 +192,8 @@ Nothing secret is committed. A dev setup has:
   (`DELETE /vaults/:id/devices/:deviceId`). It also purges a trash row inside the server's retention
   floor (`POST /vaults/:id/trash/:path_hash/purge`), where a device token gets
   `403 purge_requires_admin` (#677). `GET /vaults/:id/info` accepts it as well as a device token.
-  `deploy/rotate-admin-token.sh` rotates it on the server.
+  Rotate it with a new value in the compose directory's `.env`, then `docker compose up -d`
+  (`server.md` §10).
 - a device token per device, minted by the server (`POST /vaults/:id/devices`) and stored in that
   vault's plugin `data.json` together with `serverUrl`, `vaultId`, `deviceId`, `salt`, `verifier` and
   `argon2Params`. It may revoke its own device through the same `DELETE` route, and purge a trash row
@@ -274,8 +275,8 @@ Steps 1 and 4 need nothing but the repo. Steps 2 and 5 need Node: step 5 runs
 ### `deno task dev` fails with sqlite3 or FFI errors
 
 `@db/sqlite` is a native binding. The server needs `--allow-ffi` (the task has it) and, on an install
-where the library is not found, `DENO_SQLITE_PATH` set to the shared library. `deploy/install.sh`
-resolves that path for the deployed service.
+where the library is not found, `DENO_SQLITE_PATH` set to the shared library. `Dockerfile` copies the
+library to one fixed path and sets that variable, so the image needs neither.
 
 ### The plugin is not listed in a vault
 

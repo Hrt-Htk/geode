@@ -98,11 +98,11 @@ in [`step-gates.md`](../testing/step-gates.md); do not move past a step until it
 | 4 | Plugin: transport + vault events + reconciler + apply            | `plugin.md` §4 to §7           | `step-gates.md` §Gate 4         |
 | 5 | Plugin: 3-way merge + ancestor walk + conflict files             | `merge.md`                     | `step-gates.md` §Gate 5         |
 | 6 | Plugin: binary conflicts + recovery commands                     | `plugin.md` §8                 | `step-gates.md` §Gate 6         |
-| 7 | Server: auth + Caddy + systemd                                   | `server.md` §8, §9, §10        | `step-gates.md` §Gate 7         |
+| 7 | Server: auth + Caddy + TLS                                       | `server.md` §8, §9, §11        | `step-gates.md` §Gate 7         |
 | 8 | Mobile: key caching + foreground sync                            | `plugin.md` §10                | `step-gates.md` §Gate 8         |
 | 9 | Polish: status bar, settings, conflicts view, logs               | `plugin.md` §9                 | `step-gates.md` §Gate 9 (soft)  |
 | 10 | Server + plugin: soft-delete retention (trash)                  | `../ops/trash-soft-delete.md`  | `step-gates.md` §Gate 10        |
-| 11 | Installability: BRAT/zip, admin-token join, wizard, deploy       | `../../README.md`              | `step-gates.md` §Gate 11        |
+| 11 | Installability: BRAT/zip, admin-token join, wizard, Docker setup | `../../README.md`              | `step-gates.md` §Gate 11        |
 
 ---
 
@@ -131,7 +131,7 @@ geode/
 ├── db/migrations/          # forward-only SQL, 001_init … 015_rename_mark
 ├── test/                   # two-vault-driver.ts, scenarios/, unit/, integration/, e2e/, fuzz/, bench/
 ├── scripts/                # build + release + standards + phone + dev utilities
-├── deploy/                 # install.sh, geode.service, Caddyfile, token scripts
+├── Dockerfile              # server image; compose.yaml runs it with a front
 ├── deno.json               # Deno config + tasks
 └── package.json            # plugin-side npm deps (esbuild bundles them)
 ```

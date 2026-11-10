@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-console
 import { addSink, emit, type LogEntry } from "../core/log.ts";
 
-/** Serialize a LogEntry to a single flat JSON line for journalctl. */
+/** Serialize a LogEntry to a single flat JSON line for the container's log. */
 export function formatServerLine(entry: LogEntry): string {
   const obj: Record<string, unknown> = {
     ts: new Date(entry.ts).toISOString(),
