@@ -99,7 +99,7 @@ cursor, and `state-persistence.ts` mirrors them to JSON files in the plugin data
 | File | Holds |
 | --- | --- |
 | `local-files.json` | one row per path: `path_hash`, `size`, `mtime`, `plaintext_hash`, `last_seen_version`, `chunk_hashes`, `deleted` |
-| `sync-cursor.json` | `last_seen_seq` + `last_backup_at` (plus a fixed `vault_id: "default"`) |
+| `sync-cursor.json` | `last_seen_seq` + `last_backup_at` (plus a fixed `vault_id: "default"`), and `in_flight_apply` while a download batch is writing (#59) |
 | `activity-log.json` | the per-device activity log behind the activity modal |
 | `rekey-cursor.json` | resume cursor of an open re-key run (#559) |
 
@@ -107,6 +107,9 @@ Rules:
 
 - **Row writes are throttled** (2 s trailing), so a drain costs O(seconds) writes, not O(files) (#328).
   The sync cursor is written immediately: a stale cursor would replay past an applied edit.
+- **A download batch records its paths before its first write** (#59): `beginApply` awaits one cursor
+  write for the whole batch, `endApply` clears it. Rows persist on the throttle, so without that record
+  a force-stop mid-write leaves a torn file whose row never landed, which reads as a local create.
 - **Ordered cursor advance**: only a contiguous run from the current cursor is persisted. An
   unaccounted seq halts the run, so a transient apply failure cannot be leap-frogged (#369).
 - **No temp-file-plus-rename on the state path**: it starved the mobile FS bridge (#181). A torn file
@@ -338,6 +341,15 @@ applyVersion(v):
 
   else: reassemble → write via the vault IO layer → update the row + cursor
 ```
+
+**A kill mid-download leaves a fragment, not an edit (#59).** A drain batch (and a live apply, which is
+a batch of one) records its path hashes in `sync-cursor.json` before its first file write and clears
+them when it finishes. The next start resolves that record in front of the drain, before any version
+applies: each listed path's server head is fetched and applied with `tornDownload`, which skips the
+divergence promotion (those bytes are this device's own write, not an edit) and writes the head over the
+fragment, or records only the row when the bytes already match it. Nothing of the fragment is committed
+or kept as a conflict copy. A listed path whose head cannot be fetched stays recorded for the next
+connection.
 
 **Writes go through `vault-io.ts`**: `modifyBinary` for a file the vault index knows, `createBinary` for
 a new one, and `adapter.writeBinary` as the dot-file or pre-index fallback. The write is given the

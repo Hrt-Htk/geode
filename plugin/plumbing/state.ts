@@ -28,8 +28,9 @@ export function openStateDB(
   persistedRows?: LocalFileRow[] | null,
   persistedCursor?: number | null,
   persistedLastBackupAt?: number | null,
+  persistedInFlightApply?: string[] | null,
 ): StateDB {
-  const state = new StateDB();
+  const state = new StateDB(persistedInFlightApply ?? undefined);
   if (persistedRows && Array.isArray(persistedRows)) {
     for (const row of persistedRows) {
       state.upsertLocalFile(parseLocalFileRow(row as unknown as Record<string, unknown>));
@@ -58,8 +59,14 @@ export class StateDB {
   private lastStampWriteAt = 0;
 
   private persist: ((json: string) => void) | null = null;
-  private syncCursorPersist: ((json: string) => void) | null = null;
+  private syncCursorPersist: ((json: string) => void | Promise<void>) | null = null;
   private persistTimer: number | null = null;
+  /** #59: the paths a download batch is writing (their disk bytes may be a fragment). */
+  private readonly inFlightApply: Set<string>;
+
+  constructor(inFlightApply: string[] = []) {
+    this.inFlightApply = new Set(inFlightApply);
+  }
 
   getLocalFile(path: string): LocalFileRow | null {
     return this.localFiles.get(path) ?? null;
@@ -117,11 +124,7 @@ export class StateDB {
     this.receivedSeqs.clear();
     this.replayEnd = seq;
     this.replayComplete = true;
-    try {
-      this.syncCursorPersist?.(this.serializeSyncCursor());
-    } catch {
-      // non-critical
-    }
+    void this.flushCursor();
   }
 
   // Start a new connection's replay. current_seq is the vault's max seq at
@@ -183,13 +186,7 @@ export class StateDB {
         break;
       }
     }
-    if (changed) {
-      try {
-        this.syncCursorPersist?.(this.serializeSyncCursor());
-      } catch {
-        // non-critical
-      }
-    }
+    if (changed) void this.flushCursor();
   }
 
   getSyncCursor(): number {
@@ -203,11 +200,7 @@ export class StateDB {
       const now = Date.now();
       if (now - this.lastStampWriteAt >= LAST_BACKUP_STAMP_THROTTLE_MS) {
         this.lastStampWriteAt = now;
-        try {
-          this.syncCursorPersist?.(this.serializeSyncCursor());
-        } catch {
-          // non-critical
-        }
+        void this.flushCursor();
       }
     }
     return next;
@@ -218,19 +211,56 @@ export class StateDB {
   }
 
   serializeSyncCursor(): string {
-    return JSON.stringify({
+    const cursor: {
+      vault_id: string;
+      last_seen_seq: number;
+      last_backup_at: number;
+      in_flight_apply?: string[];
+    } = {
       vault_id: "default",
       last_seen_seq: this.syncCursor,
       last_backup_at: this.lastBackupAt,
-    });
+    };
+    // Only while a batch is writing: an idle cursor file keeps its three keys.
+    if (this.inFlightApply.size > 0) cursor.in_flight_apply = [...this.inFlightApply];
+    return JSON.stringify(cursor);
   }
 
   setPersist(fn: (json: string) => void): void {
     this.persist = fn;
   }
 
-  setSyncCursorPersist(fn: (json: string) => void): void {
+  setSyncCursorPersist(fn: (json: string) => void | Promise<void>): void {
     this.syncCursorPersist = fn;
+  }
+
+  /** #59: the paths a download batch is about to write, flushed BEFORE its first write so
+   * a kill mid-write leaves a record instead of a fragment with no row. Awaits the write:
+   * the record is durable when this resolves. */
+  async beginApply(pathHashes: string[]): Promise<void> {
+    if (pathHashes.length === 0) return;
+    for (const pathHash of pathHashes) this.inFlightApply.add(pathHash);
+    await this.flushCursor();
+  }
+
+  /** #59: the batch's downloads are all accounted for: drop the record, durably. */
+  async endApply(): Promise<void> {
+    if (this.inFlightApply.size === 0) return;
+    this.inFlightApply.clear();
+    await this.flushCursor();
+  }
+
+  /** #59: paths of a download batch that never finished (read back at the next start). */
+  getInFlightApply(): string[] {
+    return [...this.inFlightApply];
+  }
+
+  private async flushCursor(): Promise<void> {
+    try {
+      await this.syncCursorPersist?.(this.serializeSyncCursor());
+    } catch {
+      // non-critical
+    }
   }
 
   private schedulePersist(): void {
@@ -261,11 +291,7 @@ export class StateDB {
         // non-critical
       }
     }
-    try {
-      this.syncCursorPersist?.(this.serializeSyncCursor());
-    } catch {
-      // non-critical
-    }
+    void this.flushCursor();
     // Null the hooks so a drain still in flight after dispose can't re-arm a
     // timer / write stale state over the next session's files (#328).
     this.persist = null;

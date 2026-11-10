@@ -92,6 +92,7 @@ export class SyncManager {
       state: () => this.state,
       keys: () => this.keys,
       deviceId: deps.settings.deviceId,
+      vaultId: deps.settings.vaultId,
       localEditPaths: this.localEditPaths,
       hasLocalEdits: (path) => this.hasLocalEdits(path),
       markLocalEdit: (path) => this.markLocalEdit(path),

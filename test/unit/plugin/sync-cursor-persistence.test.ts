@@ -1,4 +1,9 @@
 import { openStateDB } from "../../../plugin/plumbing/state.ts";
+import {
+  loadPersistedState,
+  type StatePaths,
+  wireStatePersistence,
+} from "../../../plugin/plumbing/state-persistence.ts";
 import { assert, assertEquals } from "@std/assert";
 import { FakeTime } from "@std/testing/time";
 
@@ -137,4 +142,50 @@ Deno.test("sync-cursor-persistence - close writes the latest stamp even when thr
   assertEquals(stamps, [42], "second stamp-only write throttled");
   db.close();
   assertEquals(stamps, [42, 43], "close flushes the throttled stamp");
+});
+
+// ── interrupted downloads (#59) ──
+
+Deno.test("sync-cursor-persistence - the paths of a batch are durable before its first write", async () => {
+  const db = openStateDB();
+  const written: string[][] = [];
+  db.setSyncCursorPersist((json) => {
+    written.push(JSON.parse(json).in_flight_apply ?? []);
+  });
+
+  // A batch begins: one write carrying every path it is about to write.
+  await db.beginApply(["hash-a", "hash-b"]);
+  assertEquals(written, [["hash-a", "hash-b"]], "beginApply flushes the whole batch, once");
+  assertEquals(db.getInFlightApply(), ["hash-a", "hash-b"]);
+
+  // A second batch mid-drain must not lose the first batch's paths.
+  await db.beginApply(["hash-c"]);
+  assertEquals(db.getInFlightApply(), ["hash-a", "hash-b", "hash-c"]);
+
+  // The batch completed: the record is gone, durably.
+  await db.endApply();
+  assertEquals(written[written.length - 1], [], "endApply clears the record");
+  assertEquals(db.getInFlightApply(), []);
+  db.close();
+});
+
+Deno.test("sync-cursor-persistence - an in-flight record survives a reopen", async () => {
+  const files = new Map<string, Uint8Array>();
+  const write = (path: string, bytes: Uint8Array) => {
+    files.set(path, bytes);
+  };
+  const paths: StatePaths = { localFiles: "local-files.json", cursor: "sync-cursor.json" };
+  const db = openStateDB();
+  wireStatePersistence(db, write, paths);
+  db.updateSyncCursor(7);
+  await db.beginApply(["hash-a"]);
+  db.close();
+
+  // The next start reads the cursor file before anything else touches the disk.
+  const loaded = await loadPersistedState(
+    (path) => Promise.resolve(files.get(path)!),
+    paths,
+  );
+  assertEquals(loaded.persistedCursor, 7);
+  assertEquals(loaded.inFlightApply, ["hash-a"], "the killed batch's path is read back");
 });

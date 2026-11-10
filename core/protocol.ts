@@ -176,8 +176,13 @@ export interface VersionRecord {
 // /heads omits parent_version & device_id; heads-derived consumers read only
 // version/chunk_hashes/enc_metadata/deleted, so leave them unset. It omits `restored`
 // for the same reason: with no device_id a catch-up is never an own version, so the
-// own-version skip `restored` overrides cannot fire there.
-export function headToServerVersion(head: HeadRecord, vaultId: string): ServerVersion {
+// own-version skip `restored` overrides cannot fire there. A chain row (`VersionRecord`,
+// newest first) carries the same fields, so the newest row feeds the same conversion;
+// `deleted` is 0/1 there.
+export function headToServerVersion(
+  head: Omit<HeadRecord, "deleted"> & { deleted: boolean | number },
+  vaultId: string,
+): ServerVersion {
   return {
     type: "server_version",
     vault_id: vaultId,
@@ -185,7 +190,7 @@ export function headToServerVersion(head: HeadRecord, vaultId: string): ServerVe
     path_hash: head.path_hash,
     enc_metadata: head.enc_metadata,
     chunk_hashes: head.chunk_hashes,
-    deleted: head.deleted,
+    deleted: head.deleted === true || head.deleted === 1,
     version: head.version,
     rename_mark: head.rename_mark,
   } as ServerVersion;

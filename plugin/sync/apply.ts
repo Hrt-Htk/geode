@@ -81,6 +81,10 @@ export interface ApplyDeps {
    * the disk can change between the divergence check and the write: re-read before
    * writing and keep bytes that arrived in between. A live session applies serially. */
   recheckDiskBeforeWrite?: boolean;
+  /** #59: these bytes are this device's own unfinished download (a batch recorded the
+   * path before writing it and the app was killed), never a local edit: the head is
+   * written over the fragment, and nothing of it is committed or kept as a conflict. */
+  tornDownload?: boolean;
 }
 
 /** #701: whether divergent bytes on disk are this device's own edit. */
@@ -364,6 +368,8 @@ async function hasPendingEdit(
   deps: ApplyDeps,
 ): Promise<boolean> {
   if (deps.hasLocalEdits(path)) return true;
+  // #59: an unfinished download's bytes are this device's own write, not an edit.
+  if (deps.tornDownload === true) return false;
   if (!trustsDivergentDisk(path, deps)) return false;
   const diskHash = await diskPlaintextHash(path, deps.vault);
   if (diskHash === null) return false;
@@ -575,8 +581,9 @@ async function applyContent(msg: ServerVersion, deps: ApplyDeps, meta: FileMeta)
   const dh = await diskPlaintextHashIfPresent(meta.path, deps.vault);
   // A rebuild re-applies every head: when the disk already holds exactly these bytes,
   // record the version and skip the reassemble+write (a resync must not re-download
-  // and rewrite a whole vault to restore the files that are actually missing).
-  if (tracked !== null && dh === tracked && dh === meta.plaintext_hash) {
+  // and rewrite a whole vault to restore the files that are actually missing). #59: the
+  // same for an interrupted download that had finished writing; it only owes its row.
+  if (dh === meta.plaintext_hash && (tracked !== null || deps.tornDownload === true)) {
     deps.state.upsertLocalFile({
       path: meta.path,
       path_hash: msg.path_hash,
@@ -598,7 +605,12 @@ async function applyContent(msg: ServerVersion, deps: ApplyDeps, meta: FileMeta)
   // the incoming version: an edit still inside the event debounce (#589), one made
   // while offline / before a restart, or a create the reconciler has not queued yet,
   // a rename onto this name, or a second device's create, landing first (#590, #181).
-  if (await keepsDivergentBytes(msg, deps, meta, localRow, tracked, dh)) return;
+  // #59: a torn download is overwritten by the head, never promoted as an edit.
+  if (
+    deps.tornDownload !== true && await keepsDivergentBytes(msg, deps, meta, localRow, tracked, dh)
+  ) {
+    return;
+  }
 
   log.debug("apply reassemble", {
     path: meta.path,

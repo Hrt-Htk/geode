@@ -109,7 +109,12 @@ export async function openSessionState(host: SyncSessionHost): Promise<StateDB> 
   const read: (path: string) => Promise<ArrayBuffer | Uint8Array> = (path) =>
     adapter.readBinary(path);
   const result = await loadPersistedState(read, paths);
-  const state = openStateDB(result.persisted, result.persistedCursor, result.lastBackupAt);
+  const state = openStateDB(
+    result.persisted,
+    result.persistedCursor,
+    result.lastBackupAt,
+    result.inFlightApply,
+  );
   const write = (path: string, bytes: Uint8Array) => writeStateFile(host, path, bytes);
   wireStatePersistence(state, write, paths);
   return state;
@@ -121,8 +126,13 @@ const inFlightStateWrites = new Set<Promise<void>>();
 
 // #181: device-gated state write: direct on mobile, temp-file+rename on
 // desktop. Shared by the state files and the activity log (a torn activity
-// file reads as null → empty log, never a crash).
-function writeStateFile(host: SyncSessionHost, path: string, bytes: Uint8Array): void {
+// file reads as null → empty log, never a crash). Returns the write so a caller
+// that has to be durable before continuing (#59) can await it.
+function writeStateFile(
+  host: SyncSessionHost,
+  path: string,
+  bytes: Uint8Array,
+): Promise<void> {
   const adapter = host.app.vault.adapter as {
     writeBinary(path: string, data: Uint8Array): Promise<void>;
     rename(from: string, to: string): Promise<void>;
@@ -135,6 +145,7 @@ function writeStateFile(host: SyncSessionHost, path: string, bytes: Uint8Array):
     inFlightStateWrites.delete(write);
   };
   void write.then(settle, settle);
+  return write;
 }
 
 /** #744: wait until no state write is in flight. */
@@ -145,12 +156,16 @@ export async function awaitStateWrites(): Promise<void> {
 }
 
 export function writeActivityFile(host: SyncSessionHost, json: string): void {
-  writeStateFile(host, host.pluginDataPath("activity-log.json"), new TextEncoder().encode(json));
+  void writeStateFile(
+    host,
+    host.pluginDataPath("activity-log.json"),
+    new TextEncoder().encode(json),
+  );
 }
 
 /** #559: the re-key cursor file rides the same device-gated state writer. */
 export function writePluginDataFile(host: SyncSessionHost, name: string, bytes: Uint8Array): void {
-  writeStateFile(host, host.pluginDataPath(name), bytes);
+  void writeStateFile(host, host.pluginDataPath(name), bytes);
 }
 
 export async function readActivityFile(host: SyncSessionHost): Promise<string | null> {

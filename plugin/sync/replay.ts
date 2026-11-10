@@ -1,4 +1,4 @@
-import { ServerVersion } from "../../core/protocol.ts";
+import { headToServerVersion, ServerVersion } from "../../core/protocol.ts";
 import { VaultKeys } from "../../core/crypto.ts";
 import { StateDB } from "../plumbing/state.ts";
 import { Transport, TransportState } from "./transport.ts";
@@ -25,6 +25,7 @@ export interface ReplayDeps {
   state: () => StateDB | null;
   keys: () => VaultKeys | null;
   deviceId: string;
+  vaultId: string;
   localEditPaths: Set<string>;
   hasLocalEdits: (path: string) => boolean;
   markLocalEdit: (path: string) => void;
@@ -102,7 +103,16 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      await applyVersion(msg, this.buildApplyDeps(state, keys));
+      // #59: a live apply is a batch of one. Only a version that writes bytes needs the
+      // record: an own version never writes disk, and a delete cannot leave a torn file.
+      const writes = !msg.deleted &&
+        (msg.device_id !== this.deps.deviceId || msg.restored === true);
+      if (writes) await state.beginApply([msg.path_hash]);
+      try {
+        await applyVersion(msg, this.buildApplyDeps(state, keys));
+      } finally {
+        if (writes) await state.endApply();
+      }
       this.deps.onStatusUpdate("sync", { apply: true });
     });
     this.versionQueue = run.catch(() => {});
@@ -118,6 +128,9 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
+      // #59: finish whatever a kill interrupted before this connection's own versions
+      // are applied, so a torn download can never be read as a local edit.
+      await this.finishInterruptedApplies(state, keys);
       const buffer = this.replayBuffer;
       this.replayBuffer = [];
       const deps = this.buildApplyDeps(state, keys);
@@ -132,6 +145,9 @@ export class ReplayPipeline {
       const total = entries.length;
       let applied = 0;
       const drainStart = performance.now();
+      // #59: one state write for the whole batch, flushed before the first file write, so
+      // a kill mid-drain leaves the list of paths it was writing.
+      await state.beginApply(entries.map((entry) => entry.winner.path_hash));
       try {
         for (const entry of entries) {
           const row = state.getLocalFileByHash(entry.winner.path_hash);
@@ -163,6 +179,7 @@ export class ReplayPipeline {
             state.advanceSyncCursor(seq);
           }
         }
+        await state.endApply();
       } finally {
         // Always clear the in-flight progress so the icon returns to an honest
         // synced/offline state even if the drain body throws mid-way (#319).
@@ -228,6 +245,40 @@ export class ReplayPipeline {
     const run = this.versionQueue.then(fn);
     this.versionQueue = run.catch(() => {});
     return run;
+  }
+
+  /** #59: an Android force-stop inside a download leaves a torn file whose row never
+   * persisted (rows persist on a throttle). The reconciler would read the fragment as a
+   * local create, and the merger would keep it as a conflict copy that then syncs. The
+   * batch recorded its paths before its first write, so each one's server head is applied
+   * again: over the fragment, or as the row it never got. A path that cannot be resolved
+   * stays recorded and is retried at the next connection. */
+  private async finishInterruptedApplies(state: StateDB, keys: VaultKeys): Promise<void> {
+    const pathHashes = state.getInFlightApply();
+    if (pathHashes.length === 0) return;
+    const deps: ApplyDeps = {
+      ...this.buildApplyDeps(state, keys),
+      // The bytes are this device's own unfinished download, and the head is owed even
+      // when the row already claims a version of it.
+      tornDownload: true,
+      force: true,
+    };
+    let unfinished = 0;
+    for (const pathHash of pathHashes) {
+      try {
+        const head = (await this.deps.transport.getVersionChain(pathHash))[0];
+        if (head) await applyVersion(headToServerVersion(head, this.deps.vaultId), deps);
+      } catch (error) {
+        unfinished++;
+        log.warn("interrupted download not finished, keeping it for the next connection", {
+          path_hash: pathHash,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (unfinished > 0) return;
+    await state.endApply();
+    log.info("finished interrupted downloads", { paths: pathHashes.length });
   }
 
   private async promoteDeleteDivergence(
