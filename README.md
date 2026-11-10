@@ -110,6 +110,10 @@ Use one sync tool per vault. Don't sync a Geode vault with iCloud or Google Driv
 Geode runs from a published image, so there is nothing to clone and nothing to build. It needs a
 machine with Docker and Compose v2, and a directory of its own.
 
+`compose.yaml` pulls `ghcr.io/hrt-htk/geode:latest`: the release that has been promoted to the
+community directory. To follow every release instead, including the betas BRAT installs, put
+`ghcr.io/hrt-htk/geode:beta` in its place.
+
 ### On a VPS with a domain
 
 1. At your DNS provider, add an A record that points your domain at the VPS IP address, and delete a
@@ -291,7 +295,9 @@ docker compose pull geode && docker compose up -d
 ```
 
 Either way your data and admin token stay, and Caddy keeps serving. A new image only exists when a
-release is cut, and `/version` reports the one that is running.
+release is cut, and `/version` reports the one that is running. The tag in `compose.yaml` decides
+which releases you get: `latest` moves only when a release is promoted to the community directory,
+`beta` moves on every release.
 
 **Plugin:** in BRAT's settings, click **Update** next to Geode, or replace the three files with the
 ones from the latest release. BRAT installs every release, including pre-releases: a new build

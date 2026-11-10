@@ -796,8 +796,11 @@ Docker: no clone, no build.
   runs at build time, so the container never fetches anything; `--build-arg VERSION` is the version
   `/version` reports.
 - **Release.** `release.yml` builds amd64 on `ubuntu-latest` and arm64 on `ubuntu-24.04-arm`, merges the
-  two digests into one manifest tagged `X.Y.Z` and `latest`, and attests them. The GitHub release
-  `needs` that manifest, so a broken image blocks the plugin release too (skill `geode-release`).
+  two digests into one manifest tagged `X.Y.Z` and `beta`, and attests them. It never tags `latest`:
+  directory users follow that tag, so it moves only when `deno task promote X.Y.Z` retags it onto a
+  tested release through `promote-image.yml`, which copies the released index, so `latest` resolves to
+  the digest the release attested. The GitHub release `needs` that manifest, so a broken image blocks
+  the plugin release too (skill `geode-release`).
 - **Networks.** Geode is on an `internal: true` network and publishes nothing; a front joins that
   network and `egress` and takes the traffic, `caddy:2` for a domain or the pinned `alpine/socat` relay
   otherwise. Both fronts sit behind a compose profile (`https`, `forward`) because compose has none:
@@ -883,8 +886,9 @@ uid 1993.
 
 **What a run does.** No request, nothing but the heartbeat. A request is removed with `rm -rf --`,
 which removes the entry and never what a link names, then `running`, then at most one real update per
-ten minutes: `docker compose pull geode`, stop if nothing is new, `docker compose up -d --wait
---wait-timeout 300 geode`. Geode only: Caddy and the forwarder are untouched. One run at a time:
+ten minutes: `docker compose pull geode` (whatever tag `compose.yaml` pins: `latest`, or `beta` on a
+host that follows the betas), stop if nothing is new, `docker compose up -d --wait --wait-timeout 300
+geode`. Geode only: Caddy and the forwarder are untouched. One run at a time:
 `flock` on `.update-lock` beside the compose file, never inside `update-status`, because the container
 can read that folder and a lock only needs its file to be readable. An up-to-date check never uses up
 the rate limit. A normal run prints nothing on stderr, so

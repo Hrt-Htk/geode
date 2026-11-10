@@ -173,13 +173,16 @@ for the same PR cancels the older one; pushes to `main` always run to the end.
 
 Auto-ship only merges. No release decision and no server update happen in Actions: the agent prunes
 and runs `deno task release X.Y.Z` after the merge, and the server update is a step of its own
-(skill `geode-release`).
+(skill `geode-release`). A release tags the image `X.Y.Z` and `beta`, never `latest`:
+`deno task promote X.Y.Z` dispatches `promote-image.yml`, which copies the released index onto
+`latest`, so a beta that bumps the wire protocol cannot reach the directory users who pull it (#65).
 
 ### Runner
 
-Every job runs on `${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}`, except the two `Docker smoke` matrix
-entries and the two `Image` entries in `release.yml`: those name their runner, because an arm64 image
-can only be built natively. While the repo is private, the repo
+Every job runs on `${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}`, except the `Docker smoke` entries in
+`ci.yml` and the image jobs in `release.yml` and `promote-image.yml` (the two `Image` entries, the
+manifest merge and the retag): those name their runner, and the `Image` entries must, because an arm64
+image can only be built natively. While the repo is private, the repo
 variable `GEODE_RUNNER=self-hosted` sends jobs to three self-hosted runners on the maintainer's machine,
 so CI uses no Actions minutes and PRs do not queue behind each other. Each runs as a user service:
 `systemctl --user status actions-runner actions-runner-2 actions-runner-3` (install dirs
