@@ -91,9 +91,9 @@ test("gate6 resync from scratch rebuilds local state without duplicates in real 
       .map((title) => /^Geode: resyncing (\d+) of (\d+)$/.exec(title))
       .filter((match): match is RegExpExecArray => match !== null)
       .map((match) => ({ current: Number(match[1]), total: Number(match[2]) }));
-    // The run publishes at most four counts a second, so a small vault renders the start
-    // and the final count; resync-surfaces.spec.ts proves the count moves in between.
-    expect(counts.length).toBeGreaterThan(0);
+    // Progress moves: a count strictly between the start and the total is published (the
+    // first count always renders, the rest are throttled).
+    expect(counts.some((count) => count.current > 0 && count.current < count.total)).toBe(true);
     const lastCount = counts.at(-1);
     expect(lastCount?.current).toBe(lastCount?.total);
     expect(lastCount?.total).toBeGreaterThanOrEqual(SEEDED_FILES.length);

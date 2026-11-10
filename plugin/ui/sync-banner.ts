@@ -16,12 +16,14 @@ export function describeErrorBanner(
   // #601: a held mass delete stops sync on purpose; the hold banner explains it, and
   // "cannot reach your server" underneath would be a lie.
   if (input.massDeleteHold) return null;
-  // #54: a running rebuild disposes the transport on purpose, and one that left sync
-  // stopped is not retrying anything: the resync row and notice say what is happening. A
-  // rebuild that restarted a session leaves this banner to the real outage.
-  if (input.resync?.phase === "running" || resyncStopsSync(input.resync)) return null;
 
-  if (input.offlineSince > 0 && now - input.offlineSince >= 10_000) {
+  // #54: a running rebuild disposes the transport on purpose, and one that left sync stopped
+  // is not retrying anything: the resync row and notice say what is happening. Only this
+  // outage line is theirs to hide; the upload-failed banner below still shows.
+  if (
+    input.offlineSince > 0 && now - input.offlineSince >= 10_000 &&
+    !resyncHidesOutage(input.resync)
+  ) {
     return {
       name: "Cannot reach your Geode server",
       desc: `Sync is paused until ${serverHost(serverUrl)} is reachable. Last attempt ${
@@ -49,6 +51,11 @@ export function nextOfflineSince(prev: number, state: string, now: number): numb
   if (state === "disconnected") return prev || now;
   if (state === "connecting") return prev;
   return 0;
+}
+
+/** #54: the states that own the outage story: the run itself, and a stop nothing retries. */
+function resyncHidesOutage(state: SyncStatusInput["resync"]): boolean {
+  return state?.phase === "running" || resyncStopsSync(state);
 }
 
 function formatAttemptAge(lastAttemptAt: number, now: number): string {

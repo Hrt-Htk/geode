@@ -85,9 +85,23 @@ Deno.test("resync-status - done counts what it updated, and nothing to update sa
 Deno.test("resync-status - progress renders at most about four times a second", () => {
   const start = 1_000;
   const p = (current: number, total = 822) => ({ current, total });
-  assertEquals(resyncRenderDue(p(1), 0, start), true, "the first progress renders");
-  assertEquals(resyncRenderDue(p(2), start, start + RESYNC_RENDER_MS - 1), false);
-  assertEquals(resyncRenderDue(p(3), start, start + RESYNC_RENDER_MS), true);
+  assertEquals(resyncRenderDue(p(0), 0, start, 0), true, "the uncounted start renders");
+  assertEquals(resyncRenderDue(p(1), start, start + 10, 0), true, "the first count renders");
+  assertEquals(resyncRenderDue(p(2), start, start + RESYNC_RENDER_MS - 1, 1), false);
+  assertEquals(resyncRenderDue(p(3), start, start + RESYNC_RENDER_MS, 1), true);
   // The final count always renders, whatever the clock says.
-  assertEquals(resyncRenderDue(p(822), start, start + 1), true);
+  assertEquals(resyncRenderDue(p(822), start, start + 1, 1), true);
+});
+
+Deno.test("resync-status - a failed head list cannot stretch the row or the notice", () => {
+  const hashes = Array.from({ length: 40 }, (_, i) => `${i}`.padStart(64, "a")).join(", ");
+  const long = {
+    phase: "failed",
+    reason: `resync failed for 40 file(s): ${hashes}`,
+    syncStopped: true,
+  } as const;
+  const copy = resyncCopy(long);
+  assertEquals(copy.row.length <= 120, true, `row stays short: ${copy.row.length}`);
+  assertEquals(copy.notice.endsWith("…"), true, "cut with an ellipsis");
+  assertEquals(copy.row.includes("resync failed for 40 file(s): aaaa"), true);
 });

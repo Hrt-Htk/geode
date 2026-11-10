@@ -117,8 +117,9 @@ export default class GeodePlugin extends Plugin {
   adminToken: string | null = null;
   lastBackupAt = 0;
   blockedNoticeShown = false;
-  /** #54: a resync still settling must not project its stop into the next session. */
-  unloaded = false;
+  /** #54: bumped when the session a run reports to ends (lock, leave, unload), so a run
+   * still settling cannot project its stop into the next session. */
+  syncGeneration = 0;
   private syncingProgress: { current: number; total: number } | null = null;
   deferredStartCleanup: (() => void) | null = null;
   // SyncSessionHost injectables (session.ts stays obsidian-free).
@@ -182,7 +183,7 @@ export default class GeodePlugin extends Plugin {
     this.showStartupModal();
   }
   onunload(): void {
-    this.unloaded = true;
+    this.syncGeneration += 1;
     this.activity?.flush();
     this.updater.dispose();
     this.statusBar?.dispose();
@@ -220,10 +221,12 @@ export default class GeodePlugin extends Plugin {
   }
   lockVault(): void {
     // A stopped resync belongs to the session the user is closing.
+    this.syncGeneration += 1;
     this.statusBar?.setResync(null);
     lockVault(this);
   }
   leaveVault(): Promise<void> {
+    this.syncGeneration += 1;
     this.statusBar?.setResync(null);
     return leaveVault(this);
   }
@@ -277,12 +280,12 @@ export default class GeodePlugin extends Plugin {
   async resyncFromScratch(): Promise<void> {
     // #701: a failed rejoin left the rows armed; only the rejoin rebuild may run on them.
     if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
-    if (!this.resyncInFlight) {
-      if (!this.transport) throw new Error("vault must be unlocked before resync");
-      this.resyncInFlight = runResync(this, this.transport).finally(() => {
-        this.resyncInFlight = null;
-      });
-    }
+    if (this.resyncInFlight) return await this.resyncInFlight;
+    if (!this.isUnlocked) throw new Error("vault must be unlocked before resync");
+    // #54: a stopped resync leaves no session behind; the retry drives its own transport.
+    this.resyncInFlight = runResync(this, this.transport).finally(() => {
+      this.resyncInFlight = null;
+    });
     await this.resyncInFlight;
   }
 

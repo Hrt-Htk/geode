@@ -128,8 +128,9 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
     for (let index = 1; index < counts.length; index++) {
       expect(counts[index], "progress never restarts").toBeGreaterThanOrEqual(counts[index - 1]);
     }
-    // The published count moves: the run renders more than one count as it goes.
-    expect(new Set(counts).size).toBeGreaterThan(1);
+    // Progress moves: at least one published count sits strictly between the start and the
+    // total (the counts themselves are throttled, see RESYNC_RENDER_MS).
+    expect(counts.some((current) => current > 0 && current < counts.at(-1)!)).toBe(true);
     expect(
       await o.eval<string[]>(`app.plugins.plugins.geode.getRecentLog()
         .filter((e) => e.level === "error" && e.msg === "resync command failed")
@@ -149,7 +150,7 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
       async () => await o.eval<number>(`document.querySelectorAll(".notice").length`),
       { timeout: 20_000 },
     ).toBe(0);
-    await server.stop();
+    await server.shutdown();
     await scrollRowIntoView(o, "Resync from scratch");
     await clickResync(o);
     // #54 review: the restart brought a session back that is now offline, and that outage
@@ -165,6 +166,21 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
     await shoot(o, "5-stopped-status-row-desktop");
     await scrollRowIntoView(o, "Resync from scratch");
     await shoot(o, "6-stopped-resync-row-desktop");
+
+    /* ---- Try again against a healthy server: the retry runs and sync comes back ---- */
+    await server.restart();
+    await clickResync(o);
+    await expect.poll(async () => await statusRowText(o), { timeout: 120_000 }).toContain(
+      "Up to date",
+    );
+    expect(
+      await o.eval<boolean>("!!app.plugins.plugins.geode.transport"),
+      "the retry leaves a live session behind",
+    ).toBe(true);
+    await expect.poll(async () => await resyncButtonText(o), { timeout: 10_000 })
+      .toBe("Resync from scratch");
+    await scrollToHeading(o, "Sync status");
+    await shoot(o, "7-retried-status-row-desktop");
   } finally {
     await o.close();
     await server.stop().catch(() => {});

@@ -60,6 +60,21 @@ Deno.test("sync-banner - an outage after a stopped resync is a real outage", () 
   );
 });
 
+Deno.test("sync-banner - a resync suppresses the outage banner only, not upload failures", () => {
+  // #54 review: the transport teardown is the resync's own doing, but a dropped upload is
+  // still a real problem the banner must name.
+  assert(
+    describeErrorBanner(
+      input({
+        droppedCount: 2,
+        resync: { phase: "running", progress: { current: 40, total: 120 } },
+      }),
+      NOW,
+      SERVER_URL,
+    )?.name.includes("couldn't upload"),
+  );
+});
+
 Deno.test("sync-banner - no outage banner for a rebuild that left sync stopped", () => {
   // Nothing is retrying, so "sync is paused until X is reachable" would promise a retry that
   // never comes; the stopped row and its Try again are the answer.

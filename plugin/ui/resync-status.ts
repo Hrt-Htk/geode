@@ -1,5 +1,6 @@
-/** #54: the resync surfaces' one state and copy: the notice, the status bar tooltip, the
- * settings row and the button label all read from here. No obsidian import (deno-tested). */
+/** #54: the resync state and the copy its surfaces read: the notice, the status bar tooltip,
+ * the settings row and the button label. The notice itself and the run live in
+ * resync-run.ts. No obsidian import (deno-tested). */
 import type { ProgressInfo } from "../sync/recovery.ts";
 
 export type ResyncState =
@@ -17,11 +18,19 @@ export const RESYNC_RETRY = "Try again";
 
 export type ResyncCopy = { notice: string; tooltip: string; row: string };
 
+/** A failed head list can be hundreds of hashes long: a status row and a notice are not. */
+const REASON_MAX = 96;
+
+function clip(reason: string): string {
+  return reason.length <= REASON_MAX ? reason : `${reason.slice(0, REASON_MAX - 1)}…`;
+}
+
 /** The three surfaces' words, from the one state. */
 export function resyncCopy(state: ResyncState): ResyncCopy {
   if (state.phase === "failed") {
-    const notice = `Geode: resync stopped. ${state.reason}`;
-    return { notice, tooltip: notice, row: `Resync stopped. ${state.reason}` };
+    const reason = clip(state.reason);
+    const notice = `Geode: resync stopped. ${reason}`;
+    return { notice, tooltip: notice, row: `Resync stopped. ${reason}` };
   }
   const { current, total } = state.progress;
   if (total === 0) {
@@ -77,13 +86,17 @@ export function resyncDoneNotice(updated: number): string {
   return `Geode: resync done. ${updated} file${updated === 1 ? "" : "s"} updated.`;
 }
 
-/** #54: progress renders at most about four times a second; the last count always renders. */
+/** #54: progress renders at most about four times a second. The first count and the last
+ * count always render, so a short run still shows both ends of it. */
 export const RESYNC_RENDER_MS = 250;
 
 export function resyncRenderDue(
   progress: ProgressInfo,
   lastRenderAt: number,
   now: number,
+  renderedCount: number,
 ): boolean {
-  return progress.current >= progress.total || now - lastRenderAt >= RESYNC_RENDER_MS;
+  return progress.current >= progress.total ||
+    (progress.current > 0 && renderedCount === 0) ||
+    now - lastRenderAt >= RESYNC_RENDER_MS;
 }

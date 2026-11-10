@@ -11,13 +11,13 @@ import {
 } from "./resync-status.ts";
 
 /** #54: what the two rebuild entry points need from the plugin: the rebuild host, the bar
- * they report through, and whether the vault they report to still exists. */
+ * they report through, and the session generation they belong to. */
 export type ResyncRunHost =
   & Parameters<typeof rebuildVault>[0]
   & {
     statusBar: { setResync(state: ResyncState | null): void; setPausedAt(ts: number): void } | null;
-    isUnlocked: boolean;
-    unloaded: boolean;
+    /** Bumped when the session a run reports to ends (lock, leave, unload). */
+    syncGeneration: number;
   };
 
 /** #54: one notice that updates in place while the run goes (about four renders a second),
@@ -25,14 +25,20 @@ export type ResyncRunHost =
 class ResyncProgress {
   private notice: Notice | null = null;
   private lastRenderAt = 0;
+  private renderedCount = 0;
+  /** The session this run started in: a lock, a leave or an unload ends it. */
+  private readonly generation: number;
 
-  constructor(private host: ResyncRunHost) {}
+  constructor(private host: ResyncRunHost) {
+    this.generation = host.syncGeneration;
+  }
 
   update(progress: ProgressInfo): void {
     if (this.gone()) return;
     const now = Date.now();
-    if (!resyncRenderDue(progress, this.lastRenderAt, now)) return;
+    if (!resyncRenderDue(progress, this.lastRenderAt, now, this.renderedCount)) return;
     this.lastRenderAt = now;
+    this.renderedCount = progress.current;
     const state: ResyncState = { phase: "running", progress };
     this.host.statusBar?.setResync(state);
     const { notice } = resyncCopy(state);
@@ -67,10 +73,10 @@ class ResyncProgress {
     new Notice(resyncCopy(state).notice);
   }
 
-  /** #54 review: a run can outlive the surface it reports to (lock, leave, unload).
-   * Settling then would project this run's stop into the next session. */
+  /** #54 review: a run belongs to the session it started in. Once that session is gone (a
+   * lock, a leave, an unload), settling would project this run's stop into the next one. */
   private gone(): boolean {
-    return !this.host.isUnlocked || this.host.unloaded;
+    return this.host.syncGeneration !== this.generation;
   }
 
   private hide(): void {
@@ -79,23 +85,30 @@ class ResyncProgress {
   }
 }
 
-/** "Resync from scratch": the surfaces run with the rebuild, and a stop keeps its reason. */
+/** "Resync from scratch": the surfaces run with the rebuild, and a stop keeps its reason.
+ * `session` is the live transport, or null when a stop left no session to borrow one from
+ * (a reload on the marker): the retry then drives its own, as a rejoin does. */
 export async function runResync(
   host: ResyncRunHost,
-  transport: Parameters<typeof rebuildVault>[1],
+  session: Parameters<typeof rebuildVault>[1] | null,
 ): Promise<void> {
   const progress = new ResyncProgress(host);
   progress.update({ current: 0, total: 0 });
+  let transport = session;
   try {
+    transport ??= startRebuildTransport(host);
     const result = await rebuildVault(host, transport, {
       onProgress: (p) => progress.update(p),
     });
     progress.done(result.appliedFiles);
   } catch (error) {
+    // Even a transport that could not be started is a visible stop, not only a log line.
     // A restart leaves a transport behind; a rebuild that stopped for good leaves none, and
     // then the stopped state is the only thing telling sync's own story.
     progress.failed(resyncStopReason(error), host.transport === null);
     throw error;
+  } finally {
+    if (transport !== session) transport?.stop();
   }
 }
 
