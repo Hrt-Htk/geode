@@ -349,6 +349,8 @@ async function followClosedRename(
       version: 0,
     });
   }
+  // #55: "kept" wrote a sibling and "same" found these bytes already at the destination:
+  // both leave the note where it is, the old name closed instead of re-opened beside it.
   log.info("followed the rename instead of reopening the old name", {
     path,
     to,

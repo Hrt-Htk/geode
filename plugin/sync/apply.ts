@@ -20,7 +20,13 @@ import {
   type Vault,
   writeVaultBinary,
 } from "./vault-io.ts";
-import { carryLocalEdit, dropOldSpelling, followRename, freeConflictPath } from "./rename-carry.ts";
+import {
+  carryLocalEdit,
+  dropOldName,
+  dropOldSpelling,
+  followRename,
+  freeConflictPath,
+} from "./rename-carry.ts";
 
 export interface ApplyDeps {
   vault: Vault;
@@ -345,6 +351,14 @@ async function followCarriedEdit(from: string, to: string, deps: ApplyDeps): Pro
   if (from === to || !row || row.deleted || row.last_seen_version !== 0) return;
   const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, deps);
   if (carried.kind === "none") return;
+  // #55: the new name already holds these bytes, so nothing was carried. The abandoned
+  // name still closes, or its file would be committed again as a new note there.
+  if (carried.kind === "same") {
+    await dropOldName(from, to, deps);
+    deps.state.closeLocalRow(from, row.path_hash, row.last_seen_version);
+    log.info("carried edit is already at the note's new name", { from, to });
+    return;
+  }
   deps.state.closeLocalRow(from, row.path_hash, row.last_seen_version);
   deps.markLocalEdit(carried.kind === "kept" ? carried.conflictPath : carried.to);
   log.info("carried edit follows the note to its new name", { from, to, carried: carried.kind });

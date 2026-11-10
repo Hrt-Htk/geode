@@ -70,6 +70,7 @@ export async function rebuildVault(
       keys: host.keys,
       vaultId: host.pluginSettings.vaultId,
       isSyncable: (filePath) => isSyncable(filePath, host.app.vault.configDir, host.pluginSettings),
+      deviceName: host.pluginSettings.deviceName,
       parkedMoves: () => host.pluginSettings.pendingMoveOuts,
       rejoin,
     });

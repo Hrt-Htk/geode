@@ -16,11 +16,13 @@ import {
 import {
   decryptMetadata,
   deriveKeys,
+  encryptChunk,
   encryptMetadata,
   type VaultKeys,
 } from "../../../core/crypto.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
+import { chunk } from "../../../core/chunker.ts";
 import { commitOp } from "../../../plugin/sync/commit.ts";
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
 import { carryLocalEdit } from "../../../plugin/sync/rename-carry.ts";
@@ -664,6 +666,104 @@ Deno.test("rename-note - a cleared destination row does not block the carry", as
 
   assertEquals(carried, { kind: "moved", to });
   assertEquals(vault.disk.get(to), "edit");
+  state.close();
+});
+
+Deno.test("rename-note - a carry whose bytes match the destination keeps no copy", async () => {
+  const keys = await keysFor();
+  const state = openStateDB();
+  const from = "a.md";
+  const to = "b.md";
+  state.upsertLocalFile({
+    path: from,
+    path_hash: hashPathHex(keys.mac_key, from),
+    size: 4,
+    mtime: 1,
+    plaintext_hash: "old",
+    last_seen_version: 1,
+    chunk_hashes: [],
+  });
+  // The destination already holds these bytes: nothing is lost by leaving it alone, so
+  // nothing is copied next to it.
+  const vault = diskVault({ [from]: "same", [to]: "same" });
+
+  const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, {
+    pendingRenameTarget: () => undefined,
+    vault: vault as never,
+    state,
+    keys,
+    suppressSelfWrite: () => {},
+  });
+
+  assertEquals(carried, { kind: "same" });
+  assertEquals([...vault.disk.keys()].sort(), [from, to].sort(), "no conflict copy");
+  assertEquals(vault.disk.get(to), "same", "the destination is untouched");
+  state.close();
+});
+
+Deno.test("rename-note - a carried edit already at the new name closes the old one", async () => {
+  const keys = await keysFor();
+  const state = openStateDB();
+  const from = "a.md";
+  const to = "b.md";
+  const body = "the same text\n";
+  // A carried edit waits at the old name (no version of its own) and the peer's note at
+  // the new name already holds exactly its bytes.
+  state.upsertLocalFile({
+    path: from,
+    path_hash: hashPathHex(keys.mac_key, from),
+    size: body.length,
+    mtime: 1,
+    plaintext_hash: "carried",
+    last_seen_version: 0,
+    chunk_hashes: [],
+  });
+  const vault = diskVault({ [from]: body, [to]: body });
+  const normalized = normalizeForHash(to, new TextEncoder().encode(body));
+  const blobs = new Map<string, Uint8Array>();
+  const hashes: string[] = [];
+  for (const part of chunk(normalized)) {
+    const hash = blake3Hex(part);
+    hashes.push(hash);
+    blobs.set(hash, await encryptChunk(part, keys, hash));
+  }
+  const pathHash = hashPathHex(keys.mac_key, to);
+  const msg: ServerVersion = {
+    type: "server_version",
+    vault_id: "v",
+    seq: 2,
+    path_hash: pathHash,
+    parent_version: 1,
+    enc_metadata: b64encode(
+      await encryptMetadata(
+        {
+          path: to,
+          mtime: 1,
+          size: body.length,
+          mime: "text/markdown",
+          plaintext_hash: blake3Hex(normalized),
+          renamed_from: from,
+          renamed_from_version: 1,
+        },
+        keys,
+        pathHash,
+      ),
+    ),
+    chunk_hashes: hashes,
+    deleted: false,
+    device_id: "dev-other",
+    version: 2,
+  };
+
+  await applyVersion(
+    msg,
+    applyDepsFor(keys, state, vault, { getBlob: (hash) => Promise.resolve(blobs.get(hash)!) }),
+  );
+
+  assertEquals(vault.disk.get(to), body, "the new name keeps the bytes");
+  assertEquals(vault.disk.has(from), false, "the abandoned name is emptied, not copied");
+  assertEquals(state.getLocalFile(from)?.deleted, true, "the abandoned name's row is closed");
+  assertEquals(state.getLocalFile(to)?.deleted, false, "the new name's row is live");
   state.close();
 });
 

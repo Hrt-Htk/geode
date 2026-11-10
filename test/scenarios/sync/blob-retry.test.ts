@@ -84,6 +84,7 @@ Deno.test({
         state: openStateDBFromPlugin(A.pluginSettings.vaultId),
         keys: A.keys!,
         vaultId: A.pluginSettings.vaultId,
+        deviceName: A.pluginSettings.deviceName,
         isSyncable: () => true,
       };
 
@@ -144,6 +145,7 @@ Deno.test({
         state: openStateDBFromPlugin(A.pluginSettings.vaultId),
         keys: A.keys!,
         vaultId: A.pluginSettings.vaultId,
+        deviceName: A.pluginSettings.deviceName,
         isSyncable: () => true,
       };
 
