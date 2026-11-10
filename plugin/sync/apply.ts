@@ -88,6 +88,8 @@ export interface ApplyDeps {
   /** #59: this caller IS the start pass, which decides what an unresolved record's bytes are.
    * Everyone else parks a version for such a path instead of applying over them. */
   managesInterrupted?: boolean;
+  /** #59: keep a parked version so it can be applied once the record is resolved. */
+  parkVersion?: (msg: ServerVersion) => void;
 }
 
 /** #59: do the bytes at this path belong to nobody's write (a write that has not landed, or
@@ -188,7 +190,9 @@ export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise
       version: msg.version,
     });
     // Nothing advances: the seq stays received-but-unapplied, which halts the persisted cursor
-    // at the version before it, so a reconnect replays it.
+    // at the version before it, so a reconnect replays it. The pipeline keeps the version and
+    // applies it as soon as the pass resolves the record.
+    deps.parkVersion?.(msg);
     return;
   }
 

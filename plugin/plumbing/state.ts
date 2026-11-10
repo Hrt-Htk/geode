@@ -305,7 +305,9 @@ export class StateDB {
     const existing = this.writing.get(pathHash);
     if (existing !== undefined && --existing.writers > 0) return;
     this.writing.delete(pathHash);
-    this.failed.set(pathHash, entry);
+    // Only when no newer write took the path over: that one's expectation is the one the next
+    // start must resolve against.
+    if (existing === undefined || existing.entry === entry) this.failed.set(pathHash, entry);
     this.queueCursor();
   }
 
@@ -324,11 +326,6 @@ export class StateDB {
   /** #59: is this path's record still unresolved (a start pass owes it a verdict)? */
   isInterrupted(pathHash: string): boolean {
     return this.interrupted.has(pathHash);
-  }
-
-  /** #59: is a running start pass writing this path right now? Its bytes are its to judge. */
-  isResolving(pathHash: string): boolean {
-    return this.resolving.has(pathHash);
   }
 
   /** #59: this writer returned. The record goes when the last writer on the path does. */

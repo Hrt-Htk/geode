@@ -27,9 +27,11 @@ export interface InterruptedWriteDeps {
  * outcomes below) is cleared; one whose resolution failed, because the server could not
  * answer or a vault write errored, stays recorded and gated, and the next connection tries
  * again. That is not a frozen path: it only waits while nothing can sync anyway. */
-export async function resolveInterruptedWrites(deps: InterruptedWriteDeps): Promise<void> {
+export async function resolveInterruptedWrites(
+  deps: InterruptedWriteDeps,
+): Promise<InFlightWrite[]> {
   const entries = deps.state.getInterruptedWrites();
-  if (entries.length === 0) return;
+  if (entries.length === 0) return [];
   // This pass owns the verdict for a recorded path, and its applies write over the fragment.
   const apply: ApplyDeps = { ...deps.apply, force: true, managesInterrupted: true };
   const resolved: InFlightWrite[] = [];
@@ -56,6 +58,7 @@ export async function resolveInterruptedWrites(deps: InterruptedWriteDeps): Prom
     resolved: resolved.length,
     torn,
   });
+  return resolved;
 }
 
 /** One entry. True = the bytes on disk were a fragment of this device's own write.
@@ -64,7 +67,13 @@ export async function resolveInterruptedWrites(deps: InterruptedWriteDeps): Prom
  * exactly what the write meant to leave. */
 async function resolveOne(entry: InFlightWrite, deps: InterruptedWriteDeps): Promise<boolean> {
   const disk = await readVaultBinary(entry.path, deps.apply.vault);
-  if (disk === null) return false; // nothing on disk: the write never reached it
+  if (disk === null) {
+    // Only a POSITIVELY absent file means the write never reached the disk. An unreadable one
+    // (a mobile FS bridge error) is not absence: the record stays, and the next connection
+    // tries again, or its bytes would be committed as a fragment.
+    if (await isAbsent(entry.path, deps)) return false;
+    throw new Error("the recorded file could not be read");
+  }
   const diskHash = diskIdentity(entry.path, disk);
   if (diskHash === deps.state.getLocalFile(entry.path)?.plaintext_hash) return false;
   if (diskHash === entry.expected_plaintext_hash) return false; // the write completed
@@ -88,7 +97,7 @@ async function resolveOne(entry: InFlightWrite, deps: InterruptedWriteDeps): Pro
   // Only a PREFIX of what the head holds is a torn write of ours; anything else was written
   // by something outside Obsidian after the kill. Fetch just the chunks the disk file
   // covers: a torn file is short, so the pass never downloads a whole head for this.
-  if (disk.length >= meta.size) return false;
+  if (disk.length >= meta.size || disk.length >= entry.expected_size) return false;
   const prefix = await headPrefix(head.chunk_hashes, deps, disk.length);
   if (!isPrefix(disk, prefix)) return false;
   // Torn: the head goes over it. `isTorn` is still true for this path (the record is cleared
@@ -120,6 +129,14 @@ async function headPrefix(
     if (offset >= prefix.length) break;
   }
   return prefix;
+}
+
+/** Positively absent: the adapter says the path is not there (a throwing or missing check is
+ * no evidence of absence). */
+async function isAbsent(path: string, deps: InterruptedWriteDeps): Promise<boolean> {
+  const exists = deps.apply.vault.adapter.exists;
+  if (typeof exists !== "function") return false;
+  return await exists.call(deps.apply.vault.adapter, path).catch(() => false) === false;
 }
 
 const diskIdentity = (path: string, bytes: Uint8Array): string =>

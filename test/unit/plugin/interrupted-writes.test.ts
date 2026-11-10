@@ -182,7 +182,10 @@ Deno.test("interrupted-writes - a torn file with a head gets the head written ov
   const h = await harness();
   h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
 
-  await h.pass(h.started([{ expected: identityHash(PATH, new TextEncoder().encode(V2)) }]));
+  await h.pass(h.started([{
+    expected: identityHash(PATH, new TextEncoder().encode(V2)),
+    expectedSize: V2.length,
+  }]));
 
   assertEquals(disk(h), V2);
 });
@@ -284,13 +287,16 @@ Deno.test("interrupted-writes - a head fetch that fails keeps the entry gated fo
   // fragment is still unprotected and must stay gated (never committed) until it resolves.
   h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
   h.writes.length = 0;
-  const state = h.started([{ expected: identityHash(PATH, new TextEncoder().encode(V2)) }]);
+  const state = h.started([{
+    expected: identityHash(PATH, new TextEncoder().encode(V2)),
+    expectedSize: V2.length,
+  }]);
 
   await resolveInterruptedWrites({
     state,
     keys: h.keys,
     vaultId: "vault",
-    apply: { ...h.applyDeps(state), force: true },
+    apply: { ...h.applyDeps(state), force: true, managesInterrupted: true },
     chainHead: () => Promise.reject(new Error("heads GET timed out after 60000ms")),
   });
 
@@ -318,7 +324,11 @@ Deno.test("interrupted-writes - the prefix verdict fetches one chunk, not the wh
   h.vault.files.set(PATH, new TextEncoder().encode("# mine\n"));
   h.fetches.length = 0;
 
-  await h.pass(h.started([{ expected: identityHash(PATH, new TextEncoder().encode(V2)), head }]));
+  await h.pass(h.started([{
+    expected: identityHash(PATH, new TextEncoder().encode(V2)),
+    expectedSize: V2.length,
+    head,
+  }]));
 
   assertEquals(
     h.fetches.length,
@@ -351,7 +361,10 @@ Deno.test("interrupted-writes - a second pass leaves an entry its first pass sti
   const h = await harness();
   h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
   h.writes.length = 0;
-  const state = h.started([{ expected: identityHash(PATH, new TextEncoder().encode(V2)) }]);
+  const state = h.started([{
+    expected: identityHash(PATH, new TextEncoder().encode(V2)),
+    expectedSize: V2.length,
+  }]);
   let releaseHead!: (head: unknown) => void;
   const slowHead = new Promise((resolve) => releaseHead = resolve);
 
@@ -381,6 +394,32 @@ Deno.test("interrupted-writes - a second pass leaves an entry its first pass sti
 
   releaseHead(null);
   await first;
+  state.close();
+});
+
+Deno.test("interrupted-writes - an unreadable file is not treated as absent", async () => {
+  const h = await harness();
+  // The file is there, but the mobile FS bridge fails the read: it must not be decided as
+  // "nothing was written", or the record clears and the reconciler commits the fragment.
+  h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
+  const readBinary = h.vault.readBinary.bind(h.vault);
+  h.vault.readBinary = (target: string) => {
+    if (target === PATH) return Promise.reject(new Error("bridge read failed"));
+    return readBinary(target);
+  };
+  h.writes.length = 0;
+  const state = h.started([{ expected: identityHash(PATH, new TextEncoder().encode(V2)) }]);
+
+  await resolveInterruptedWrites({
+    state,
+    keys: h.keys,
+    vaultId: "v",
+    apply: { ...h.applyDeps(state), force: true, managesInterrupted: true },
+    chainHead: () => Promise.resolve(null),
+  });
+
+  assertEquals(state.getInterruptedWrites().length, 1, "the record stays for the next try");
+  assertEquals(h.writes, [], "and nothing is written over bytes nobody could read");
   state.close();
 });
 

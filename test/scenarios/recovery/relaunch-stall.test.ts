@@ -241,3 +241,85 @@ Deno.test({
     }
   },
 });
+
+// The pass is bounded, not absent: when an abandoned pass finishes in the same session it
+// resolves the record and the version that was parked for that path must still land, and the
+// persisted cursor must advance. Otherwise the file stays parked until a reconnect (days).
+Deno.test({
+  name: "relaunch-stall - a parked version is re-applied when the pass resolves in-session",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const p = await pair();
+    let B = p.B;
+    try {
+      for (let i = 0; i < TORN_INDEX; i++) p.A.fakeVault.write(path(i), body(i));
+      await p.A.flushPending();
+      p.A.fakeVault.write(path(TORN_INDEX), body(TORN_INDEX));
+      await p.A.flushPending();
+      for (let i = 0; i <= TORN_INDEX; i++) await B.waitForVersion(path(i));
+      await waitFor(() => B.state!.getAllLocalFiles().size === TORN_INDEX + 1, "rows", 30_000);
+
+      const tornPath = path(TORN_INDEX);
+      const head = B.state!.getLocalFile(tornPath)!;
+      const rowsFile = B.pluginDataPath("local-files.json");
+      const cursorFile = B.pluginDataPath("sync-cursor.json");
+      const rows = JSON.stringify(
+        [...B.state!.getAllLocalFiles().values()]
+          .sort((a, b) => a.path.localeCompare(b.path))
+          .slice(0, TORN_INDEX - 1),
+      );
+      const cursor = JSON.stringify({
+        vault_id: "default",
+        last_seen_seq: TORN_INDEX,
+        last_backup_at: 0,
+        in_flight_apply: [{
+          path: tornPath,
+          path_hash: head.path_hash,
+          expected_plaintext_hash: identity(tornPath, body(TORN_INDEX)),
+          expected_size: body(TORN_INDEX).length,
+        }],
+      });
+      // The write had completed and its commit never ran: the pass clears the record without
+      // writing anything, so only a re-apply of the parked version can move the cursor.
+      B.fakeVault.files.set(tornPath, new TextEncoder().encode(body(TORN_INDEX)));
+      B.stop();
+
+      // The pass's own read of the recorded file is slow: past the pass's bound, so the drain
+      // parks the version first and the abandoned pass resolves the record afterwards.
+      let firstRead = true;
+      B = await restartPlugin(B, p.server, {
+        prepare: (fresh) => {
+          fresh.fakeVault.pluginData.set(rowsFile, new TextEncoder().encode(rows));
+          fresh.fakeVault.pluginData.set(cursorFile, new TextEncoder().encode(cursor));
+          const readBinary = fresh.fakeVault.readBinary.bind(fresh.fakeVault);
+          fresh.fakeVault.readBinary = async (target: string) => {
+            if (target === tornPath && firstRead) {
+              firstRead = false;
+              await new Promise((resolve) => setTimeout(resolve, 12_000));
+            }
+            return await readBinary(target);
+          };
+        },
+      });
+
+      // No reconnect: the parked version must land and the cursor must reach the head.
+      await waitFor(
+        () => B.state!.getSyncCursor() >= TORN_INDEX + 1,
+        "the parked version to be re-applied",
+        30_000,
+      );
+      assertEquals(B.state!.getInterruptedWrites(), [], "the record is cleared");
+      assertEquals(
+        B.state!.getLocalFile(tornPath)?.last_seen_version,
+        1,
+        "the parked version was applied to the row",
+      );
+    } finally {
+      try {
+        B.stop();
+      } catch { /* teardown is best-effort */ }
+      await p.stop();
+    }
+  },
+});
