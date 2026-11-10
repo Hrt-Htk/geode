@@ -108,7 +108,7 @@ const liveTransport = () =>
   }) as unknown as NonNullable<Host["transport"]>;
 
 Deno.test("rebuild-flow - a rebuild that never read its heads restarts on the persisted rows", async () => {
-  const { host, restartCalls } = makeHost();
+  const { host, restartCalls, settings } = makeHost();
 
   await assertRejects(
     () => rebuildVault(host, headsFail("server went away")),
@@ -118,10 +118,28 @@ Deno.test("rebuild-flow - a rebuild that never read its heads restarts on the pe
 
   assertEquals(restartCalls.length, 1, "sync must run again after a failed resync");
   assertEquals(restartCalls[0]?.getAllLocalFiles() instanceof Map, true);
+  // The persisted rows are untouched, so no marker: a normal start opens exactly them.
+  assertEquals(settings.resyncIncomplete, false);
 });
 
-Deno.test("rebuild-flow - a partially applied rebuild leaves sync stopped", async () => {
-  const { host, restartCalls } = makeHost();
+Deno.test("rebuild-flow - an earlier stop keeps a later failure stopped too", async () => {
+  const { host, restartCalls, settings } = makeHost();
+  settings.resyncIncomplete = true;
+  settings.resyncStopMessage = "resync failed for 1 file(s): abc";
+
+  await assertRejects(
+    () => rebuildVault(host, headsFail("server still away")),
+    Error,
+    "server still away",
+  );
+
+  // The rows the earlier rebuild left open are still open: no restart may touch them.
+  assertEquals(restartCalls.length, 0);
+  assertEquals(settings.resyncStopMessage, "server still away");
+});
+
+Deno.test("rebuild-flow - a partially applied rebuild persists the stop", async () => {
+  const { host, restartCalls, settings } = makeHost();
 
   await assertRejects(
     () => rebuildVault(host, headsGarbage(3)),
@@ -129,8 +147,11 @@ Deno.test("rebuild-flow - a partially applied rebuild leaves sync stopped", asyn
     "resync failed for 3 file(s)",
   );
 
-  // A restart here would replay the failed heads as local deletes over the server.
+  // A restart here would replay the failed heads as local deletes over the server, and a
+  // reload would do the same: the marker keeps every session start off those rows.
   assertEquals(restartCalls.length, 0, "a partially applied rebuild must not restart");
+  assertEquals(settings.resyncIncomplete, true);
+  assertEquals(settings.resyncStopMessage.includes("resync failed for 3 file(s)"), true);
 });
 
 Deno.test("rebuild-flow - a held rebuild that dies part way keeps the hold and stays stopped", async () => {
@@ -154,6 +175,7 @@ Deno.test("rebuild-flow - a held rebuild that dies part way keeps the hold and s
     1,
     "the hold stays in force until a rebuild returns",
   );
+  assertEquals(settings.resyncIncomplete, true);
 });
 
 Deno.test("rebuild-flow - a held paused rebuild is refused before it touches anything", async () => {

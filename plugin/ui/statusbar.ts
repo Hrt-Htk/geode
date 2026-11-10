@@ -6,7 +6,7 @@ import { buildStatusMenu, type StatusMenuItem } from "./status-menu.ts";
 import { pickViewActionsIndex } from "./view-actions.ts";
 import { nextOfflineSince } from "./sync-banner.ts";
 import type { MassDeleteHold } from "../sync/mass-delete-hold.ts";
-import type { ResyncState } from "./resync-status.ts";
+import { type ResyncState, resyncStopReason } from "./resync-status.ts";
 
 type PluginInstance = {
   getPendingCount: () => number;
@@ -170,6 +170,12 @@ export class StatusBar {
   setResync(state: ResyncState | null): void {
     this.resync = state;
     this.render();
+  }
+
+  /** #54: the stop a persisted marker describes: nothing is syncing, and Try again is the
+   * way out. */
+  setStoppedResync(reason: string): void {
+    this.setResync({ phase: "failed", reason: resyncStopReason(reason), syncStopped: true });
   }
 
   /** Resume restarts from a clean slate: a stale offline window must not flash the #339 banner. */

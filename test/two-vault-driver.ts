@@ -21,15 +21,11 @@ import { deriveKeys, VaultKeys } from "../core/crypto.ts";
 import { DEFAULT_SETTINGS, isSyncable, PluginSettings } from "../plugin/plumbing/settings-types.ts";
 import { b64decode, b64encode } from "../core/protocol.ts";
 import { type HelloRekeyDecision } from "../plugin/sync/rekey-signal.ts";
-import {
-  disposeSession,
-  pauseSessionSync,
-  reconnectAndWaitLive,
-  startUnlockedSession,
-} from "../plugin/session.ts";
+import { disposeSession, pauseSessionSync, reconnectAndWaitLive } from "../plugin/session.ts";
 import { rebuildVault, rejoinAction, startRebuildTransport } from "../plugin/sync/rebuild-flow.ts";
 import {
   enterRekeyLockedState,
+  restartUnlockedSession as restartSession,
   unlockAfterRemoteRekeyFlow,
   unlockVault,
 } from "../plugin/plumbing/vault-lock.ts";
@@ -456,9 +452,12 @@ export class TestPlugin {
     if (rejoinAction(this.pluginSettings) === "rejoin") {
       return this.rejoinOverOldCopy().then(() => {});
     }
-    // Re-attach the test listeners: the restart builds a fresh Transport.
-    return startUnlockedSession(this, existingState).then(() => {
-      this.attachTestListeners();
+    // The shared path (#701/#54): a resync marker keeps the session stopped.
+    return restartSession(this, existingState).then(() => {
+      // Nothing goes live behind a marker: release the test's live-wait the way a held
+      // device does. Otherwise re-attach the listeners to the fresh Transport.
+      if (this.pluginSettings.resyncIncomplete) this.liveResolve();
+      if (this.transport) this.attachTestListeners();
     });
   }
 
@@ -1249,8 +1248,9 @@ export async function restartPlugin(
   for (const [p, d] of old.fakeVault.pluginData) {
     fresh.fakeVault.pluginData.set(p, new Uint8Array(d));
   }
-  // Settings survive a restart (data.json in the real plugin): carry what a scenario needs.
-  Object.assign(fresh.pluginSettings, opts?.settings ?? {});
+  // Settings survive a restart (data.json in the real plugin): the persisted settings come
+  // with them, markers included, and `opts.settings` overrides what a scenario needs.
+  Object.assign(fresh.pluginSettings, old.pluginSettings, opts?.settings ?? {});
   if (opts?.unlocked !== false) await fresh.start();
   return fresh;
 }

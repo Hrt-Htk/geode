@@ -39,6 +39,8 @@ export interface SyncSessionStatusBar {
   updateState(state: string): void;
   /** #601: the held mass delete, rendered as its own status (not a connecting spinner). */
   setMassDeleteHold(hold: MassDeleteHold | null): void;
+  /** #54: a persisted resync stop: no session starts until the user retries. */
+  setStoppedResync(reason: string): void;
   updateReconnectDelay(ms: number): void;
   clearOffline(): void;
 }

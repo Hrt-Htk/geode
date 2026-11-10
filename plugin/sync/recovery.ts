@@ -46,9 +46,9 @@ export interface ResyncDeps {
    * the device did not change, and the bytes it cannot vouch for are copied out first. */
   rejoin?: boolean;
   onProgress?: (progress: ProgressInfo) => void;
-  /** #54: the head list is read, so from here the rebuild may change rows and files: a
+  /** #54: from here (the head list is read) the rebuild may change rows and files, so a
    * caller must not answer a later failure by restarting a session on the old rows. */
-  onApplyStart?: () => void;
+  onRowsMayChange?: () => void;
 }
 
 export interface ExportDeps {
@@ -81,7 +81,7 @@ const HEAD_APPLY_LIMIT = 8;
 
 export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStats> {
   const heads = await readCurrentHeads(deps.transport);
-  deps.onApplyStart?.();
+  deps.onRowsMayChange?.();
   // #701: a rejoin copies what the server cannot vouch for out of the vault before the
   // heads overwrite or remove it, keeps a real edit in place, and keeps an unreadable file
   // it could not copy. `kept` is never pruned (#590).

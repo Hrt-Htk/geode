@@ -177,6 +177,13 @@ export async function restartUnlockedSession(
   host: VaultLockHost,
   existingState?: StateDB,
 ): Promise<void> {
+  // #54: a resync that died after it may have changed rows leaves sync stopped. A session
+  // on those rows would read the files it never restored as local deletes (the mass-delete
+  // guard stays silent below 20 files), so a reload or an unlock lands on the stop instead.
+  if (host.pluginSettings.resyncIncomplete) {
+    host.statusBar?.setStoppedResync(host.pluginSettings.resyncStopMessage);
+    return;
+  }
   await startUnlockedSession(host, existingState);
 }
 

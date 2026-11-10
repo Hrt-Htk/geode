@@ -65,8 +65,8 @@ export async function rebuildVault(
     await reconnectAndWaitLive(host);
   }
   let freshState: StateDB | null = null;
-  /** The rebuild reached its head list: from here it may have changed rows and files. */
-  let started = false;
+  /** From the head list on the rebuild may change rows and files. */
+  let rowsMayChange = false;
   try {
     // #701 review: dispose first: the old instance's close() flushes its rows as a
     // fire-and-forget write, and a stale flush landing after the rebuild would restore
@@ -84,8 +84,8 @@ export async function rebuildVault(
       parkedMoves: () => host.pluginSettings.pendingMoveOuts,
       rejoin,
       onProgress,
-      onApplyStart: () => {
-        started = true;
+      onRowsMayChange: () => {
+        rowsMayChange = true;
       },
     });
     log.info("rebuild done", {
@@ -107,20 +107,30 @@ export async function rebuildVault(
       host.pluginSettings.rejoinIncomplete = false;
       await host.saveSettings();
     }
+    // #54: a completed rebuild is the way out of the stopped state it left earlier.
+    if (host.pluginSettings.resyncIncomplete) await clearResyncMarker(host);
     await host.restartUnlockedSession(freshState);
     return result;
   } catch (error) {
-    if (rejoin) {
-      await pauseForIncompleteRejoin(host, freshState);
-      throw error;
-    }
-    // #54 review: only a rebuild that never read its heads can be answered by a restart:
-    // the persisted rows are then exactly what a normal start uses. Past that the rebuild
-    // may have rows open whose files it never restored, and a session on them reads the
-    // missing files as deletes (the guard is silent under 20). Leave sync stopped.
-    if (!started) await restartAfterFailedRebuild(host, freshState);
+    await answerRebuildFailure(host, freshState, { rejoin, rowsMayChange, error });
     throw error;
   }
+}
+
+/** #54: the failure answer. A rejoin pauses and leaves its marker (#701). Any other rebuild
+ * restarts only while the persisted rows are exactly what a normal start opens; when this
+ * rebuild may have changed rows (or an earlier one did and its marker is still set), it
+ * persists the stop instead, so even a reload or an unlock lands on it. */
+async function answerRebuildFailure(
+  host: RebuildHost,
+  state: StateDB | null,
+  failure: { rejoin: boolean; rowsMayChange: boolean; error: unknown },
+): Promise<void> {
+  if (failure.rejoin) return await pauseForIncompleteRejoin(host, state);
+  if (failure.rowsMayChange || host.pluginSettings.resyncIncomplete) {
+    return await markResyncIncomplete(host, failure.error);
+  }
+  await restartAfterFailedRebuild(host, state);
 }
 
 /** #701: a rejoin that dies part way must not leave the old rows armed for the next session:
@@ -137,6 +147,20 @@ async function pauseForIncompleteRejoin(
   await host.saveSettings();
 }
 
+/** #54: persist the stop. The reason is the engine's own words; the surfaces map it. */
+async function markResyncIncomplete(host: RebuildHost, error: unknown): Promise<void> {
+  host.pluginSettings.resyncIncomplete = true;
+  host.pluginSettings.resyncStopMessage = error instanceof Error ? error.message : String(error);
+  await host.saveSettings();
+}
+
+/** #54: a completed rebuild clears the marker that kept the session stopped. */
+async function clearResyncMarker(host: RebuildHost): Promise<void> {
+  host.pluginSettings.resyncIncomplete = false;
+  host.pluginSettings.resyncStopMessage = "";
+  await host.saveSettings();
+}
+
 /** #54: the dispose above took the live session with it, so a failure BEFORE the rebuild
  * touched anything must restart it, or sync is stranded in "disconnected" until a reload.
  * The persisted rows are the same rows a normal start would open. */
@@ -149,5 +173,8 @@ async function restartAfterFailedRebuild(
     await host.restartUnlockedSession(state);
   } catch (error) {
     log.error("rebuild restart failed", { error: formatError(error) });
+    // #54 review: a restart can die after it created the transport. Leave the truth (nothing
+    // is syncing), not a bar that describes a live session.
+    disposeRuntime(host, { clearKeys: false, updateStatus: true });
   }
 }
