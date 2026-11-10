@@ -161,6 +161,11 @@ export class ReplayPipeline {
       const total = entries.length;
       let applied = 0;
       const drainStart = performance.now();
+      // Announce the backlog before the first apply: the transport goes live as soon
+      // as all versions are RECEIVED, so without this the icon shows the synced
+      // checkmark for the whole first download-and-write (#59, #319). `current: 0`
+      // is the honest count and the icon renders it as the syncing spinner.
+      if (total > 0) this.deps.onStatusUpdate("applying", { current: 0, total });
       try {
         for (const entry of entries) {
           const row = state.getLocalFileByHash(entry.winner.path_hash);
@@ -183,8 +188,8 @@ export class ReplayPipeline {
             }
             continue;
           }
-          // Surface the apply backlog so the status icon shows "applying N/M"
-          // instead of a false synced checkmark while the drain is in flight (#319).
+          // Surface the apply backlog as it drains, so the status icon shows
+          // "applying N/M" instead of a false synced checkmark (#319).
           applied++;
           this.deps.onStatusUpdate("applying", { current: applied, total });
           await this.maybeSurfaceConflict(entry, row, before, deps);
