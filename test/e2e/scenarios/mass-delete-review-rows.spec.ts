@@ -136,9 +136,11 @@ test("601 root row: a held root file gets its own last row, off then selected", 
       `[...document.querySelectorAll(".modal.mod-settings .setting-item")]
         .filter((el) => el.offsetParent !== null)
         .filter((el) => el.dataset.testid?.endsWith("-banner") || el.querySelector(".geode-version-warning-icon"))
-        .map((el) => el.dataset.testid || "version-refused")`,
+        .map((el) => el.dataset.testid ?? "")`,
     );
-    expect(bannerOrder[0], "the version refusal is the first banner").toBe("version-refused");
+    expect(bannerOrder[0], "the version refusal is the first banner").toBe(
+      "geode-settings-version-banner",
+    );
     expect(bannerOrder[1]).toBe("geode-settings-hold-banner");
     await o.eval(
       `app.plugins.plugins.geode.onServerVersion(app.plugins.plugins.geode.manifest.version); return true;`,
