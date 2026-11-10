@@ -44,8 +44,11 @@ async function harness(tornPaths: string[] = []): Promise<Harness> {
     path,
     path_hash: path === PATH ? pathHash : hashPathHex(keys.mac_key, path),
     expected_plaintext_hash: "the-write-never-finished",
+    expected_size: 1_000,
   }));
   const state = openSessionStateDB(null, null, null, record);
+  // The start pass claims a recorded path before writing it: only then may an apply treat
+  // those bytes as its own (an unclaimed record parks every version for that path).
   const blobs = new Map<string, Uint8Array>();
   const promoted: string[] = [];
   const conflicts: string[] = [];
@@ -138,6 +141,8 @@ async function harness(tornPaths: string[] = []): Promise<Harness> {
     myDeviceId: "device-a",
     suppressSelfWrite: () => {},
     pendingRenameTarget: () => undefined,
+    // These cases are the start pass's own applies: only it may write over a recorded path.
+    managesInterrupted: true,
     ...overrides,
   });
 
@@ -232,6 +237,28 @@ Deno.test("apply - a rename marker never carries the fragment to the new name", 
       "no conflict sibling holds the fragment",
     );
     assertEquals(h.state.getLocalFile(PATH)?.deleted, true, "the old name's row is closed");
+  } finally {
+    h.state.close();
+  }
+});
+
+Deno.test("apply - a version for an unresolved entry is parked, not applied over the bytes", async () => {
+  const h = await harness([PATH]);
+  try {
+    // The start pass has not resolved this path's record yet (it is still running, or was
+    // abandoned by its bound): an outside edit sits on disk.
+    const outside = "# note\nmine\n";
+    h.vault.files.set(PATH, new TextEncoder().encode(outside));
+    const head = await h.versionOf(V1, 1);
+    h.writes.length = 0;
+    h.state.holdSyncCursor(0);
+
+    await applyVersion(head, h.deps({ force: true, managesInterrupted: false }));
+
+    assertEquals(disk(h), outside, "the parked version does not touch the bytes");
+    assertEquals(h.writes, [], "no write at all");
+    assertEquals(h.promoted, [], "and nothing is promoted as an edit either");
+    assertEquals(h.state.getSyncCursor(), 0, "the cursor stays behind the parked version");
   } finally {
     h.state.close();
   }

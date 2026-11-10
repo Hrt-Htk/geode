@@ -7,7 +7,7 @@ import { blake3Hex, hashPathHex } from "../../core/hash.ts";
 import { normalizeForHash } from "../../core/normalize.ts";
 import { toUint8Array } from "../plumbing/bytes.ts";
 import { log } from "../plumbing/log.ts";
-import type { StateDB } from "../plumbing/state.ts";
+import type { InFlightWrite, StateDB } from "../plumbing/state.ts";
 
 /** The vault surface apply, the rename link and commit touch (Obsidian's vault is a
  * superset, so sync code and the conflict handler can pass theirs unchanged). */
@@ -54,12 +54,21 @@ export async function recordedWrite(
   write: () => Promise<void>,
   pathHash = hashPathHex(keys.mac_key, path),
 ): Promise<void> {
-  await state.beginWrite({
+  const entry: InFlightWrite = {
     path,
     path_hash: pathHash,
     expected_plaintext_hash: blake3Hex(normalizeForHash(path, bytes)),
-  });
-  await write();
+    expected_size: bytes.length,
+  };
+  await state.beginWrite(entry);
+  try {
+    await write();
+  } catch (error) {
+    // The write threw: nothing may commit these bytes, and its writer must not hold the path
+    // gated for the session. The entry becomes an interrupted record the next pass resolves.
+    state.abandonWrite(entry);
+    throw error;
+  }
   await state.endWrite(pathHash);
 }
 

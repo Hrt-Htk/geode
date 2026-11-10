@@ -1,4 +1,5 @@
 import { openStateDB } from "../../../plugin/plumbing/state.ts";
+import { recordedWrite } from "../../../plugin/sync/vault-io.ts";
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { FakeTime } from "@std/testing/time";
@@ -214,6 +215,109 @@ Deno.test("state - a slow write keeps its place in the chain, so no stale write 
   await Promise.all([begun, next]);
   assertEquals(landed, ["hash-a", "hash-a,hash-b"], "then both land, in order");
   db.close();
+});
+
+Deno.test("state - a write that throws keeps the record and drops its writer", async () => {
+  const db = openStateDB();
+  const written: Array<{ in_flight_apply?: Array<{ path_hash: string }> }> = [];
+  db.setSyncCursorPersist((json) => {
+    written.push(JSON.parse(json));
+  });
+  const pathHash = ENTRY.path_hash;
+
+  // The write throws (a locked file, a full disk): its writer must be released, or the path
+  // stays gated for the session on a writer that will never return, and the record must
+  // reach the next start so its bytes are never committed.
+  await recordedWrite(
+    db,
+    { mac_key: new Uint8Array(32) } as never,
+    ENTRY.path as string,
+    new Uint8Array([1, 2, 3]),
+    () => Promise.reject(new Error("write failed")),
+    pathHash,
+  ).catch(() => {});
+
+  assertEquals(db.isTorn(pathHash), true, "the record keeps the path gated");
+  assertEquals(
+    written[written.length - 1].in_flight_apply?.map((entry) => entry.path_hash),
+    [pathHash],
+    "and the record is persisted, so the next start resolves it",
+  );
+
+  // A retry that lands settles it, in the same session.
+  await recordedWrite(
+    db,
+    { mac_key: new Uint8Array(32) } as never,
+    ENTRY.path as string,
+    new Uint8Array([1, 2, 3]),
+    () => Promise.resolve(),
+    pathHash,
+  );
+  assertEquals(db.isTorn(pathHash), false, "a write that landed clears the record");
+  assertEquals(written[written.length - 1].in_flight_apply, undefined);
+  db.close();
+});
+
+Deno.test("state - a slow progress write does not wedge the chain", async () => {
+  const time = new FakeTime();
+  try {
+    const db = openStateDB();
+    let release!: () => void;
+    const slow = new Promise<void>((resolve) => release = resolve);
+    let first = true;
+    db.setSyncCursorPersist(async () => {
+      if (first) {
+        first = false;
+        await slow;
+      }
+    });
+
+    db.advanceSyncCursor(1); // a progress write, not a record write
+    await time.tickAsync(10_000);
+    release();
+    await time.runAllAsync();
+
+    // The chain is not wedged: a record write still lands.
+    await db.beginWrite(ENTRY);
+    await db.endWrite(ENTRY.path_hash);
+    assertEquals(db.getInterruptedWrites(), [], "the record was written and cleared");
+    db.close();
+  } finally {
+    time.restore();
+  }
+});
+
+Deno.test("state - a record write that never answers wedges the chain until it settles", async () => {
+  const time = new FakeTime();
+  try {
+    const db = openStateDB();
+    let release!: () => void;
+    const hung = new Promise<void>((resolve) => release = resolve);
+    let block = true;
+    db.setSyncCursorPersist(async () => {
+      if (block) await hung;
+    });
+
+    const stuck = db.beginWrite(ENTRY).catch((error) => error as Error);
+    await time.tickAsync(10_000);
+    assert(await stuck instanceof Error, "the record write fails closed");
+    const refused = await db.beginWrite({ ...ENTRY, path_hash: "hash-b" }).catch((e) => e as Error);
+    assertEquals(
+      (refused as Error).message.includes("wedged"),
+      true,
+      "a wedged chain refuses at once instead of waiting it out",
+    );
+
+    // The hung write finally settles: the chain is usable again.
+    block = false;
+    release();
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    await db.beginWrite({ ...ENTRY, path_hash: "hash-c" });
+    await db.endWrite("hash-c");
+    db.close();
+  } finally {
+    time.restore();
+  }
 });
 
 Deno.test("state - a wedged chain fails later writes at once, not one wait each", async () => {

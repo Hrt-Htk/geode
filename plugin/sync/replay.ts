@@ -60,19 +60,6 @@ export interface ReplayDeps {
   hasUnflushedEdit: (path: string) => boolean;
 }
 
-/** Answer each path once per apply: the predicates around one version ask repeatedly. */
-function memoize(predicate: (path: string) => boolean): (path: string) => boolean {
-  const answers = new Map<string, boolean>();
-  return (path) => {
-    let answer = answers.get(path);
-    if (answer === undefined) {
-      answer = predicate(path);
-      answers.set(path, answer);
-    }
-    return answer;
-  };
-}
-
 /** #59: the start pass is the only thing that rewrites a file a killed process left mid-write,
  * which is where a native write can wedge (the handle the dead process held). It is bounded
  * as a whole so the session is never stuck behind it: the entry stays recorded, and with it
@@ -278,7 +265,7 @@ export class ReplayPipeline {
       state,
       keys,
       vaultId: this.deps.vaultId,
-      apply: { ...this.buildApplyDeps(state, keys), force: true },
+      apply: this.buildApplyDeps(state, keys),
       chainHead: async (pathHash) =>
         (await this.deps.transport.getVersionChain(pathHash))[0] ?? null,
     });
@@ -338,8 +325,19 @@ export class ReplayPipeline {
       hasPendingDelete: this.deps.hasPendingDelete,
       cancelPendingDelete: this.deps.cancelPendingDelete,
       isParkedMove: this.deps.isParkedMove,
-      // #59: read the event layer's pending ops once per apply, not once per check.
-      hasUnflushedEdit: memoize(this.deps.hasUnflushedEdit),
+      // #59: the predicates around one version ask repeatedly: read the event layer's pending
+      // ops once per path per apply, not once per check.
+      hasUnflushedEdit: (() => {
+        const answers = new Map<string, boolean>();
+        return (path: string) => {
+          let answer = answers.get(path);
+          if (answer === undefined) {
+            answer = this.deps.hasUnflushedEdit(path);
+            answers.set(path, answer);
+          }
+          return answer;
+        };
+      })(),
       renameHeadOf: (pathHash) => renameHeadOf(this.deps.transport, pathHash),
       parkDeferred: (msg, destination) => {
         const key = `${msg.path_hash}:${msg.seq}`;

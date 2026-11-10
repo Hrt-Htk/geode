@@ -85,6 +85,9 @@ export interface ApplyDeps {
   /** #59: an edit for this path is still inside the event layer's debounce window (not in
    * the commit queue yet). It beats a fragment: the user's typing is never overwritten. */
   hasUnflushedEdit?: (path: string) => boolean;
+  /** #59: this caller IS the start pass, which decides what an unresolved record's bytes are.
+   * Everyone else parks a version for such a path instead of applying over them. */
+  managesInterrupted?: boolean;
 }
 
 /** #59: do the bytes at this path belong to nobody's write (a write that has not landed, or
@@ -173,6 +176,19 @@ export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise
     await keepOvertakenContent(msg, existingByHash, deps);
     log.debug("apply skipped (already processed)", { version: msg.version });
     deps.state.advanceSyncCursor(msg.seq);
+    return;
+  }
+
+  // #59: this path's record belongs to a start pass that has not settled it, and an edit made
+  // outside Obsidian may be what is on disk. Park the version (the cursor stays behind it) so
+  // nothing is applied over bytes the pass has not judged; the pass applies or keeps them.
+  if (deps.managesInterrupted !== true && deps.state.isInterrupted(msg.path_hash)) {
+    log.info("apply parked for an unresolved interrupted write", {
+      path_hash: msg.path_hash,
+      version: msg.version,
+    });
+    // Nothing advances: the seq stays received-but-unapplied, which halts the persisted cursor
+    // at the version before it, so a reconnect replays it.
     return;
   }
 

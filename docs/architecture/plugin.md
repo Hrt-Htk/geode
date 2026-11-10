@@ -361,16 +361,26 @@ ever frozen by a stale record:
 | the server head | the write landed: clear |
 | the row's hash | nothing was written: clear, force nothing |
 | the entry's expected hash | the write completed and the commit/merge after it did not run: clear, the normal reconciler takes the bytes (with or without a head) |
+| shorter than the entry's expected size, no head | a torn copy of this device's own: removed |
 | a strict prefix of the head's bytes | torn: the head is applied over it (the record is still up, so the apply never reads the fragment as an edit) |
 | anything else, with a head | an edit made outside Obsidian after the kill: kept as a local edit, never overwritten (the divergent-edit path merges or conflicts it) |
-| anything else, no head | a partial copy this device made for itself (a conflict sibling, a rejoin backup): the file is removed and nothing is committed. Heads are never compacted away, so no head means never committed |
+| anything else, no head | somebody else's bytes on a path the server never had: kept, never deleted. Heads are never compacted away, so no head means this device's own copy at most |
 
 An entry the pass could not resolve (the server did not answer, or a vault write errored) stays
 recorded, and with it gated, and the next connection tries again: that only waits while nothing can
-sync anyway. The pass as a whole is bounded (10 s): it is the only thing that rewrites a file a killed
-process left mid-write, which is where a mobile FS bridge can wedge on the handle the dead process
-held. A wedged pass costs one wait, never the session: the drain proceeds, and the entry stays gated
-until a connection resolves it. Fetch bounds are per request (60 s) and a blob is one chunk of at most 1 MB
+sync anyway. While it is unresolved, a version for that path is **parked** (not applied; the cursor
+stays behind it), because the bytes on disk may be an edit made outside Obsidian, and only the pass
+may judge them. A pass that a bound abandoned keeps running: the next pass skips the entries such a
+pass still owns, so two writers never resolve one path at once.
+
+The pass as a whole is bounded (10 s): it is the only thing that rewrites a file a killed process left
+mid-write, which is where a mobile FS bridge can wedge on the handle the dead process held. A wedged
+pass costs one wait, never the session; everything it did not get to stays parked and gated until a
+connection resolves it. Its verdicts are local where they can be (nothing on disk, the row's bytes,
+the bytes the write meant to leave) and otherwise need the head: the head's identity hash, and only
+for the "is this a prefix of what it was writing?" test the chunks the short file covers. Bytes with
+no head at all are removed only when they are shorter than what that write meant to leave (we know
+its hash and its length, not its bytes); anything longer is somebody else's and is kept. Fetch bounds are per request (60 s) and a blob is one chunk of at most 1 MB
 (`core/chunker.ts`), so no request a large file needs can outlast that.
 
 While a path is torn, `StateDB.isTorn` is what both the apply and the reconciler gate consult: no pass

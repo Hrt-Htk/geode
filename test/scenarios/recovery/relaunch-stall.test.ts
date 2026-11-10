@@ -2,6 +2,8 @@ import { assertEquals } from "@std/assert";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { pair, restartPlugin, type TestPlugin, waitFor } from "../../two-vault-driver.ts";
+import { setTransportHttp } from "../../../plugin/sync/http-client.ts";
+import { toArrayBuffer } from "../../../plugin/plumbing/bytes.ts";
 
 // #59: the phone stalled on relaunch (43 of 90 rows, until the spec's 7-minute timeout), and
 // only with the fix: the start pass rewrites the file the killed process left mid-write, and
@@ -109,6 +111,128 @@ Deno.test({
         "the unresolved entry stays recorded for the next connection",
       );
       console.log("settled in", Date.now() - started, "ms");
+    } finally {
+      try {
+        B.stop();
+      } catch { /* teardown is best-effort */ }
+      await p.stop();
+    }
+  },
+});
+
+// The common kill shape has the cursor BEHIND the interrupted version (the cursor advances
+// only after an apply lands), so the drain replays that version. If the pass is still working
+// on the path (or was abandoned by its bound), the drain must not apply over bytes nobody has
+// judged yet: an edit made outside Obsidian between the kill and the relaunch would be lost.
+Deno.test({
+  name: "relaunch-stall - a version for an unresolved entry is parked, so an outside edit survives",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const p = await pair();
+    let B = p.B;
+    try {
+      const tornPath = path(TORN_INDEX);
+      const outsideEdit = "# an editor outside obsidian wrote this\n";
+      // Written in order, so the interrupted file's version is the last one on the server:
+      // its seq is exactly where the cursor has fallen behind.
+      for (let i = 0; i < TORN_INDEX; i++) p.A.fakeVault.write(path(i), body(i));
+      await p.A.flushPending();
+      p.A.fakeVault.write(tornPath, body(TORN_INDEX));
+      await p.A.flushPending();
+      for (let i = 0; i <= TORN_INDEX; i++) await B.waitForVersion(path(i));
+      await waitFor(() => B.state!.getAllLocalFiles().size === TORN_INDEX + 1, "rows", 30_000);
+
+      // Kill shape: rows persisted for the first 43, the cursor at 44 (BEHIND the version of
+      // the file being written), and that file now holds somebody else's bytes.
+      const head = B.state!.getLocalFile(path(TORN_INDEX))!;
+      const rowsFile = B.pluginDataPath("local-files.json");
+      const cursorFile = B.pluginDataPath("sync-cursor.json");
+      const rows = JSON.stringify(
+        [...B.state!.getAllLocalFiles().values()]
+          .sort((a, b) => a.path.localeCompare(b.path))
+          .slice(0, TORN_INDEX - 1),
+      );
+      // The cursor is one ahead of the rows: the row throttle lags, the cursor does not, so
+      // the interrupted file's own version is the one the next start replays.
+      const cursor = JSON.stringify({
+        vault_id: "default",
+        last_seen_seq: TORN_INDEX,
+        last_backup_at: 0,
+        in_flight_apply: [{
+          path: tornPath,
+          path_hash: head.path_hash,
+          expected_plaintext_hash: identity(tornPath, body(TORN_INDEX)),
+          expected_size: body(TORN_INDEX).length,
+        }],
+      });
+      B.fakeVault.files.set(tornPath, new TextEncoder().encode(outsideEdit));
+      B.stop();
+
+      // The head fetch hangs: the pass is abandoned by its bound while the drain replays the
+      // version for that path.
+      B = await restartPlugin(B, p.server, {
+        prepare: (fresh) => {
+          fresh.fakeVault.pluginData.set(rowsFile, new TextEncoder().encode(rows));
+          fresh.fakeVault.pluginData.set(cursorFile, new TextEncoder().encode(cursor));
+          // The head fetch never answers (a dead socket), while everything else goes out.
+          setTransportHttp(async ({ url, method, headers, body }) => {
+            if (url.includes("/versions/")) return new Promise(() => {});
+            const res = await fetch(url, {
+              method,
+              headers,
+              body: body ? toArrayBuffer(body) : undefined,
+            });
+            return {
+              status: res.status,
+              ok: res.ok,
+              text: () => res.text(),
+              arrayBuffer: () => res.arrayBuffer(),
+            };
+          });
+        },
+      });
+
+      console.log(
+        "after restart: cursor",
+        B.state!.getSyncCursor(),
+        "rows",
+        B.state!.getAllLocalFiles().size,
+        "record",
+        JSON.stringify(B.state!.getInterruptedWrites().map((e) => e.path)),
+      );
+      await waitFor(
+        () => (B.transport?.getState() ?? "") === "live",
+        "the session to go live",
+        20_000,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 12_000)); // past the pass's bound
+
+      assertEquals(
+        new TextDecoder().decode(B.fakeVault.files.get(tornPath)),
+        outsideEdit,
+        "the outside edit is still there",
+      );
+      assertEquals(
+        B.state!.getInterruptedWrites().some((entry) => entry.path === tornPath),
+        true,
+        "the entry stays recorded (and gated) for the next connection",
+      );
+      console.log(
+        "final: cursor",
+        B.state!.getSyncCursor(),
+        "rows",
+        B.state!.getAllLocalFiles().size,
+        "record",
+        JSON.stringify(B.state!.getInterruptedWrites().map((e) => e.path)),
+        "disk",
+        JSON.stringify(new TextDecoder().decode(B.fakeVault.files.get(tornPath))),
+      );
+      assertEquals(
+        B.state!.getSyncCursor() < TORN_INDEX + 1,
+        true,
+        `the parked version keeps the cursor behind it (cursor ${B.state!.getSyncCursor()})`,
+      );
     } finally {
       try {
         B.stop();
