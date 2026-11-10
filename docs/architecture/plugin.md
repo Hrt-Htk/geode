@@ -352,6 +352,19 @@ moves with the file, a taken destination moves the old file to the `(conflict ..
 are then written back, which is what makes the sibling's `modify` event commit it), and a clean note
 follows its own name. Wire rename, row bookkeeping, merge and cursor advance are unchanged.
 
+**A carry that finds its own bytes at the destination carries nothing (#55).** A case-only rename on
+a case-insensitive filesystem is one inode under both names, so the pending edit read at the old
+spelling is the destination's own file: `carryLocalEdit` compares the two by content identity and
+answers "same" instead of keeping a sibling that would sync as a duplicate note. Both names of a
+case-only rename hash as one file (an extension-only case change, `note.md` to `NOTE.MD`, would
+otherwise flip markdown-ness); a real rename hashes each side under its own name, so a markdown-ness
+change (`x.md` to `x.canvas`) is never the same bytes. The bytes decide, not the destination's row:
+its own head may have applied first. Every outcome that reaches the destination (moved, sibling,
+same) leaves the renamed-away name empty, so the caller only closes its row: a file left there is
+re-derived as a new note beside the real one on each reconcile pass. `none` (nothing pending, an
+unreadable source) touches nothing. Before a separate old file goes, both sides are re-read; when
+either moved on since the match, both are kept in a sibling instead.
+
 **When a clean note follows.** The old file moves onto the destination only while the server's head
 there is open, meaning no marker closed it. An open head need not be this rename's note; the move is
 then wasted, not lossy, because the next applied version overwrites it. A later content version counts too: the peer may have typed
@@ -414,7 +427,9 @@ while nothing else should be writing. Heads apply in parallel in both rebuild pa
 `rebuildFromScratch` always sets
 `recheckDiskBeforeWrite`: apply re-reads the disk right before writing and keeps bytes that arrived in
 between (a rename marker's carried edit landing at its destination). No wire protocol change: the rebuild
-uses the existing heads stream and version chain.
+uses the existing heads stream and version chain. A conflict copy the rebuild makes carries this
+device's name: `deviceName` is part of `ResyncDeps` and reaches apply, so the file that syncs to every
+device never holds the fallback label (#55).
 
 A rejoin that fails part way pauses sync (`pauseAt`, persisted, and shown by the status bar at once) and
 sets `rejoinIncomplete` before rethrowing: the settings already carry the new device, so a stop plus that

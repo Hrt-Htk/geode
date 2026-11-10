@@ -32,6 +32,7 @@ function makeMinimalDeps(state: StateDB): ApplyDeps {
     onConflict: () => {},
     markLocalEdit: () => {},
     myDeviceId: "device-a",
+    deviceName: "Laptop",
     suppressSelfWrite: () => {},
     pendingRenameTarget: () => undefined,
   };

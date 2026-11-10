@@ -49,6 +49,7 @@ async function resyncLikeThePlugin(plugin: TestPlugin) {
     keys,
     vaultId: plugin.pluginSettings.vaultId,
     isSyncable: (p) => isSyncable(p, plugin.fakeVault.configDir, plugin.pluginSettings),
+    deviceName: plugin.pluginSettings.deviceName,
   });
   await plugin.restartUnlockedSession(state);
   return result;

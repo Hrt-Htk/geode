@@ -121,6 +121,7 @@ async function resolveConflict(
     transport,
     onConflict: (path, head) => host.syncManager?.handleConflict(path, head) ?? Promise.resolve(),
     onConflictFileDeleted: (path) => host.syncManager?.onConflictFileDeleted(path),
+    deviceName: host.pluginSettings.deviceName,
   });
   host.activity?.record({
     path: row.path,

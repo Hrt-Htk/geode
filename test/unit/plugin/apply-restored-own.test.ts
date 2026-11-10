@@ -88,6 +88,7 @@ async function harness(): Promise<Harness> {
     },
     markLocalEdit: () => {},
     myDeviceId: MY_DEVICE,
+    deviceName: "Laptop",
     suppressSelfWrite: () => {},
     pendingRenameTarget: () => undefined,
     recordActivity: (record) => {

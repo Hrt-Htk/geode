@@ -56,7 +56,8 @@ export interface RestoreDeps {
   ) => Promise<void> | void;
   recordActivity?: ActivityRecord;
   deviceId?: string;
-  deviceName?: string;
+  /** Names a conflict file the restore surfaces, like every other commit caller (#55). */
+  deviceName: string;
   suppressSelfWrite?: (path: string) => void;
   /** #697: pair marks of this device's own applied renames. */
   suppressSelfRename?: (from: string, to: string) => () => void;

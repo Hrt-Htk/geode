@@ -33,7 +33,7 @@ export interface CommitQueueDeps {
   getState: () => StateDB | null;
   getKeys: () => VaultKeys | null;
   getDeviceId?: () => string;
-  getDeviceName?: () => string;
+  getDeviceName: () => string;
   /** #583: a carried rename edit must not enqueue a second rename. */
   suppressSelfWrite?: (path: string) => void;
   /** #697: pair marks of this device's own applied renames. */
@@ -345,7 +345,7 @@ export class CommitQueue {
         onConflict: (path, head) => this.deps.onConflict(path, head),
         recordActivity: this.deps.recordActivity,
         deviceId: this.deps.getDeviceId?.(),
-        deviceName: this.deps.getDeviceName?.(),
+        deviceName: this.deps.getDeviceName(),
         suppressSelfWrite: this.deps.suppressSelfWrite,
         suppressSelfRename: this.deps.suppressSelfRename,
         abandonedRenames: this.abandonedRenames,

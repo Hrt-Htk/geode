@@ -6,6 +6,7 @@ import { toUint8Array } from "../plumbing/bytes.ts";
 import { log } from "../plumbing/log.ts";
 import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { enumerateDisk } from "./enumerate-disk.ts";
+import { diskPlaintextHash } from "./vault-io.ts";
 import { existsOnDisk, nextRenameId, type RenameLink } from "./commit.ts";
 import { type MassDeleteGuard, shouldHoldMassDelete } from "./mass-delete-hold.ts";
 import { windowGlobal } from "../plumbing/window.ts";
@@ -213,24 +214,13 @@ export class Reconciler {
       if (hash) bucket(hash).deleted.push(path);
     }
     for (const path of creates) {
-      const hash = await this.contentHash(path);
+      const hash = await diskPlaintextHash(path, this.vault);
       if (hash) bucket(hash).created.push(path);
     }
     for (const { created, deleted } of byHash.values()) {
       if (created.length === 1 && deleted.length === 1) pairs.set(deleted[0], created[0]);
     }
     return pairs;
-  }
-
-  /** The identity hash a create would commit under (markdown normalized, exactly as
-   * `commit` and the tracked rows compute it). Unreadable ⇒ not a rename candidate. */
-  private async contentHash(path: string): Promise<string | null> {
-    try {
-      const raw = toUint8Array(await this.vault.adapter.readBinary(path));
-      return blake3Hex(normalizeForHash(path, raw));
-    } catch {
-      return null;
-    }
   }
 
   /** Tracked files missing from disk, verified gone by stat. Rows already marked
@@ -310,7 +300,7 @@ export class Reconciler {
     // still the ones the row was made from: a clean rename's destination, waiting for its
     // note, has nothing to commit.
     if (local.last_seen_version === 0) {
-      if (await this.contentHash(normPath) !== local.plaintext_hash) {
+      if (await diskPlaintextHash(normPath, this.vault) !== local.plaintext_hash) {
         ops.push({ kind: "modify", path: normPath });
       }
       return;

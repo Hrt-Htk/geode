@@ -86,6 +86,7 @@ function makeDeps(
     onConflict: () => {},
     markLocalEdit: (path: string) => marked.push(path),
     myDeviceId: "device-self",
+    deviceName: "Laptop",
     suppressSelfWrite: () => {},
   };
   return { deps, writes, reads, stats };

@@ -728,6 +728,7 @@ export class TestPlugin {
         // The real plugin's scope check: the config dir (where the driver's
         // persisted state files live) is never syncable, so prune leaves it.
         isSyncable: (p) => isSyncable(p, this.fakeVault.configDir, this.pluginSettings),
+        deviceName: this.pluginSettings.deviceName,
         parkedMoves: () => this.pluginSettings.pendingMoveOuts,
       });
 

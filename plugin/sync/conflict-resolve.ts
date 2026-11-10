@@ -72,6 +72,8 @@ export interface ResolveDeps {
   ) => Promise<void> | void;
   /** Clears the tracked conflict count once the conflict file is gone. */
   onConflictFileDeleted: (path: string) => void;
+  /** Names a conflict file the resolution's commit may keep (#55). */
+  deviceName: string;
 }
 
 /** Returns the kept copy path for keep both, null otherwise. */
@@ -135,6 +137,7 @@ function commitDeps(deps: ResolveDeps) {
     keys: deps.keys,
     transport: deps.transport,
     onConflict: deps.onConflict,
+    deviceName: deps.deviceName,
     // A resolution writes a whole version under the file's own name; no rename of
     // this device is migrating under it.
     pendingRenameTarget: () => undefined,

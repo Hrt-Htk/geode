@@ -35,6 +35,7 @@ function makeDeps(isSyncable: (path: string) => boolean): { deps: ApplyDeps; sta
     onConflict: () => {},
     markLocalEdit: () => {},
     myDeviceId: "device-a",
+    deviceName: "Laptop",
     suppressSelfWrite: () => {},
     pendingRenameTarget: () => undefined,
     isSyncable,

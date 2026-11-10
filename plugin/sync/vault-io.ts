@@ -116,7 +116,10 @@ export async function removeVaultPath(path: string, vault: Vault): Promise<void>
   await vault.adapter.remove(path);
 }
 
-export async function readVaultBinary(path: string, vault: Vault): Promise<Uint8Array | null> {
+export async function readVaultBinary(
+  path: string,
+  vault: { adapter: { readBinary?: (path: string) => Promise<Uint8Array> } },
+): Promise<Uint8Array | null> {
   if (typeof vault.adapter.readBinary !== "function") return null;
   try {
     return toUint8Array(await vault.adapter.readBinary(path));
@@ -125,9 +128,18 @@ export async function readVaultBinary(path: string, vault: Vault): Promise<Uint8
   }
 }
 
-export async function diskPlaintextHash(path: string, vault: Vault): Promise<string | null> {
+/** A file's content identity, exactly as the rows, commit and merge compare it: markdown
+ * line endings and BOM normalized under its own path, everything else raw. */
+export function plaintextHashOf(path: string, bytes: Uint8Array): string {
+  return blake3Hex(normalizeForHash(path, bytes));
+}
+
+export async function diskPlaintextHash(
+  path: string,
+  vault: { adapter: { readBinary?: (path: string) => Promise<Uint8Array> } },
+): Promise<string | null> {
   const raw = await readVaultBinary(path, vault);
-  return raw === null ? null : blake3Hex(normalizeForHash(path, raw));
+  return raw === null ? null : plaintextHashOf(path, raw);
 }
 
 /** `diskPlaintextHash`, but a positively absent file costs a stat instead of a

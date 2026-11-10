@@ -36,6 +36,9 @@ export interface ResyncDeps {
   keys: VaultKeys;
   vaultId: string;
   isSyncable: (path: string) => boolean;
+  /** #55: names a conflict copy the rebuild keeps next to a renamed file: the file syncs
+   * to every device, so the fallback label must never end up in its name. */
+  deviceName: string;
   /** #584: the moves this device parked in an excluded folder: their names are out of
    * scope for the rebuild and their closed rows are seeded back from the heads. */
   parkedMoves?: () => PendingMoveOut[];
@@ -200,6 +203,7 @@ async function applyHead(
     suppressSelfWrite: () => {},
     myDeviceId: RECOVERY_DEVICE_ID,
     isSyncable: deps.isSyncable,
+    deviceName: deps.deviceName,
     // #584: a parked name is never written back: it is out of scope like #342's.
     isParkedMove: (path) => (deps.parkedMoves?.() ?? []).some((m) => m.oldPath === path),
     // Nothing is pending during a rebuild: no rename or delete is in flight.
