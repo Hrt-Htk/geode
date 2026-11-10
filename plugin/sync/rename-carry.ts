@@ -61,8 +61,13 @@ export async function carryLocalEdit(
   const atDestination = await readVaultBinary(to, deps.vault);
   // Nothing is carried when the destination holds this edit (a case-only rename is one
   // inode under both names on a case-insensitive disk), but the abandoned name is emptied
-  // all the same: a file left there is re-derived as a new note beside the real one.
-  if (atDestination !== null && sameContent(from, to, body, atDestination)) {
+  // all the same: a file left there is re-derived as a new note beside the real one. Each
+  // side is hashed under its own name, so a rename that changes markdown-ness (x.md to
+  // x.canvas) never reads two different files as one.
+  if (
+    atDestination !== null &&
+    plaintextHashOf(from, body) === plaintextHashOf(to, atDestination)
+  ) {
     // A peer may have written the destination since that read: the removal would then have
     // no copy to fall back on, so both are kept instead.
     if (await stillHoldsContent(from, to, body, deps)) {
@@ -79,13 +84,6 @@ export async function carryLocalEdit(
   return { kind: "moved", to };
 }
 
-/** One content identity for both sides, each hashed under its own name: a rename that
- * changes markdown-ness (`x.md` → `x.canvas`) must not read two different files as the
- * same bytes. */
-function sameContent(from: string, to: string, left: Uint8Array, right: Uint8Array): boolean {
-  return plaintextHashOf(from, left) === plaintextHashOf(to, right);
-}
-
 /** #55: the destination must still hold this edit before the old name goes. A case-only
  * removal needs no re-read: it verifies the destination itself and puts its bytes back. */
 async function stillHoldsContent(
@@ -96,7 +94,7 @@ async function stillHoldsContent(
 ): Promise<boolean> {
   if (isCaseOnlyPath(from, to)) return true;
   const again = await readVaultBinary(to, deps.vault);
-  return again !== null && sameContent(from, to, body, again);
+  return again !== null && plaintextHashOf(from, body) === plaintextHashOf(to, again);
 }
 
 /** The destination's bookkeeping refuses the edit: a name this device is closing right now,
