@@ -6,6 +6,7 @@ import { buildStatusMenu, type StatusMenuItem } from "./status-menu.ts";
 import { pickViewActionsIndex } from "./view-actions.ts";
 import { nextOfflineSince } from "./sync-banner.ts";
 import type { MassDeleteHold } from "../sync/mass-delete-hold.ts";
+import { type ResyncState, resyncStopReason } from "./resync-status.ts";
 
 type PluginInstance = {
   getPendingCount: () => number;
@@ -45,6 +46,7 @@ export class StatusBar {
   private droppedCount = 0;
   private pausedAt = 0;
   private massDeleteHold: MassDeleteHold | null = null;
+  private resync: ResyncState | null = null;
   private maxRetries = 0;
   private versionStatus: VersionStatus = { kind: "ok" };
   // #523: persist the icon span across renders: a fresh SVG restarts the CSS spin at 0°.
@@ -147,6 +149,7 @@ export class StatusBar {
       droppedCount: this.droppedCount,
       pausedAt: this.pausedAt,
       massDeleteHold: this.massDeleteHold,
+      resync: this.resync,
       now: Date.now(),
       maxRetries: this.maxRetries,
     };
@@ -161,6 +164,18 @@ export class StatusBar {
   setMassDeleteHold(hold: MassDeleteHold | null): void {
     this.massDeleteHold = hold;
     this.render();
+  }
+
+  /** #54: the resync the notice and the settings row describe; null once it ends well. */
+  setResync(state: ResyncState | null): void {
+    this.resync = state;
+    this.render();
+  }
+
+  /** #54: the stop a persisted marker describes: nothing is syncing, and Try again is the
+   * way out. */
+  setStoppedResync(reason: string): void {
+    this.setResync({ phase: "failed", reason: resyncStopReason(reason), syncStopped: true });
   }
 
   /** Resume restarts from a clean slate: a stale offline window must not flash the #339 banner. */

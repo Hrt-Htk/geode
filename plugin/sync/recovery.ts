@@ -24,7 +24,7 @@ type HeadTransport = {
   getVersionChain: (pathHash: string) => Promise<VersionRecord[]>;
 };
 
-type ProgressInfo = {
+export type ProgressInfo = {
   current: number;
   total: number;
 };
@@ -46,6 +46,9 @@ export interface ResyncDeps {
    * the device did not change, and the bytes it cannot vouch for are copied out first. */
   rejoin?: boolean;
   onProgress?: (progress: ProgressInfo) => void;
+  /** #54: from here (the head list is read) the rebuild may change rows and files, so a
+   * caller must not answer a later failure by restarting a session on the old rows. */
+  onRowsMayChange?: () => Promise<void> | void;
 }
 
 export interface ExportDeps {
@@ -78,6 +81,7 @@ const HEAD_APPLY_LIMIT = 8;
 
 export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStats> {
   const heads = await readCurrentHeads(deps.transport);
+  await deps.onRowsMayChange?.();
   // #701: a rejoin copies what the server cannot vouch for out of the vault before the
   // heads overwrite or remove it, keeps a real edit in place, and keeps an unreadable file
   // it could not copy. `kept` is never pruned (#590).
@@ -92,9 +96,9 @@ export async function rebuildFromScratch(deps: ResyncDeps): Promise<RecoveryStat
     })
     : null;
   /** Never pruned: an unreadable file could not be copied out (#590, #701). */
-  const kept = new Set<string>(prepared?.unreadable ?? []);
+  const kept = new Set<string>(prepared ? prepared.unreadable : []);
   /** Bytes this rebuild vouches for as this device's own (a rejoin trusts only these). */
-  const trusted = new Set<string>(prepared?.edits ?? []);
+  const trusted = new Set<string>(prepared ? prepared.edits : []);
   const failures: string[] = [];
   // #584: before the head loop: a park whose row is missing gets its closed anchor back,
   // so the loop below skips the parked name instead of rewriting it to disk.

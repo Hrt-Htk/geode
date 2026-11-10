@@ -4,6 +4,8 @@ import { blockedCopy, describeVersionHint } from "../sync/version-state.ts";
 import { pauseAgeColor } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
 import { UPDATE_STATUS_UPDATING } from "./server-update-logic.ts";
+import { resyncCopy, resyncOwnsStatus, resyncRowDot, type ResyncState } from "./resync-status.ts";
+import type { ProgressInfo } from "../sync/recovery.ts";
 
 export type SyncStatusInput = IconInput & {
   lastBackupAt: number;
@@ -40,12 +42,12 @@ const DAY = 86_400_000;
 export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusResult {
   const backup = backupSuffix(i.lastBackupAt, now);
 
-  if (!i.unlocked) {
-    if (i.rekeyElsewhere) {
-      return { text: `Passphrase changed elsewhere. Unlock to continue. ${backup}`, dot: "red" };
-    }
-    return { text: `Locked. Nothing syncs until you unlock. ${backup}`, dot: "grey" };
-  }
+  const locked = describeLocked(i, backup);
+  if (locked) return locked;
+
+  // #54: the rebuild disposes the session first, so the transport reads disconnected for
+  // the whole run: the resync, not that teardown, is what the row describes.
+  if (i.resync?.phase === "running") return resyncResult(i.resync);
 
   if (i.rekeyInProgress) {
     return {
@@ -68,13 +70,10 @@ export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusR
     };
   }
 
-  if (
-    (i.state === "live" || i.state === "syncing") &&
-    i.syncingProgress && i.syncingProgress.current < i.syncingProgress.total
-  ) {
+  const catchUp = catchUpProgress(i);
+  if (catchUp) {
     return {
-      text:
-        `Catching up: ${i.syncingProgress.current} of ${i.syncingProgress.total} changes. ${backup}`,
+      text: `Catching up: ${catchUp.current} of ${catchUp.total} changes. ${backup}`,
       dot: "blue",
     };
   }
@@ -105,6 +104,12 @@ function describeGated(
   now: number,
   backup: string,
 ): SyncStatusResult | null {
+  // #54 review: in the no-session state a marker stop outranks the pause, the version
+  // refusal and the hold row: "changes upload when you resume" would be false, and Try again
+  // is the only thing left to act on (a held delete is still announced and keeps its banner).
+  // Every state that is not a marker stop keeps the order below.
+  // A running resync returned above, so this is the stopped case of the same ownership.
+  if (resyncOwnsStatus(i.resync) && i.resync) return resyncResult(i.resync);
   if (i.pausedAt > 0) return describePaused(i, now);
   if (i.versionStatus.kind === "blocked") {
     return { text: `${blockedCopy(i.versionStatus.side).row} ${backup}`, dot: "red" };
@@ -113,6 +118,26 @@ function describeGated(
     return { text: holdSentence(i.massDeleteHold.files.length), dot: "orange" };
   }
   return null;
+}
+
+/** An inbound apply/commit backlog has its own count line while the transport is up. */
+function catchUpProgress(i: SyncStatusInput): ProgressInfo | null {
+  if (i.state !== "live" && i.state !== "syncing") return null;
+  const progress = i.syncingProgress;
+  if (progress === null || progress.current >= progress.total) return null;
+  return progress;
+}
+
+function describeLocked(i: SyncStatusInput, backup: string): SyncStatusResult | null {
+  if (i.unlocked) return null;
+  if (i.rekeyElsewhere) {
+    return { text: `Passphrase changed elsewhere. Unlock to continue. ${backup}`, dot: "red" };
+  }
+  return { text: `Locked. Nothing syncs until you unlock. ${backup}`, dot: "grey" };
+}
+
+function resyncResult(state: ResyncState): SyncStatusResult {
+  return { text: resyncCopy(state).row, dot: resyncRowDot(state) };
 }
 
 function describePaused(i: SyncStatusInput, now: number): SyncStatusResult {
@@ -130,6 +155,9 @@ function describePaused(i: SyncStatusInput, now: number): SyncStatusResult {
 }
 
 function describeLive(i: SyncStatusInput, backup: string): { text: string; dot: StatusDot | null } {
+  // #54 review: a rebuild that restarted a session keeps its reason while that session is
+  // healthy; an outage or a pause above has already taken the row.
+  if (i.resync) return resyncResult(i.resync);
   const n = i.pendingCount + i.dirtyCount;
   if (n > 0) {
     return { text: `Uploading ${n} change${n > 1 ? "s" : ""}. ${backup}`, dot: "blue" };

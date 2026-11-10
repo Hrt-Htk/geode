@@ -14,7 +14,8 @@ export function validateVaultName(raw: string):
 
 export type ConfirmDialogSpec = {
   title: string;
-  message: string;
+  /** One string, or one string per paragraph. */
+  message: string | string[];
   confirmText: string;
 };
 
@@ -29,7 +30,10 @@ export function confirmLeaveVault(vaultName: string): ConfirmDialogSpec {
 export function confirmResyncFromScratch(): ConfirmDialogSpec {
   return {
     title: "Resync from scratch?",
-    message: "Rebuilds this device's sync state from the server.",
+    message: [
+      "Downloads the whole vault from the server again.",
+      "A notice shows the progress while it runs.",
+    ],
     confirmText: "Resync",
   };
 }

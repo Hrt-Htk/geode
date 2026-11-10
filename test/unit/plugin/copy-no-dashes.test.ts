@@ -50,6 +50,16 @@ import {
   trashEntryLabel,
 } from "../../../plugin/ui/trash-format.ts";
 import { describeSyncStatus, type SyncStatusInput } from "../../../plugin/ui/sync-status.ts";
+import {
+  RESYNC_BUSY,
+  RESYNC_RETRY,
+  RESYNC_ROW,
+  RESYNC_ROW_DESC,
+  resyncButtonText,
+  resyncCopy,
+  resyncDoneNotice,
+  resyncStopReason,
+} from "../../../plugin/ui/resync-status.ts";
 import { describeStorage, type StorageState } from "../../../plugin/ui/storage-status.ts";
 import { describeErrorBanner } from "../../../plugin/ui/sync-banner.ts";
 import {
@@ -306,6 +316,7 @@ Deno.test("copy-no-dashes - sync status row text across states", () => {
     dirtyCount: 0,
     lastSyncTime: 0,
     syncingProgress: null,
+    resync: null,
     reconnectDelay: 0,
     offlineSince: 0,
     lastAttemptAt: 0,
@@ -340,6 +351,26 @@ Deno.test("copy-no-dashes - sync status row text across states", () => {
   ]);
 });
 
+Deno.test("copy-no-dashes - the resync surfaces (#54)", () => {
+  const running = { phase: "running", progress: { current: 312, total: 822 } } as const;
+  const uncounted = { phase: "running", progress: { current: 0, total: 0 } } as const;
+  const stopped = { phase: "failed", reason: "Server unreachable.", syncStopped: false } as const;
+  assertNoDashes("resync-status", [
+    RESYNC_ROW,
+    RESYNC_ROW_DESC,
+    RESYNC_BUSY,
+    RESYNC_RETRY,
+    [running, uncounted, stopped].flatMap((state) => [
+      Object.values(resyncCopy(state)),
+      resyncButtonText(state),
+    ]),
+    [0, 1, 4].map(resyncDoneNotice),
+    // #54: a failed head list reads as a count, never as path hashes.
+    resyncStopReason(new Error("resync failed for 1 file(s): aaaa")),
+    resyncStopReason(new Error("resync failed for 12 file(s): aaaa, bbbb")),
+  ]);
+});
+
 Deno.test("copy-no-dashes - storage row text", () => {
   const states: StorageState[] = [
     { kind: "loading" },
@@ -361,6 +392,7 @@ Deno.test("copy-no-dashes - sync error banner", () => {
     dirtyCount: 0,
     lastSyncTime: 0,
     syncingProgress: null,
+    resync: null,
     reconnectDelay: 0,
     offlineSince: 0,
     lastAttemptAt: 0,

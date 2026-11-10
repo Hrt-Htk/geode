@@ -3,7 +3,8 @@ import { setDestructive } from "./api-compat.ts";
 
 export interface ConfirmModalOptions {
   title: string;
-  message: string;
+  /** One string, or one string per paragraph. */
+  message: string | string[];
   confirmText: string;
   /** Default "Cancel". */
   cancelText?: string;
@@ -25,7 +26,8 @@ export class ConfirmModal extends Modal {
     const { contentEl } = this;
 
     const container = contentEl.createDiv({ cls: "geode-confirm-modal" });
-    container.createEl("p", { text: this.opts.message });
+    const lines = Array.isArray(this.opts.message) ? this.opts.message : [this.opts.message];
+    for (const line of lines) container.createEl("p", { text: line });
 
     new Setting(container).addButton((btn) => {
       btn.setButtonText(this.opts.cancelText ?? "Cancel");

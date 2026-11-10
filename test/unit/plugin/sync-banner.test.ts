@@ -18,6 +18,7 @@ function input(overrides: Partial<SyncStatusInput> = {}): SyncStatusInput {
     dirtyCount: 0,
     lastSyncTime: 0,
     syncingProgress: null,
+    resync: null,
     reconnectDelay: 0,
     offlineSince: 0,
     lastAttemptAt: 0,
@@ -28,6 +29,67 @@ function input(overrides: Partial<SyncStatusInput> = {}): SyncStatusInput {
     ...overrides,
   };
 }
+
+const OUTAGE = { state: "disconnected", offlineSince: NOW - 30_000 };
+
+Deno.test("sync-banner - a running resync is not an outage", () => {
+  // #54: the rebuild disposes the transport on purpose. Ten seconds in, the outage banner
+  // would sit above the row that says the resync is running.
+  assertEquals(
+    describeErrorBanner(
+      input({ ...OUTAGE, resync: { phase: "running", progress: { current: 40, total: 120 } } }),
+      NOW,
+      SERVER_URL,
+    ),
+    null,
+  );
+});
+
+Deno.test("sync-banner - an outage after a stopped resync is a real outage", () => {
+  // #54 review: the restart happened, so an unreachable server is the session's problem and
+  // the banner must say so.
+  assert(
+    describeErrorBanner(
+      input({
+        ...OUTAGE,
+        resync: { phase: "failed", reason: "Server unreachable.", syncStopped: false },
+      }),
+      NOW,
+      SERVER_URL,
+    ) !== null,
+  );
+});
+
+Deno.test("sync-banner - a resync suppresses the outage banner only, not upload failures", () => {
+  // #54 review: the transport teardown is the resync's own doing, but a dropped upload is
+  // still a real problem the banner must name.
+  assert(
+    describeErrorBanner(
+      input({
+        droppedCount: 2,
+        resync: { phase: "running", progress: { current: 40, total: 120 } },
+      }),
+      NOW,
+      SERVER_URL,
+    )?.name.includes("couldn't upload"),
+  );
+});
+
+Deno.test("sync-banner - no outage banner for a rebuild that left sync stopped", () => {
+  // Nothing is retrying, so "sync is paused until X is reachable" would promise a retry that
+  // never comes; the stopped row and its Try again are the answer.
+  assertEquals(
+    describeErrorBanner(
+      input({
+        ...OUTAGE,
+        resync: { phase: "failed", reason: "Server unreachable.", syncStopped: true },
+      }),
+      NOW,
+      SERVER_URL,
+    ),
+    null,
+  );
+});
 
 Deno.test("sync-banner - locked shows no banner", () => {
   assertEquals(describeErrorBanner(input({ unlocked: false }), NOW, SERVER_URL), null);

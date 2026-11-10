@@ -51,6 +51,12 @@ export interface PluginSettings {
   /** #701: a rejoin started and did not finish: the next session start must finish it
    * instead of replaying the rows it left armed. Cleared by a completed rejoin. */
   rejoinIncomplete: boolean;
+  /** #54: a resync may have changed rows and has not finished, so a session must not start
+   * on them (the files it never restored would read as deletes). Persisted before the first
+   * row can change: a crash, a reload or an unlock lands on the stopped state. The value is
+   * the engine's reason, or "" when it is not known yet. Cleared by a completed resync, a
+   * leave, or a new vault identity. */
+  resyncStop: string;
   /** #601: the guard: hold only when BOTH this many files and this percent are gone. */
   massDeleteMinFiles: number;
   massDeleteMinPercent: number;
@@ -97,6 +103,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   pauseAt: 0,
   massDeleteHold: null,
   rejoinIncomplete: false,
+  resyncStop: "",
   massDeleteMinFiles: MASS_DELETE_MIN_FILES,
   massDeleteMinPercent: MASS_DELETE_MIN_PERCENT,
   updateNoticeVersion: "",
@@ -335,6 +342,7 @@ export function withVaultIdentity(
     ...settings,
     ...identity,
     rejoinIncomplete: false,
+    resyncStop: "",
     pauseAt: settings.rejoinIncomplete ? 0 : settings.pauseAt,
   };
 }
@@ -357,5 +365,6 @@ export function clearedVaultSettings(s: PluginSettings): PluginSettings {
     pauseAt: 0,
     massDeleteHold: null,
     rejoinIncomplete: false,
+    resyncStop: "",
   };
 }

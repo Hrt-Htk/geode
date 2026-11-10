@@ -3,6 +3,7 @@ import { blockedCopy, type VersionStatus } from "../sync/version-state.ts";
 import type { MassDeleteHold } from "../sync/mass-delete-hold.ts";
 import { pauseAgeColor, pauseTooltip } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
+import { resyncCopy, resyncIcon, resyncOwnsStatus, type ResyncState } from "./resync-status.ts";
 
 export type IconState = {
   icon: string;
@@ -50,6 +51,8 @@ export type IconInput = {
   pausedAt: number;
   /** #601: the held mass delete: sync waits for a decision, not for the server. */
   massDeleteHold: MassDeleteHold | null;
+  /** #54: a resync owns the bar while it runs, and keeps its reason once it stops. */
+  resync: ResyncState | null;
   now: number;
   /** Highest per-path commit retry count in flight (commit-queue retryCounts). */
   maxRetries: number;
@@ -63,6 +66,16 @@ export function resolveIcon(i: IconInput): IconState {
       tooltip: "Geode: locked",
     };
   }
+
+  // #54: the rebuild disposes the session first: without this the bar shows the offline
+  // icon for the whole run.
+  if (i.resync?.phase === "running") return resyncIconState(i.resync);
+
+  // #54 review: in the no-session state a marker stop outranks the pause, the version
+  // refusal and the hold icon: nothing else can be acted on but Try again (a held delete is
+  // still announced and keeps its banner). Every other state keeps the order below. A
+  // running resync returned at the top, so this is the stopped case of the same ownership.
+  if (resyncOwnsStatus(i.resync) && i.resync) return resyncIconState(i.resync);
 
   if (i.pausedAt > 0) return pausedIcon(i.pausedAt, i.now);
 
@@ -127,7 +140,14 @@ export function resolveIcon(i: IconInput): IconState {
   }
 }
 
+function resyncIconState(state: ResyncState): IconState {
+  return { ...resyncIcon(state), tooltip: resyncCopy(state).tooltip };
+}
+
 function liveIcon(i: IconInput): IconState {
+  // #54 review: a rebuild that restarted a session keeps its reason while that session is
+  // healthy; an outage, a pause or a refusal above has already taken the bar.
+  if (i.resync) return resyncIconState(i.resync);
   // Inbound apply backlog takes precedence over the synced checkmark: the
   // transport goes live as soon as all versions are *received*, before the
   // replay buffer drains to disk (#319).

@@ -18,6 +18,7 @@ import {
   awaitStateWrites,
   disposeSession,
   openSessionState,
+  type SessionStartOptions,
   startUnlockedSession,
   type SyncSessionHost,
 } from "../session.ts";
@@ -46,9 +47,13 @@ export type VaultLockHost = SyncSessionHost & {
   rekeyElsewhere: boolean;
   settingTab: { applyLockState(): void; refresh(): void } | null;
   statusBar:
-    | (SyncSessionHost["statusBar"] & { setVersionStatus(status: VersionStatus): void })
+    | (SyncSessionHost["statusBar"] & {
+      setVersionStatus(status: VersionStatus): void;
+      /** #54: a persisted resync stop: no session starts until the user retries. */
+      setStoppedResync(reason: string): void;
+    })
     | null;
-  restartUnlockedSession(existingState?: StateDB): Promise<void>;
+  restartUnlockedSession(existingState?: StateDB, opts?: SessionStartOptions): Promise<void>;
   /** #464: the in-memory keys changed (locked, left, re-keyed): close surfaces
    * that decrypt, so none of them runs on stale keys. */
   onKeysChanged?: () => void;
@@ -176,8 +181,20 @@ function clearKeyStore(host: VaultLockHost): void {
 export async function restartUnlockedSession(
   host: VaultLockHost,
   existingState?: StateDB,
+  opts?: SessionStartOptions,
 ): Promise<void> {
-  await startUnlockedSession(host, existingState);
+  // #54: a resync that may have changed rows and has not finished leaves sync stopped. A
+  // session on those rows would read the files it never restored as local deletes (the
+  // mass-delete guard stays silent below 20 files), so a reload or an unlock lands on the
+  // stop instead. A held mass delete is still announced: it is what a retry has to clear.
+  if (host.pluginSettings.resyncStop !== "") {
+    if (host.pluginSettings.massDeleteHold) {
+      host.onMassDeleteHold(host.pluginSettings.massDeleteHold);
+    }
+    host.statusBar?.setStoppedResync(host.pluginSettings.resyncStop);
+    return;
+  }
+  await startUnlockedSession(host, existingState, opts);
 }
 
 export async function tryCachedKeys(host: VaultLockHost): Promise<boolean> {
@@ -235,8 +252,11 @@ function notifyKeysChanged(host: VaultLockHost): void {
 
 export function disposeRuntime(
   host: VaultLockHost,
-  opts: { clearKeys: boolean; updateStatus: boolean },
+  opts: { clearKeys: boolean; updateStatus: boolean; keepEpoch?: boolean },
 ): void {
+  // #54: a teardown is a session boundary. A rebuild's own teardown is not (keepEpoch):
+  // its run keeps reporting to the epoch it started in.
+  if (!opts.keepEpoch) host.syncEpoch += 1;
   disposeSession(host);
   host.blockedNoticeShown = false;
   if (opts.clearKeys) {
