@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type InFlightWrite, openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode, RENAME_MARKER, type ServerVersion } from "../../../core/protocol.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
@@ -8,46 +8,47 @@ import { normalizeForHash } from "../../../core/normalize.ts";
 import { chunk } from "../../../core/chunker.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 
-// #59: an Android force-stop inside a download leaves a torn file whose row never
-// persisted. Bytes left by this device's own write are not a local edit: the head is
-// written over them, and no conflict copy is ever made from the fragment.
+// #59: an interrupted write leaves a torn file whose row never persisted. While the record
+// says the path is torn (this session's write has not returned, or the start pass has not
+// resolved it), the apply writes the head over the bytes instead of merging or keeping
+// them; an edit the user has queued or not yet flushed still wins.
 
 const PATH = "note.md";
 const V1 = "# note\none\ntwo\nthree\nfour\nfive\nsix\n";
 const V2 = "# note\none\ntwo\nthree\nfour\nfive\nsix\nseven\n";
 const DESTINATION = "moved.md";
 /** What the kill left in the note: the write stopped after its first bytes. */
-const FRAGMENT = "";
+const FRAGMENT = "# no";
 
 type Harness = {
   vault: FakeVault;
   state: StateDB;
   keys: VaultKeys;
-  pathHash: string;
   versionOf: (content: string, version: number) => Promise<ServerVersion>;
   markerOf: (path: string, to: string, version: number) => Promise<ServerVersion>;
   deps: (overrides?: Partial<ApplyDeps>) => ApplyDeps;
   promoted: string[];
   conflicts: string[];
-  /** Every binary write this apply performed (a download, not a row-only apply). */
   writes: string[];
-  fetches: string[];
 };
 
-async function harness(interrupted = false): Promise<Harness> {
+async function harness(tornPaths: string[] = []): Promise<Harness> {
   const keys = await deriveKeys("test", crypto.getRandomValues(new Uint8Array(16)), {
     opsLimit: 1,
     memLimit: 8192,
   });
   const vault = new FakeVault();
   const pathHash = hashPathHex(keys.mac_key, PATH);
-  // A record read back from the last session: this path's bytes may be a fragment.
-  const state = openStateDB(null, null, null, interrupted ? [pathHash] : []);
+  const record: InFlightWrite[] = tornPaths.map((path) => ({
+    path,
+    path_hash: path === PATH ? pathHash : hashPathHex(keys.mac_key, path),
+    expected_plaintext_hash: "the-write-never-finished",
+  }));
+  const state = openStateDB(null, null, null, record);
   const blobs = new Map<string, Uint8Array>();
   const promoted: string[] = [];
   const conflicts: string[] = [];
   const writes: string[] = [];
-  const fetches: string[] = [];
   const writeBinary = vault.writeBinary.bind(vault);
   vault.writeBinary = (path: string, data: Uint8Array, opts?: { mtime?: number }) => {
     writes.push(path);
@@ -125,10 +126,7 @@ async function harness(interrupted = false): Promise<Harness> {
     vault: vault as unknown as ApplyDeps["vault"],
     state,
     keys,
-    getBlob: (hash) => {
-      fetches.push(hash);
-      return Promise.resolve(blobs.get(hash)!);
-    },
+    getBlob: (hash) => Promise.resolve(blobs.get(hash)!),
     hasLocalEdits: () => false,
     onConflict: (path) => {
       conflicts.push(path);
@@ -142,35 +140,28 @@ async function harness(interrupted = false): Promise<Harness> {
     ...overrides,
   });
 
-  return {
-    vault,
-    state,
-    keys,
-    pathHash,
-    versionOf,
-    markerOf,
-    deps,
-    promoted,
-    conflicts,
-    writes,
-    fetches,
-  };
+  return { vault, state, keys, versionOf, markerOf, deps, promoted, conflicts, writes };
 }
 
 const disk = (h: Harness, path = PATH) =>
   h.vault.files.has(path) ? new TextDecoder().decode(h.vault.files.get(path)!) : "<gone>";
 
-Deno.test("apply - an interrupted create is downloaded again, never kept as an edit", async () => {
-  const h = await harness(true);
+Deno.test("apply - a torn create gets the head written over it", async () => {
+  const h = await harness([PATH]);
   try {
     const head = await h.versionOf(V1, 1);
-    // The kill: the file exists (0 bytes written), the row never persisted.
     h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
 
     await applyVersion(head, h.deps({ force: true }));
 
     assertEquals(disk(h), V1, "the server head lands on disk");
     assertEquals(h.state.getLocalFile(PATH)?.last_seen_version, 1);
+    assertEquals(
+      h.state.getLocalFile(PATH)?.plaintext_hash,
+      blake3Hex(
+        normalizeForHash(PATH, new TextEncoder().encode(V1)),
+      ),
+    );
     assertEquals(h.promoted, [], "the fragment is not promoted to a local edit");
     assertEquals(h.conflicts, [], "no conflict copy is made from the fragment");
   } finally {
@@ -178,13 +169,12 @@ Deno.test("apply - an interrupted create is downloaded again, never kept as an e
   }
 });
 
-Deno.test("apply - an interrupted update overwrites the torn fragment with the head", async () => {
-  const h = await harness(true);
+Deno.test("apply - a torn update is overwritten by the head, not merged", async () => {
+  const h = await harness([PATH]);
   try {
     const v1 = await h.versionOf(V1, 1);
     await applyVersion(v1, h.deps());
     assertEquals(disk(h), V1);
-    // v2 was being written when the app was killed: the row still says v1.
     h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
     const v2 = await h.versionOf(V2, 2);
 
@@ -192,40 +182,21 @@ Deno.test("apply - an interrupted update overwrites the torn fragment with the h
 
     assertEquals(disk(h), V2, "the head replaces the fragment, nothing is merged into it");
     assertEquals(h.state.getLocalFile(PATH)?.last_seen_version, 2);
-    assertEquals(h.promoted, [], "the truncated file is not treated as an edit");
+    assertEquals(h.promoted, []);
     assertEquals(h.conflicts, []);
   } finally {
     h.state.close();
   }
 });
 
-Deno.test("apply - a download that finished before the kill only gets its row", async () => {
-  const h = await harness(true);
-  try {
-    const head = await h.versionOf(V1, 1);
-    // The batch wrote this file completely and died before its row persisted.
-    h.vault.files.set(PATH, new TextEncoder().encode(V1));
-
-    await applyVersion(head, h.deps({ force: true }));
-
-    assertEquals(h.writes, [], "the bytes are already there: no download, no rewrite");
-    assertEquals(h.fetches, [], "no chunk is fetched for a file the disk already holds");
-    assertEquals(h.state.getLocalFile(PATH)?.last_seen_version, 1, "the row is recorded");
-    assertEquals(h.promoted, []);
-  } finally {
-    h.state.close();
-  }
-});
-
 Deno.test("apply - an edit still in the event debounce wins over the fragment", async () => {
-  // The path IS interrupted: without the debounce gate the head would overwrite the typing.
-  const h = await harness(true);
+  const h = await harness([PATH]);
   try {
     const head = await h.versionOf(V1, 1);
     const typed = "# note\nstill typing here";
     h.vault.files.set(PATH, new TextEncoder().encode(typed));
 
-    // The user is repairing the truncated note: their unflushed op must not be overwritten.
+    // The user is repairing the torn note: their unflushed op must not be overwritten.
     await applyVersion(head, h.deps({ force: true, hasUnflushedEdit: () => true }));
 
     assertEquals(disk(h), typed, "the typing stays on disk");
@@ -237,9 +208,8 @@ Deno.test("apply - an edit still in the event debounce wins over the fragment", 
 });
 
 Deno.test("apply - a rename marker never carries the fragment to the new name", async () => {
-  const h = await harness(true);
+  const h = await harness([PATH]);
   try {
-    // The killed download sits at the old name; the peer renamed the note away meanwhile.
     h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
     h.vault.mtimes.set(PATH, Date.now());
     const marker = await h.markerOf(PATH, DESTINATION, 1);
@@ -261,6 +231,31 @@ Deno.test("apply - a rename marker never carries the fragment to the new name", 
       "no conflict sibling holds the fragment",
     );
     assertEquals(h.state.getLocalFile(PATH)?.deleted, true, "the old name's row is closed");
+  } finally {
+    h.state.close();
+  }
+});
+
+Deno.test("apply - a fetch that fails writes nothing and holds the cursor", async () => {
+  const h = await harness();
+  try {
+    const head = await h.versionOf(V1, 1);
+    h.writes.length = 0;
+
+    let failed = false;
+    await applyVersion(
+      head,
+      h.deps({
+        getBlob: () => Promise.reject(new Error("blob GET: timed out")),
+      }),
+    ).catch(() => {
+      failed = true;
+    });
+
+    assertEquals(failed, true, "the apply fails instead of hanging");
+    assertEquals(h.writes, [], "nothing is written before the fetch succeeds");
+    assertEquals(h.state.getSyncCursor(), 0, "the cursor stays behind: the version is retried");
+    assertEquals(h.state.isTorn(hashPathHex(h.keys.mac_key, PATH)), false, "nothing claimed");
   } finally {
     h.state.close();
   }

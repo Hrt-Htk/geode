@@ -1,7 +1,6 @@
 import {
   b64decode,
   FileMeta,
-  type HeadRecord,
   headToServerVersion,
   ServerVersion,
   type VersionRecord,
@@ -12,18 +11,17 @@ import { hashPathHex } from "../../core/hash.ts";
 import { StateDB } from "../plumbing/state.ts";
 import { Transport } from "./transport.ts";
 import { CommitQueue, type PendingOp } from "./commit-queue.ts";
-import { APPLY_TIMEOUT_MS, ReplayPipeline } from "./replay.ts";
+import { ReplayPipeline } from "./replay.ts";
 import { Reconciler } from "./reconciler.ts";
 import { planStaleRows } from "./stale-rows.ts";
 import { ConflictHandler } from "./conflict-handler.ts";
-import { type ApplyDeps, applyVersion, renameHeadOf } from "./apply.ts";
+import { applyVersion, renameHeadOf } from "./apply.ts";
 import { existsOnDisk } from "./commit.ts";
 import { diskPlaintextHash } from "./vault-io.ts";
 import { isParkedMove, isPathInCatchUp, isPendingScope } from "../plumbing/scope-pending.ts";
 import { ParkedMoves } from "./parked-moves.ts";
 import { isSyncable, PluginSettings } from "../plumbing/settings-types.ts";
 import { log } from "../plumbing/log.ts";
-import { withTimeout } from "../plumbing/timeout.ts";
 import type { ActivityRecord } from "./activity-log.ts";
 import {
   type HeldFile,
@@ -232,7 +230,7 @@ export class SyncManager {
       // #59: a path a download batch is writing (or a killed one left unfinished) may hold
       // a fragment: no pass may commit or close it.
       (path) =>
-        this.state !== null && this.keys !== null && this.state.isWriting(
+        this.state !== null && this.keys !== null && this.state.isTorn(
           hashPathHex(this.keys.mac_key, path),
         ),
     );
@@ -519,11 +517,17 @@ export class SyncManager {
             // neither side is lost. Only a missing disk file is force-restored.
             const dh = await diskPlaintextHash(meta.path, deps.vault);
             if (dh !== null && dh !== meta.plaintext_hash) deps.markLocalEdit(meta.path);
-            await this.applyCatchUpHead(head, { ...deps, force: dh === null });
+            await applyVersion(headToServerVersion(head, this.deps.settings.vaultId), {
+              ...deps,
+              force: dh === null,
+            });
             return;
           }
           const force = !row.deleted && (await diskPlaintextHash(row.path, deps.vault)) === null;
-          await this.applyCatchUpHead(head, { ...deps, force });
+          await applyVersion(headToServerVersion(head, this.deps.settings.vaultId), {
+            ...deps,
+            force,
+          });
         });
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
@@ -549,17 +553,6 @@ export class SyncManager {
       }
     }
     await this.parkedMoves.release(folders);
-  }
-
-  /** #59: a catch-up lands a download outside the drain, so it settles that path's record
-   * here. Only a version that is truly done: a deferred or unapplied head stays owed. */
-  private async applyCatchUpHead(head: HeadRecord, deps: ApplyDeps): Promise<void> {
-    const outcome = await withTimeout(
-      applyVersion(headToServerVersion(head, this.deps.settings.vaultId), deps),
-      APPLY_TIMEOUT_MS,
-      "apply",
-    );
-    if (outcome === "done") await deps.state.endApply([head.path_hash]);
   }
 
   flushReplayBuffer(): Promise<void> {

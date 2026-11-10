@@ -63,8 +63,8 @@ function fakeState(
   return {
     getLocalFile: () => row,
     upsertLocalFile: onUpsert,
-    beginApply: () => Promise.resolve(),
-    endApply: () => Promise.resolve(),
+    beginWrite: () => Promise.resolve(),
+    endWrite: () => Promise.resolve(),
   } as unknown as StateDB;
 }
 

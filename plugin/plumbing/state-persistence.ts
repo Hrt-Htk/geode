@@ -1,4 +1,4 @@
-import type { LocalFileRow, StateDB } from "./state.ts";
+import type { InFlightWrite, LocalFileRow, StateDB } from "./state.ts";
 
 export interface StatePaths {
   localFiles: string;
@@ -9,8 +9,8 @@ export interface PersistedState {
   persisted: LocalFileRow[] | null;
   persistedCursor: number | null;
   lastBackupAt: number;
-  /** #59: paths of a download batch the app was killed inside (may be a fragment on disk). */
-  inFlightApply: string[];
+  /** #59: the writes a killed session left for the start pass to resolve. */
+  interruptedWrites: InFlightWrite[];
 }
 
 type ReadFn = (path: string) => Promise<ArrayBuffer | Uint8Array>;
@@ -29,10 +29,18 @@ function parseLastBackupAt(cursorObj: { last_backup_at?: unknown } | null): numb
   return typeof v === "number" ? v : 0;
 }
 
-/** #59: path hashes of an interrupted download batch; absent or torn → none. */
-function parseInFlightApply(cursorObj: { in_flight_apply?: unknown } | null): string[] {
+/** #59: the recorded writes; absent, torn, or an older shape (bare path hashes) → none. */
+function parseInterruptedWrites(
+  cursorObj: { in_flight_apply?: unknown } | null,
+): InFlightWrite[] {
   const v = cursorObj?.in_flight_apply;
-  return Array.isArray(v) ? v.filter((hash): hash is string => typeof hash === "string") : [];
+  if (!Array.isArray(v)) return [];
+  return v.filter((entry): entry is InFlightWrite =>
+    typeof entry === "object" && entry !== null &&
+    typeof (entry as InFlightWrite).path === "string" &&
+    typeof (entry as InFlightWrite).path_hash === "string" &&
+    typeof (entry as InFlightWrite).expected_plaintext_hash === "string"
+  );
 }
 
 export async function loadPersistedState(
@@ -55,7 +63,7 @@ export async function loadPersistedState(
     persisted: localFiles,
     persistedCursor,
     lastBackupAt: parseLastBackupAt(cursorObj),
-    inFlightApply: parseInFlightApply(cursorObj),
+    interruptedWrites: parseInterruptedWrites(cursorObj),
   };
 }
 

@@ -25,13 +25,23 @@ function parseLocalFileRow(obj: Record<string, unknown>): LocalFileRow {
   };
 }
 
+/** #59: one write of bytes this device did not type (a download, a merge result, a restore,
+ * a kept sibling, a backup copy), recorded immediately before the write starts. */
+export interface InFlightWrite {
+  path: string;
+  path_hash: string;
+  /** The identity hash the file's bytes have once the write lands (or not at all when the
+   * disk still holds a torn prefix). */
+  expected_plaintext_hash: string;
+}
+
 export function openStateDB(
   persistedRows?: LocalFileRow[] | null,
   persistedCursor?: number | null,
   persistedLastBackupAt?: number | null,
-  persistedInFlightApply?: string[] | null,
+  interruptedWrites?: InFlightWrite[] | null,
 ): StateDB {
-  const state = new StateDB(persistedInFlightApply ?? undefined);
+  const state = new StateDB(interruptedWrites ?? undefined);
   if (persistedRows && Array.isArray(persistedRows)) {
     for (const row of persistedRows) {
       state.upsertLocalFile(parseLocalFileRow(row as unknown as Record<string, unknown>));
@@ -62,26 +72,21 @@ export class StateDB {
   private persist: ((json: string) => void) | null = null;
   private syncCursorPersist: ((json: string) => void | Promise<void>) | null = null;
   private persistTimer: number | null = null;
-  /** #59: the paths whose write may have left a fragment (this session), so no pass may
-   * commit them: a batch adds its paths before writing, and only a write that landed, or a
-   * version that turned out not to need one, leaves the set. */
-  private readonly writing = new Set<string>();
-  /** #59: what the cursor file must carry for the next start: every path a batch has not
-   * confirmed, whether or not it ever wrote. Separate from `writing` because a deferred or
-   * out-of-scope path wrote nothing (so it must not block a pass) yet is still owed. */
-  private readonly pending = new Set<string>();
+  /** #59: the writes of this session that have started and not returned: their bytes may be
+   * a fragment, so no pass may commit them and the apply must not read them as an edit. */
+  private readonly writing = new Map<string, InFlightWrite>();
+  /** #59: what a killed session left: the start pass resolves each entry and then clears
+   * them all, so no path is ever frozen by a record. */
+  private readonly interrupted: Map<string, InFlightWrite>;
   /** Set by close(): a queued write that lands afterwards must not touch the state files
-   * the next session (or a leave) owns. */
+   * the next session (or a leave) owns. Re-attaching a state clears it again. */
   private closed = false;
-  /** #59: the paths a batch of the last session was writing when the app died: their disk
-   * bytes are this device's own unfinished write. Cleared only once each is resolved. */
-  private readonly interrupted: Set<string>;
   /** Cursor writes run one at a time, in order: a slow one can never land after a newer
    * one and put a cleared record back. */
   private cursorWrites: Promise<void> = Promise.resolve();
 
-  constructor(interruptedApply: string[] = []) {
-    this.interrupted = new Set(interruptedApply);
+  constructor(interruptedWrites: InFlightWrite[] = []) {
+    this.interrupted = new Map(interruptedWrites.map((entry) => [entry.path_hash, entry]));
   }
 
   getLocalFile(path: string): LocalFileRow | null {
@@ -231,112 +236,93 @@ export class StateDB {
       vault_id: string;
       last_seen_seq: number;
       last_backup_at: number;
-      in_flight_apply?: string[];
+      in_flight_apply?: InFlightWrite[];
     } = {
       vault_id: "default",
       last_seen_seq: this.syncCursor,
       last_backup_at: this.lastBackupAt,
     };
-    // Only while a batch is writing: an idle cursor file keeps its three keys.
-    const inFlight = this.getInFlightApply();
+    // Only while something is writing: an idle cursor file keeps its three keys.
+    const inFlight = this.inFlightWrites();
     if (inFlight.length > 0) cursor.in_flight_apply = inFlight;
     return JSON.stringify(cursor);
   }
 
   setPersist(fn: (json: string) => void): void {
     this.persist = fn;
+    this.closed = false;
   }
 
   setSyncCursorPersist(fn: (json: string) => void | Promise<void>): void {
     this.syncCursorPersist = fn;
+    this.closed = false;
   }
 
-  /** #59: the paths a download batch is about to write, flushed BEFORE its first write so
-   * a kill mid-write leaves a record instead of a fragment with no row. Rejects when the
-   * record could not be written: a batch must not write bytes it could not record. */
-  async beginApply(pathHashes: string[]): Promise<void> {
-    if (pathHashes.length === 0) return;
-    const added = pathHashes.filter((pathHash) => !this.pending.has(pathHash));
-    for (const pathHash of pathHashes) {
-      this.pending.add(pathHash);
-      this.writing.add(pathHash);
-    }
+  /** #59: record a write immediately before it starts, awaited. Rejects when the record
+   * could not be written: bytes must not be written that nothing could finish. */
+  async beginWrite(entry: InFlightWrite): Promise<void> {
+    this.writing.set(entry.path_hash, entry);
     try {
       await this.flushCursor(true);
     } catch (error) {
-      for (const pathHash of added) {
-        this.pending.delete(pathHash);
-        this.writing.delete(pathHash);
-      }
+      this.writing.delete(entry.path_hash);
       throw error;
     }
   }
 
-  /** #59: these paths' downloads are accounted for (written, deleted, or already tracked):
-   * the only way a record is dropped. */
-  async endApply(doneHashes: string[]): Promise<void> {
-    let cleared = false;
-    for (const pathHash of doneHashes) {
-      if (this.writing.delete(pathHash)) cleared = true;
-      if (this.pending.delete(pathHash)) cleared = true;
-      if (this.interrupted.delete(pathHash)) cleared = true;
-    }
-    if (cleared) await this.flushCursor();
+  /** #59: the write returned: its record is dropped. */
+  async endWrite(pathHash: string): Promise<void> {
+    if (!this.writing.delete(pathHash)) return;
+    await this.flushCursor();
   }
 
-  /** #59: this path's version was deferred or out of scope, so nothing was written: it
-   * stops blocking a pass, and stays owed in the record for the next start. */
-  releaseWrite(pathHash: string): void {
-    this.writing.delete(pathHash);
+  /** #59: what a killed session left, as the start pass reads it (once, at open). */
+  getInterruptedWrites(): InFlightWrite[] {
+    return [...this.interrupted.values()];
   }
 
-  /** #59: every path a download batch is writing or left unfinished last session. */
-  getInFlightApply(): string[] {
-    return [...new Set([...this.interrupted, ...this.pending])];
+  /** #59: nothing survives the start that read the record, so no path can be frozen by it. */
+  async clearInterruptedWrites(): Promise<void> {
+    if (this.interrupted.size === 0) return;
+    this.interrupted.clear();
+    await this.flushCursor();
   }
 
-  /** #59: paths read back from a killed session, whose disk bytes may be a fragment: the
-   * apply writes their head over it instead of merging or keeping it. */
-  getInterruptedApply(): string[] {
-    return [...this.interrupted];
-  }
-
-  isInterrupted(pathHash: string): boolean {
-    return this.interrupted.has(pathHash);
-  }
-
-  /** #59: may this path's disk bytes be a fragment? No pass may commit or close it. */
-  isWriting(pathHash: string): boolean {
+  /** #59: may this path's disk bytes be a fragment right now? One predicate for the apply
+   * and the reconciler gate: a write of this session that has not returned, or an entry the
+   * current start has not resolved yet. */
+  isTorn(pathHash: string): boolean {
     return this.writing.has(pathHash) || this.interrupted.has(pathHash);
   }
 
-  /** Wait until every queued cursor write has landed: a leave must not delete the state
-   * files under a write still in the queue. */
-  async drainCursorWrites(): Promise<void> {
-    for (;;) {
-      const pending = this.cursorWrites;
-      await pending;
-      if (pending === this.cursorWrites) return;
-    }
+  /** The record the cursor file carries: this session's writes over the previous one's. */
+  private inFlightWrites(): InFlightWrite[] {
+    const entries = new Map(this.interrupted);
+    for (const [pathHash, entry] of this.writing) entries.set(pathHash, entry);
+    return [...entries.values()];
   }
 
-  /** Queue a cursor write that serializes the state as it is when it runs, so the file
-   * always reflects the last state. `strict` propagates the write's failure; `final` is
-   * the one write close() still owes after the hook is gone. A bounded write: a bridge that
-   * stops answering must not hold the queue (and with it every later apply) forever. */
+  /** Wait until every queued cursor write has landed: a leave must not delete the state
+   * files under a write still in the queue. Bounded, so a dead bridge cannot hold a leave. */
+  async drainCursorWrites(): Promise<void> {
+    await withTimeout(this.cursorWrites, CURSOR_WAIT_MS, "state write").catch(() => {});
+  }
+
+  /** Queue a cursor write in the ONE chain, so the file always reflects the last state. The
+   * chain never skips a write: the next one starts only once this one settles, which is what
+   * keeps a slow write from landing after a newer one. A caller waits at most
+   * CURSOR_WAIT_MS and then fails closed (strict) or moves on. `final` is the write close()
+   * still owes after the hook is gone. */
   private flushCursor(strict = false, final = false): Promise<void> {
     const hook = this.syncCursorPersist;
     if (hook === null) return Promise.resolve();
     const run = this.cursorWrites.then(() => {
       if (this.closed && !final) return;
-      return withTimeout(
-        Promise.resolve(hook(this.serializeSyncCursor())),
-        CURSOR_WRITE_TIMEOUT_MS,
-        "state write",
-      );
+      return hook(this.serializeSyncCursor());
     });
     this.cursorWrites = run.catch(() => {});
-    return strict ? run : run.catch(() => {});
+    const waited = withTimeout(run, CURSOR_WAIT_MS, "state write");
+    return strict ? waited : waited.catch(() => {});
   }
 
   private schedulePersist(): void {
@@ -377,10 +363,10 @@ export class StateDB {
   }
 }
 
-/** How long a state write may take before the queue moves on without it. A small JSON
- * through the mobile FS bridge is milliseconds; a write that outlives this is a dead
- * bridge, and the batch must fail closed rather than freeze the sync. */
-const CURSOR_WRITE_TIMEOUT_MS = 10_000;
+/** How long a caller waits for a state write before it moves on. A small JSON through the
+ * mobile FS bridge is milliseconds; a write that outlives this is a dead bridge, and the
+ * sync must fail closed rather than wait on it (the write keeps its place in the chain). */
+const CURSOR_WAIT_MS = 10_000;
 
 // local-files persistence trailing-throttle window (#328).
 const STATE_PERSIST_INTERVAL_MS = 2000;

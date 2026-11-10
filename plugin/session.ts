@@ -119,7 +119,7 @@ export async function openSessionState(host: SyncSessionHost): Promise<StateDB> 
     result.persisted,
     result.persistedCursor,
     result.lastBackupAt,
-    result.inFlightApply,
+    result.interruptedWrites,
   );
   const write = (path: string, bytes: Uint8Array) => writeStateFile(host, path, bytes);
   wireStatePersistence(state, write, paths);

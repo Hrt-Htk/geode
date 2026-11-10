@@ -1,21 +1,19 @@
-import { headToServerVersion, ServerVersion } from "../../core/protocol.ts";
+import { ServerVersion } from "../../core/protocol.ts";
 import { VaultKeys } from "../../core/crypto.ts";
 import { StateDB } from "../plumbing/state.ts";
+import { resolveInterruptedWrites } from "./interrupted-writes.ts";
 import { Transport, TransportState } from "./transport.ts";
 import {
   ApplyDeps,
-  type ApplyOutcome,
   applyVersion,
   carriedByMarker,
   keepVersionSibling,
   renameHeadOf,
-  writesDisk,
 } from "./apply.ts";
 import { diskPlaintextHash, Vault } from "./vault-io.ts";
 import { CoalescedEntry, coalesceReplay } from "./replay-coalesce.ts";
 import type { ActivityRecord } from "./activity-log.ts";
 import { log } from "../plumbing/log.ts";
-import { withTimeout } from "../plumbing/timeout.ts";
 
 // The inbound replay/apply pipeline: version serialization (versionQueue),
 // replay buffering until live, interrupt handling, and the bounded version
@@ -61,16 +59,6 @@ export interface ReplayDeps {
   hasUnflushedEdit: (path: string) => boolean;
 }
 
-/** A single apply's own awaits (blob fetches, the vault write) have no socket-level bound:
- * cap them so a dead bridge or a silent socket fails into the replay retry (the cursor
- * stays behind) instead of holding the version queue. */
-export const APPLY_TIMEOUT_MS = 120_000;
-/** One interrupted download (its head fetch and its apply). */
-const RECOVERY_PATH_TIMEOUT_MS = 60_000;
-/** The whole interrupted-download pass: what is left stays recorded for the next connection
- * rather than keeping this session's drain waiting on a dead transport. */
-const RECOVERY_BUDGET_MS = 120_000;
-
 export class ReplayPipeline {
   static readonly VERSION_CACHE_MAX = 256;
   /** #583: parked versions are bounded like the version cache. Evicting the oldest
@@ -83,6 +71,8 @@ export class ReplayPipeline {
    * held seq must be released, and two versions of one path are two held seqs. */
   private deferredVersions = new Map<string, { msg: ServerVersion; destination: string }>();
   readonly versionCache = new Map<string, ServerVersion>();
+  /** #59: the start pass runs once per session (N4). */
+  private resolvedStart = false;
 
   constructor(private deps: ReplayDeps) {
     // A disconnect mid-replay would otherwise leave the transport's in-memory
@@ -118,24 +108,8 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      // #59: a live apply is a batch of one. Recording fails closed: a version whose
-      // write could not be recorded is left to the next replay (its cursor stays behind).
-      const writes = writesDisk(msg, this.deps.deviceId);
-      if (writes && !await this.recordBatch(state, [msg.path_hash])) return;
-      try {
-        const outcome = await withTimeout(
-          applyVersion(msg, this.buildApplyDeps(state, keys)),
-          APPLY_TIMEOUT_MS,
-          "apply",
-        );
-        if (!writes) return;
-        // #59: a deferred or out-of-scope version wrote nothing (it stops blocking a pass
-        // but stays owed); one that landed owes nothing.
-        if (outcome === "done") await state.endApply([msg.path_hash]);
-        else state.releaseWrite(msg.path_hash);
-      } finally {
-        this.deps.onStatusUpdate("sync", { apply: true });
-      }
+      await applyVersion(msg, this.buildApplyDeps(state, keys));
+      this.deps.onStatusUpdate("sync", { apply: true });
     });
     this.versionQueue = run.catch(() => {});
     await run;
@@ -150,15 +124,10 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      // #59: finish whatever a kill interrupted before this connection's own versions
-      // are applied, so a torn download can never be read as a local edit.
-      await this.finishInterruptedApplies(state, keys);
+      // #59: resolve what a killed session left, once per session, before this
+      // connection's versions are applied.
+      await this.resolveStartRecord(state, keys);
       const entries = coalesceReplay(this.replayBuffer);
-      if (!await this.recordBatch(state, entries.map((entry) => entry.winner.path_hash))) {
-        // The buffer stays: the versions are retried at the next flush (their cursor is
-        // untouched, so a reconnect replays them too).
-        return;
-      }
       this.replayBuffer = [];
       const deps = this.buildApplyDeps(state, keys);
       // Snapshot which paths already tracked a local edit. Applying only the winner
@@ -171,19 +140,12 @@ export class ReplayPipeline {
       const total = entries.length;
       let applied = 0;
       const drainStart = performance.now();
-      /** #59: the batch's paths whose download this pass finished; the rest stay recorded. */
-      const done: string[] = [];
       try {
         for (const entry of entries) {
           const row = state.getLocalFileByHash(entry.winner.path_hash);
           await this.promoteDeleteDivergence(entry, row, deps);
-          let outcome: ApplyOutcome;
           try {
-            outcome = await withTimeout(
-              applyVersion(entry.winner, deps),
-              APPLY_TIMEOUT_MS,
-              "apply",
-            );
+            await applyVersion(entry.winner, deps);
           } catch (err) {
             log.warn("flush apply failed, leaving winner for replay", {
               path: row?.path,
@@ -200,8 +162,6 @@ export class ReplayPipeline {
             }
             continue;
           }
-          if (outcome === "done") done.push(entry.winner.path_hash);
-          else state.releaseWrite(entry.winner.path_hash);
           // Surface the apply backlog so the status icon shows "applying N/M"
           // instead of a false synced checkmark while the drain is in flight (#319).
           applied++;
@@ -212,9 +172,6 @@ export class ReplayPipeline {
           }
         }
       } finally {
-        // #59: per path, and only for the ones that landed. A failed, deferred or
-        // headless download keeps its record, so nothing commits its fragment.
-        await state.endApply(done);
         // Always clear the in-flight progress so the icon returns to an honest
         // synced/offline state even if the drain body throws mid-way (#319).
         // #523: drain's own completion: the session clears applying progress only on this marker.
@@ -281,77 +238,18 @@ export class ReplayPipeline {
     return run;
   }
 
-  /** #59: one state write for the paths a download unit is about to write, before its
-   * first file write. False = it could not be recorded: fail closed, write nothing (an
-   * unrecordable write is a fragment nothing could finish). */
-  private async recordBatch(state: StateDB, pathHashes: string[]): Promise<boolean> {
-    try {
-      await state.beginApply(pathHashes);
-      return true;
-    } catch (error) {
-      log.warn("could not record the download, deferring it", {
-        files: pathHashes.length,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
-  }
-
-  /** #59: one recorded path: its server head, written over whatever the fragment left.
-   * Null = the server never had it (or compaction took it): nothing to restore, and the
-   * bytes stay recorded so no pass commits them. */
-  private async applyInterruptedHead(
-    pathHash: string,
-    deps: ApplyDeps,
-  ): Promise<ApplyOutcome | null> {
-    const head = (await this.deps.transport.getVersionChain(pathHash))[0];
-    if (!head) return null;
-    return await applyVersion(headToServerVersion(head, this.deps.vaultId), deps);
-  }
-
-  /** #59: an Android force-stop inside a download leaves a torn file whose row never
-   * persisted (rows persist on a throttle). The reconciler would read the fragment as a
-   * local create, and the merger would keep it as a conflict copy that then syncs. The
-   * batch recorded its paths before its first write, so each one's server head is applied
-   * again: over the fragment, or as the row it never got. A path that cannot be resolved
-   * stays recorded and is retried at the next connection. */
-  private async finishInterruptedApplies(state: StateDB, keys: VaultKeys): Promise<void> {
-    const pathHashes = state.getInterruptedApply();
-    if (pathHashes.length === 0) return;
-    const deps: ApplyDeps = {
-      ...this.buildApplyDeps(state, keys),
-      // The head is owed even when the row already claims a version of it.
-      force: true,
-    };
-    /** #59: only the paths this pass finished; the rest stay recorded and are retried. */
-    const done: string[] = [];
-    const deadline = Date.now() + RECOVERY_BUDGET_MS;
-    for (const pathHash of pathHashes) {
-      if (Date.now() > deadline) {
-        log.warn("interrupted downloads left for the next connection", {
-          finished: done.length,
-          recorded: pathHashes.length,
-        });
-        break;
-      }
-      try {
-        const outcome = await withTimeout(
-          this.applyInterruptedHead(pathHash, deps),
-          RECOVERY_PATH_TIMEOUT_MS,
-          "interrupted download",
-        );
-        if (outcome === "done") done.push(pathHash);
-      } catch (error) {
-        log.warn("interrupted download not finished, keeping it for the next connection", {
-          path_hash: pathHash,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    await state.endApply(done);
-    log.info("finished interrupted downloads", {
-      finished: done.length,
-      recorded: pathHashes.length,
+  /** #59: the record a killed session left is resolved once per session, before the first
+   * drain: see `resolveInterruptedWrites`. */
+  private async resolveStartRecord(state: StateDB, keys: VaultKeys): Promise<void> {
+    if (this.resolvedStart) return;
+    this.resolvedStart = true;
+    await resolveInterruptedWrites({
+      state,
+      keys,
+      vaultId: this.deps.vaultId,
+      apply: { ...this.buildApplyDeps(state, keys), force: true },
+      chainHead: async (pathHash) =>
+        (await this.deps.transport.getVersionChain(pathHash))[0] ?? null,
     });
   }
 

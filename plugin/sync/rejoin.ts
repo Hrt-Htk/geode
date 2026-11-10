@@ -10,7 +10,7 @@ import { normalizeForHash } from "../../core/normalize.ts";
 import { REJOIN_BACKUP_FOLDER } from "../plumbing/settings-types.ts";
 import type { StateDB } from "../plumbing/state.ts";
 import { log } from "../plumbing/log.ts";
-import { recordedWrite } from "./apply.ts";
+import { identityHash, recordedWrite } from "./apply.ts";
 import { enumerateDisk, type EnumerateDiskVault } from "./enumerate-disk.ts";
 import { readVaultBinary, type Vault, writeVaultBinary } from "./vault-io.ts";
 
@@ -180,7 +180,11 @@ async function writeBackup(copies: Doubtful[], deps: RejoinDeps): Promise<Rejoin
     // later pass commits as a new note.
     await recordedWrite(
       deps.state,
-      hashPathHex(deps.keys.mac_key, backupPath),
+      {
+        path: backupPath,
+        path_hash: hashPathHex(deps.keys.mac_key, backupPath),
+        expected_plaintext_hash: identityHash(backupPath, bytes),
+      },
       () => writeVaultBinary(backupPath, bytes, Date.now(), deps.vault),
     );
     written++;

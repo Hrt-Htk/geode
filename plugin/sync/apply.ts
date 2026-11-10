@@ -7,8 +7,9 @@ import {
 } from "../../core/protocol.ts";
 import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
 import { reassemble } from "../../core/reassemble.ts";
-import { hashPathHex } from "../../core/hash.ts";
-import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
+import { blake3Hex, hashPathHex } from "../../core/hash.ts";
+import { normalizeForHash } from "../../core/normalize.ts";
+import { type InFlightWrite, type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { log } from "../plumbing/log.ts";
 import { windowGlobal } from "../plumbing/window.ts";
 import type { ActivityRecord } from "./activity-log.ts";
@@ -86,34 +87,33 @@ export interface ApplyDeps {
   hasUnflushedEdit?: (path: string) => boolean;
 }
 
-/** #59: are the bytes at this path the fragment of this device's own interrupted write?
- * The record says so (a batch recorded the path before writing it and the app died), so
- * the head is written over them: never merged, promoted, carried or kept as a conflict.
- * An edit the user has queued or not yet flushed wins: that is their typing, not a
- * fragment. */
+/** #59: are the bytes at this path the fragment of a write that has not landed? The record
+ * says so (`StateDB.isTorn`: a write of this session that has not returned, or an entry the
+ * start pass has not resolved), so the head is written over them: never merged, promoted,
+ * carried or kept as a conflict. An edit the user has queued or not yet flushed wins: that
+ * is their typing, not a fragment. */
 function isTornFragment(path: string, pathHash: string, deps: ApplyDeps): boolean {
-  if (!deps.state.isInterrupted(pathHash)) return false;
+  if (!deps.state.isTorn(pathHash)) return false;
   if (deps.hasLocalEdits(path)) return false;
   return deps.hasUnflushedEdit?.(path) !== true;
 }
 
-/** #59: write bytes this device fetched or computed, recording the path before the write
- * and clearing it once the write returned: a kill mid-write then leaves a record the next
- * start finishes instead of committing the fragment. */
+/** #59: the ONE way bytes this device did not type reach the disk. The path is recorded
+ * immediately before the write and cleared once it returned, so a kill mid-write leaves a
+ * record the next start can resolve, and nothing is ever written unrecorded. */
 export async function recordedWrite(
   state: StateDB,
-  pathHash: string,
+  entry: InFlightWrite,
   write: () => Promise<void>,
 ): Promise<void> {
-  await state.beginApply([pathHash]);
+  await state.beginWrite(entry);
   await write();
-  await state.endApply([pathHash]);
+  await state.endWrite(entry.path_hash);
 }
 
-/** #59: does applying this version write a file here? An own echo never does, a delete
- * cannot leave a fragment, and this device's own trash restore does write. */
-export function writesDisk(msg: ServerVersion, myDeviceId: string): boolean {
-  return !msg.deleted && (msg.device_id !== myDeviceId || msg.restored === true);
+/** #59: the identity hash a file's bytes have, as the disk side computes it. */
+export function identityHash(path: string, bytes: Uint8Array): string {
+  return blake3Hex(normalizeForHash(path, bytes));
 }
 
 /** #701: whether divergent bytes on disk are this device's own edit. */
@@ -171,21 +171,12 @@ async function applyOwnVersion(msg: ServerVersion, deps: ApplyDeps): Promise<voi
   deps.state.advanceSyncCursor(msg.seq);
 }
 
-/** #59: what applying a version left this device owing. */
-export type ApplyOutcome =
-  /** Accounted for: written, deleted, already tracked, or kept as a conflict. */
-  | "done"
-  /** Still owed: deferred to a pending rename, or out of scope for now. A download
-   * record for it must stay, or its fragment would be committed. */
-  | "owed";
-
-export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise<ApplyOutcome> {
+export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise<void> {
   // #687: a restore is credited to the device that asked for it, so that device
   // receives a version it authored. It is applied like any remote version (the trash
   // took the file off disk); every other own version is skipped.
   if (!deps.force && msg.device_id === deps.myDeviceId && msg.restored !== true) {
-    await applyOwnVersion(msg, deps);
-    return "done";
+    return await applyOwnVersion(msg, deps);
   }
 
   // Skip versions we've already processed. After a restart the sync cursor may
@@ -201,7 +192,7 @@ export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise
     await keepOvertakenContent(msg, existingByHash, deps);
     log.debug("apply skipped (already processed)", { version: msg.version });
     deps.state.advanceSyncCursor(msg.seq);
-    return "done";
+    return;
   }
 
   const meta = await decryptMetadata(
@@ -210,8 +201,7 @@ export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise
     msg.path_hash,
   );
 
-  // Out of scope: the cursor advances, the disk is never written, so its record stays.
-  if (skipsApply(meta.path, msg, deps)) return "owed";
+  if (skipsApply(meta.path, msg, deps)) return;
 
   // #613: the note left a name this device's carried edit is waiting on: the edit
   // moves to the note's new home instead of being stranded at the abandoned name.
@@ -223,24 +213,21 @@ export async function applyVersion(msg: ServerVersion, deps: ApplyDeps): Promise
     // #583: a marker is a move, not a deletion: never route it through the
     // delete/modify conflict path (that path resurrects the old name, #361).
     if (msg.rename_mark === RENAME_MARKER) {
-      await applyRenameMarker(msg, deps, meta, existingByHash);
-      return "done";
+      return await applyRenameMarker(msg, deps, meta, existingByHash);
     }
     // #589: an edit still inside the event debounce is not in the commit queue
     // yet, so disk divergence is what sees it: the delete must conflict (local
     // wins, #361) instead of removing the only copy.
     if (await hasPendingEdit(meta.path, msg.path_hash, existingByHash, deps)) {
       await conflictNow(meta.path, msg, deps);
-      return "done";
+      return;
     }
     await applyDelete(msg, deps, meta);
-    return "done";
+    return;
   }
 
-  const handled = await applyContentOrConflict(msg, deps, meta);
-  if (handled !== "pass") return handled;
+  if (await applyContentOrConflict(msg, deps, meta)) return;
   await applyContent(msg, deps, meta);
-  return "done";
 }
 
 /** #593: a content version landing on a path this device is deleting. Delete-vs-edit
@@ -472,7 +459,11 @@ export async function keepVersionSibling(
   const conflictPath = await freeConflictPath(basePath, deps);
   await recordedWrite(
     deps.state,
-    hashPathHex(deps.keys.mac_key, conflictPath),
+    {
+      path: conflictPath,
+      path_hash: hashPathHex(deps.keys.mac_key, conflictPath),
+      expected_plaintext_hash: identityHash(conflictPath, bytes),
+    },
     () => writeVaultBinary(conflictPath, bytes, Date.now(), deps.vault),
   );
   log.info("deferred version kept next to the renamed file", {
@@ -555,7 +546,7 @@ async function applyContentOrConflict(
   msg: ServerVersion,
   deps: ApplyDeps,
   meta: FileMeta,
-): Promise<ApplyOutcome | "pass"> {
+): Promise<boolean> {
   // #583: this device is renaming the file away (the delete has not been pushed yet):
   // a peer's version for the old name belongs at the destination, never back here. The
   // marker that follows this content version carries it over (commit.ts).
@@ -569,7 +560,7 @@ async function applyContentOrConflict(
     // The version is still owed: keep the cursor behind it so a reconnect (or a
     // restart after the rename ops are lost) delivers it again.
     deps.state.holdSyncCursor(msg.seq);
-    return "owed";
+    return true;
   }
   // #593: a plain delete of this path is queued (or still inside the event debounce)
   // and the bytes are already gone, so nothing below can see the delete: delete-vs-edit
@@ -579,11 +570,11 @@ async function applyContentOrConflict(
     await diskPlaintextHashIfPresent(meta.path, deps.vault) === null
   ) {
     await applyOverPendingDelete(msg, deps, meta, deps.state.getLocalFile(meta.path));
-    return "done";
+    return true;
   }
-  if (!deps.hasLocalEdits(meta.path)) return "pass";
+  if (!deps.hasLocalEdits(meta.path)) return false;
   await conflictNow(meta.path, msg, deps);
-  return "done";
+  return true;
 }
 
 /** Disk bytes that match neither the row nor the incoming version: an untracked local
@@ -633,12 +624,8 @@ async function applyContent(msg: ServerVersion, deps: ApplyDeps, meta: FileMeta)
   const dh = await diskPlaintextHashIfPresent(meta.path, deps.vault);
   // A rebuild re-applies every head: when the disk already holds exactly these bytes,
   // record the version and skip the reassemble+write (a resync must not re-download
-  // and rewrite a whole vault to restore the files that are actually missing). #59: the
-  // same for an interrupted download that had finished writing; it only owes its row.
-  if (
-    dh === meta.plaintext_hash &&
-    (tracked !== null || isTornFragment(meta.path, msg.path_hash, deps))
-  ) {
+  // and rewrite a whole vault to restore the files that are actually missing).
+  if (tracked !== null && dh === tracked && dh === meta.plaintext_hash) {
     deps.state.upsertLocalFile({
       path: meta.path,
       path_hash: msg.path_hash,
@@ -680,7 +667,16 @@ async function applyContent(msg: ServerVersion, deps: ApplyDeps, meta: FileMeta)
   }
 
   deps.suppressSelfWrite(meta.path);
-  await writeVaultBinary(meta.path, bytes, meta.mtime, deps.vault);
+  // #59: recorded immediately before the write, cleared once it returned.
+  await recordedWrite(
+    deps.state,
+    {
+      path: meta.path,
+      path_hash: msg.path_hash,
+      expected_plaintext_hash: meta.plaintext_hash,
+    },
+    () => writeVaultBinary(meta.path, bytes, meta.mtime, deps.vault),
+  );
 
   deps.state.upsertLocalFile({
     path: meta.path,

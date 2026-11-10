@@ -91,7 +91,11 @@ export async function restoreVersion(
     // a later pass commits as the note's content.
     await recordedWrite(
       deps.state,
-      hashPathHex(deps.keys.mac_key, target),
+      {
+        path: target,
+        path_hash: hashPathHex(deps.keys.mac_key, target),
+        expected_plaintext_hash: restoredHash,
+      },
       () => writeVaultBinary(target, bytes, Date.now(), deps.vault),
     );
     if (!(await commitOp({ path: target, kind: "commit" }, commitDeps(deps)))) {

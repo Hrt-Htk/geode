@@ -3,6 +3,14 @@ import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { surfaceConflict } from "../../../plugin/sync/merger.ts";
 import type { StateDB } from "../../../plugin/plumbing/state.ts";
+import type { VaultKeys } from "../../../core/crypto.ts";
+
+/** Keys and a state slice for the two recorded writes surfaceConflict performs (#59). */
+const KEYS = { mac_key: new Uint8Array(32) } as VaultKeys;
+const record = {
+  beginWrite: () => Promise.resolve(),
+  endWrite: () => Promise.resolve(),
+};
 
 // The shared conflict-surfacing helper (used by both orchestrateMerge and the
 // merge-retry fallback) writes the LOCAL copy to the conflict file BEFORE the
@@ -31,6 +39,8 @@ Deno.test({
       upsertLocalFile: (f: unknown) => {
         upserted = f;
       },
+      ...record,
+      ...record,
     } as unknown as StateDB;
 
     let threw = false;
@@ -45,7 +55,7 @@ Deno.test({
           chunkHashes: ["c1"],
           reason: "test",
         },
-        { vault, state, deviceName: "Laptop" },
+        { vault, state, deviceName: "Laptop", keys: KEYS },
       );
     } catch {
       threw = true;
@@ -85,6 +95,7 @@ Deno.test({
       upsertLocalFile: (f: { plaintext_hash: string }) => {
         upserted = f;
       },
+      ...record,
     } as unknown as StateDB;
     const serverContent = new TextEncoder().encode("a\r\nb\r\n");
 
@@ -96,7 +107,7 @@ Deno.test({
       serverVersion: 2,
       chunkHashes: [],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(upserted!.plaintext_hash, blake3Hex(normalizeForHash("note.md", serverContent)));
   },
@@ -124,7 +135,7 @@ Deno.test({
         },
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -134,7 +145,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6} 2\)\.md$/.test(writes[0].path),
@@ -164,7 +175,7 @@ Deno.test({
         exists: () => true,
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -174,7 +185,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6}\)\.md$/.test(writes[0].path),
@@ -206,7 +217,7 @@ Deno.test({
         exists: () => true,
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -216,7 +227,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6}\)\.md$/.test(writes[0].path),
@@ -244,7 +255,7 @@ Deno.test({
         exists: () => true,
       },
     } as never;
-    const state = { upsertLocalFile: () => {} } as unknown as StateDB;
+    const state = { upsertLocalFile: () => {}, ...record } as unknown as StateDB;
 
     await surfaceConflict({
       path: "note.md",
@@ -254,7 +265,7 @@ Deno.test({
       serverVersion: 5,
       chunkHashes: ["c1"],
       reason: "test",
-    }, { vault, state, deviceName: "Laptop" });
+    }, { vault, state, deviceName: "Laptop", keys: KEYS });
 
     assertEquals(
       /^note \(conflict Laptop \d{4}-\d{2}-\d{2} \d{4,6}\)\.md$/.test(writes[0].path),

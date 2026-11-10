@@ -299,7 +299,12 @@ export class ConflictHandler {
         chunkHashes: serverVersion.chunk_hashes,
         reason: "retry_limit",
       },
-      { vault: this.deps.vault, state, deviceName: this.deps.getDeviceName() },
+      {
+        vault: this.deps.vault,
+        state,
+        deviceName: this.deps.getDeviceName(),
+        keys,
+      },
     );
     this.deps.recordActivity?.({ path, kind: "conflict", deviceId: serverVersion.device_id });
     this.deps.onStatusUpdate?.("conflict", this.getConflictCount());

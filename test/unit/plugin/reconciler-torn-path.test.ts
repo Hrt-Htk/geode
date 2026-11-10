@@ -6,9 +6,9 @@ import { FakeVault } from "../../two-vault-driver.ts";
 import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 
-// #59: a path whose download is in flight (this session's batch, or a record read back from
-// a killed one) may hold a fragment. The pass must neither commit it as a create/modify nor
-// close it as a delete: the apply that finishes the download owns it.
+// #59: a path whose bytes may be a fragment (a write of this session that has not landed, or
+// one a killed session left) is nobody's to commit: the pass must neither create/modify it
+// nor close it as a delete.
 
 function seed(state: StateDB, path: string, body: string): void {
   state.upsertLocalFile({
@@ -27,7 +27,7 @@ function seed(state: StateDB, path: string, body: string): void {
 async function reconcile(
   vault: FakeVault,
   state: StateDB,
-  inFlight?: (path: string) => boolean,
+  isTorn?: (path: string) => boolean,
 ): Promise<string[]> {
   const ran = Promise.withResolvers<ReconcileOp[]>();
   const reconciler = new Reconciler(
@@ -43,7 +43,7 @@ async function reconcile(
     () => Promise.resolve(null),
     undefined,
     undefined,
-    inFlight,
+    isTorn,
   );
   reconciler.start();
   try {
@@ -54,7 +54,7 @@ async function reconcile(
   }
 }
 
-Deno.test("reconciler leaves a path whose download is in flight alone", async () => {
+Deno.test("reconciler leaves a torn path alone", async () => {
   const vault = new FakeVault();
   const state = openStateDB();
   try {
@@ -69,8 +69,8 @@ Deno.test("reconciler leaves a path whose download is in flight alone", async ()
     vault.write("real-edit.md", "# Real\n\nedited\n");
     seed(state, "real-edit.md", "# Real\n");
 
-    const inFlight = (path: string) => path.startsWith("fragment-");
-    assertEquals(await reconcile(vault, state, inFlight), ["modify:real-edit.md"]);
+    const isTorn = (path: string) => path.startsWith("fragment-");
+    assertEquals(await reconcile(vault, state, isTorn), ["modify:real-edit.md"]);
 
     // Control: without the record the pass reports all four, so the gate is what held them.
     assertEquals(await reconcile(vault, state, () => false), [
