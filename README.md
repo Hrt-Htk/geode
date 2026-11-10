@@ -132,10 +132,11 @@ machine with Docker and Compose v2, and a directory of its own.
    openssl rand -base64 36 | tr -d '\n/+=' | cut -c1-40
    ```
 
-4. Create the data folder for the container's user, then start Geode:
+4. Create the data folder for the container's user, then start Geode. It is 0700 because the
+   database holds device tokens:
 
    ```bash
-   mkdir -p data && sudo chown 1993:1993 data
+   mkdir -p data && sudo chown 1993:1993 data && sudo chmod 700 data
    docker compose up -d
    ```
 
@@ -192,6 +193,7 @@ Docker:
    sudo systemctl disable --now geode
    sudo cp -a /opt/geode/data ./data
    sudo chown -R 1993:1993 data
+   sudo chmod 700 data
    docker compose up -d
    ```
 
@@ -307,6 +309,8 @@ backup about as private as the server.
 Back up with a consistent copy of the database plus the blobs, from the compose directory:
 
 ```bash
+sudo apt install -y sqlite3 rsync   # once
+sudo mkdir -p /path/to/backup
 sudo sqlite3 data/geode.db ".backup /path/to/backup/geode.db"
 sudo rsync -a --exclude 'geode.db*' --exclude 'before-migration.sqlite*' \
   data/ /path/to/backup/
@@ -370,11 +374,12 @@ device.
 **Server:** from the compose directory:
 
 ```bash
-docker compose down
+docker compose down -v
 cd .. && rm -rf geode
 ```
 
-That removes Geode's data with the directory. The image stays on disk until you remove it with
+`-v` removes Caddy's certificate volume as well. Geode's own data is a bind mount, not a volume: it
+goes with the directory. The image stays on disk until you remove it:
 `docker image rm ghcr.io/hrt-htk/geode:latest`.
 
 **Plugin:** disable Geode under **Settings → Community plugins**, then delete the

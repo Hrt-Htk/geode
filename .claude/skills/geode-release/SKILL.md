@@ -66,7 +66,7 @@ gives you the rollback:
 - **Over ssh**, for a UI you cannot reach:
 
   ```
-  ssh "$GEODE_SSH_HOST" 'sudo -u "#1993" touch /opt/geode/data/update-request'
+  ssh "$GEODE_SSH_HOST" 'sudo touch /opt/geode/data/update-request'
   ```
 
 Then check it: `ssh "$GEODE_SSH_HOST" 'cat /opt/geode/update-status/result'` shows `updated <epoch>`

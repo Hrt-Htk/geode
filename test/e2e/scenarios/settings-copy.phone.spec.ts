@@ -88,7 +88,7 @@ test("phone copy: no settings description runs three or more lines", async () =>
         return { text: desc.textContent.trim(), lines: Math.round(desc.getBoundingClientRect().height / lh) };
       })()
     `);
-    expect(rotate?.text).toBe("Set a new token in the server's .env, then restart Geode.");
+    expect(rotate?.text).toBe("Set a new token in the server's .env, then recreate the container.");
     expect(rotate?.lines, "the rotate description stays two lines or fewer on the phone")
       .toBeLessThanOrEqual(2);
     await new Promise((r) => setTimeout(r, 600));

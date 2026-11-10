@@ -534,8 +534,8 @@ one spec (`settings-definitions.spec.ts`) checks both paths show the same rows.
 **Devices section** (`ui/settings-devices-section.ts`, its text in `ui/device-status.ts`): one summary
 row (`N devices · M behind`, refreshed every 30 s with the device token) whose **Manage** button opens
 the Devices view, and one help row with no control at all, `Rotate admin token`. Rotating happens on
-the server, a new value in its `.env` and a restart (`server.md` §10), so the row's one line says that
-and nothing else.
+the server: a new value in its `.env` and a container recreate, because a plain restart keeps the old
+environment (`server.md` §10). The row's one line says that and nothing else.
 
 **Server address** (`ui/server-address-modal.ts`, logic in `plumbing/server-address.ts`): the Advanced
 row's Edit modal checks the server before committing and keeps the old address on any failure. The

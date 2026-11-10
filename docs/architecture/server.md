@@ -806,8 +806,9 @@ Docker: no clone, no build.
   ufw.
 - **Hardening** restates the old systemd unit's, as container options: uid 1993 on a read-only rootfs,
   `/tmp` on a tmpfs, `cap_drop: ALL`, `no-new-privileges`, `nofile` 65536. `./data` must belong to
-  uid 1993 (compose creates it as root, which is the first start's failure) and SMB/CIFS shares do not
-  work: the blob store hard-links inside a vault's directory. No curl in the image, so the healthcheck
+  uid 1993 and be 0700 (compose creates it as root, which is the first start's failure; the database
+  holds device tokens) and SMB/CIFS shares do not work: the blob store hard-links inside a vault's
+  directory. No curl in the image, so the healthcheck
   is `deno eval`.
 - **The admin token** is `GEODE_ADMIN_TOKEN` in `.env`, required by compose and read from the
   environment as in §10 until #36 hashes it.
@@ -829,7 +830,7 @@ sudo install -d -m 0755 -o root -g root /opt/geode
 sudo install -m 0644 -o root -g root compose.yaml /opt/geode/
 sudo install -m 0600 -o root -g root .env /opt/geode/
 sudo install -m 0755 -o root -g root geode-update.sh /opt/geode/
-sudo install -d -m 0755 -o 1993 -g 1993 /opt/geode/data
+sudo install -d -m 0700 -o 1993 -g 1993 /opt/geode/data
 cd /opt/geode && sudo docker compose up -d
 ```
 

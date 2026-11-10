@@ -327,7 +327,7 @@ The five used daily (the full list is in `deno.json`):
 - [ ] `deno task ci` is green.
 - [ ] Schema migrations applied cleanly on a copy of the prod DB.
 - [ ] Backup of `data/` taken.
-- [ ] `docker compose up -d --wait` recreates the container cleanly.
+- [ ] `docker compose pull geode && docker compose up -d --wait` recreates the container cleanly.
 - [ ] `docker compose logs --tail 50 geode` shows no errors after the restart.
 - [ ] One smoke test from each connected device: edit a file, see it sync to the other.
 

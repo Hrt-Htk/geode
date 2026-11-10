@@ -104,7 +104,7 @@ Holds the import map (aliases for `@noble/hashes/*`, `libsodium-wrappers-sumo`, 
 | --- | --- |
 | `deno task dev` | Server with `--watch`; `--allow-ffi` is needed by `@db/sqlite` |
 | `deno task build:plugin` | esbuild bundle, then copies the manifest (stamped with `package.json`'s version), `versions.json` and `styles.css` into `plugin-dist/` |
-| `deno task release` | `scripts/release.ts`: bump, commit, tag, push, deploy. A pre-release (#22) |
+| `deno task release` | `scripts/release.ts`: bump, commit, push, tag. A pre-release (#22) |
 | `deno task promote` | `scripts/promote.ts`: move the root manifest/versions to a tested release (#22) |
 | `deno task test` | `deno test --allow-all` |
 | `deno task test:ci` | The suite CI runs, with a wall-clock cap (`scripts/test-timeout.ts`) |

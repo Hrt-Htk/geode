@@ -112,7 +112,7 @@ test("UI surfaces unchanged by #387 type/promise edits", async () => {
     await expect(rotateRow).toBeVisible();
     await expect(rotateRow.locator(".setting-item-name")).toHaveText("Rotate admin token");
     await expect(rotateRow.locator(".setting-item-description")).toHaveText(
-      "Set a new token in the server's .env, then restart Geode.",
+      "Set a new token in the server's .env, then recreate the container.",
     );
     // One line, measured: the row breaks its model when the description wraps.
     const desc = await o.eval(`(() => {
