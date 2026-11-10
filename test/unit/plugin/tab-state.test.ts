@@ -26,11 +26,19 @@ Deno.test("tab-state - tabVisibility per state", () => {
     vaultRows: ["vault-name"],
   });
   assertEquals(tabVisibility("unlocked"), {
-    sections: ["status", "vault", "devices", "scope", "trash", "advanced"],
+    sections: ["status", "vault", "devices", "scope", "trash", "advanced", "logs"],
     statusRows: ["status", "storage", "actions"],
     // #559: the passphrase row is unlocked-only: rekeying needs the keys.
     vaultRows: ["vault-name", "vault-lock", "autolock", "passphrase"],
   });
+});
+
+// #64: reading the logs must not need a setting first: the Logs page is a page of the unlocked
+// tab, whatever the Developer console toggle says. Locked and not-set-up keep it out.
+Deno.test("tab-state - the Logs page shows while unlocked, without any setting", () => {
+  assertEquals(tabVisibility("unlocked").sections.includes("logs"), true);
+  assertEquals(tabVisibility("locked").sections.includes("logs"), false);
+  assertEquals(tabVisibility("notset").sections.includes("logs"), false);
 });
 
 Deno.test("tab-state - not-set-up copy", () => {

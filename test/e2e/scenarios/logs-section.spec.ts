@@ -7,27 +7,25 @@ import { shotPath } from "../helpers/shots";
 import { openLogsSection, openSettingsTab } from "../helpers/logs";
 import {
   closeSettingsPage,
-  DEBUG_LOGGING_ROW,
+  DEVELOPER_CONSOLE_ROW,
   isDisplayPath,
-  markNoRerender,
   openSettingsPage,
-  readScroll,
   rowShown,
   setRowControl,
   shownSections,
   useDisplayPath,
 } from "../helpers/settings-tab";
 
-// #434/#453: the Logs section replaced the right-sidebar debug pane. Debug
-// logging on shows the Logs rows (a sub-page after Advanced on Obsidian 1.13+, #16):
-// sync details line with real values, All / Warnings / Errors filter tabs, a
-// fixed-height scrollable monospace log box fed by the real ring buffer, Copy logs.
-// Debug logging off hides the Logs entry in place; on brings it back, still live.
-// Screenshot gate: the page with real lines, Errors filter, off.
+// #434/#453/#64: the Logs section replaced the right-sidebar debug pane. It is a sub-page after
+// Advanced on Obsidian 1.13+ (#16) and shows while the vault is unlocked, without any setting
+// (#64): sync details line with real values, All / Warnings / Errors filter tabs, a fixed-height
+// scrollable monospace log box fed by the real ring buffer, Copy logs, and last the Developer
+// console toggle (the console mirror only). Screenshot gate: the page with real lines, Errors
+// filter, the Developer console row.
 
 const PASSPHRASE = "logs-pass";
 
-test("logs section: real details/log, filters, in-place toggle, no re-render", async () => {
+test("logs section: reachable without a setting, real details/log, filters, Developer console", async () => {
   test.slow();
 
   const server = await startServer();
@@ -39,7 +37,7 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
       deviceId: device.deviceId,
       deviceToken: device.token,
       salt: server.salt,
-      debugLogging: true,
+      debugLogging: false,
     },
     unlockPassphrase: PASSPHRASE,
   });
@@ -49,10 +47,25 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
     await waitForStatusBar(o.win, "Geode: synced", 60_000);
     await openSettingsTab(o);
 
-    /* ---- 1. Logs sits after Advanced, a page entry while Debug logging is on ---- */
+    /* ---- 1. Logs sits last, a page entry while unlocked, with Developer console off (#64) ---- */
     expect(await shownSections(o), "section order with Logs last").toEqual(
       ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"],
     );
+    await o.eval(`
+      document.querySelectorAll(".notice").forEach((n) => n.remove());
+      [...document.querySelectorAll(".modal.mod-settings .setting-item-name")]
+        .find((e) => e.textContent.trim() === "Logs")?.scrollIntoView({ block: "end" });
+      return true;
+    `);
+    await o.win.waitForTimeout(300);
+    await o.win.locator(".modal.mod-settings").screenshot({
+      path: shotPath("64-00-nav-logs-entry.png"),
+    });
+
+    /* ---- 1.5. Advanced no longer carries the toggle (#64) ---- */
+    await openSettingsPage(o, "Advanced");
+    expect(await rowShown(o, DEVELOPER_CONSOLE_ROW), "Advanced is free of it").toBe(false);
+    await closeSettingsPage(o);
 
     /* ---- 2. Open: real details line, filter tabs, log box with ring lines ---- */
     await openSettingsPage(o, "Logs");
@@ -127,39 +140,51 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
       path: shotPath("434-02-logs-errors.png"),
     });
 
-    /* ---- 4. Debug logging off hides the Logs entry in place; on brings it back ---- */
-    await closeSettingsPage(o);
-    await openSettingsPage(o, "Advanced");
-    await setRowControl(o, DEBUG_LOGGING_ROW);
-    await closeSettingsPage(o);
-    await expect.poll(() => rowShown(o, "Logs"), { timeout: 10_000 }).toBe(false);
-    expect(await shownSections(o)).toEqual(["Vault", "Devices", "Sync scope", "Trash", "Advanced"]);
+    /* ---- 4. Developer console: last row of the page, and it only mirrors the console (#64) ---- */
+    const debugLogging = () =>
+      o.eval<boolean>(`app.plugins.plugins.geode.pluginSettings.debugLogging`);
+    expect(await debugLogging(), "off by default").toBe(false);
+    const lastRow = await o.eval<string>(`(() => {
+      const rows = [...document.querySelectorAll(".modal.mod-settings .setting-item")]
+        .filter((r) => r.offsetParent !== null);
+      return rows.at(-1)?.querySelector(".setting-item-name")?.textContent?.trim() ?? "";
+    })()`);
+    expect(lastRow, "Developer console is the last row of the page").toBe(DEVELOPER_CONSOLE_ROW);
 
-    /* ---- Screenshot 3: Debug logging off = no Logs entry ---- */
+    /* ---- Screenshot 3: the page bottom, Developer console off (#64) ---- */
+    await o.win.locator('[data-testid="geode-log-filter-all"]').click();
+    await expect(o.win.locator('[data-testid="geode-log-filter-all"]')).toHaveClass(/is-active/);
     await o.eval(`
       document.querySelectorAll(".notice").forEach((n) => n.remove());
-      [...document.querySelectorAll(".modal.mod-settings .setting-item-name")]
-        .find((e) => e.textContent.trim() === "Advanced")?.scrollIntoView({ block: "end" });
+      const row = [...document.querySelectorAll(".modal.mod-settings .setting-item")]
+        .find((r) => r.querySelector(".setting-item-name")?.textContent?.trim() ===
+          ${JSON.stringify(DEVELOPER_CONSOLE_ROW)});
+      row?.scrollIntoView({ block: "end" });
       return true;
     `);
     await o.win.waitForTimeout(300);
     await o.win.locator(".modal.mod-settings").screenshot({
-      path: shotPath("434-03-debug-off.png"),
+      path: shotPath("64-03-developer-console.png"),
     });
 
-    await openSettingsPage(o, "Advanced");
-    await setRowControl(o, DEBUG_LOGGING_ROW);
-    await closeSettingsPage(o);
-    await expect.poll(() => rowShown(o, "Logs"), { timeout: 10_000 }).toBe(true);
-    await openSettingsPage(o, "Logs");
-    await expect(o.win.locator('[data-testid="geode-log-box"]')).toBeVisible({ timeout: 10_000 });
+    // The log view is one render row: a toggle that re-rendered the page would replace the box
+    // and drop its live subscription, and every line logged afterwards would be lost.
+    const boxKept = () =>
+      o.eval<boolean>(
+        `!!document.querySelector('[data-testid="geode-log-box"][data-e2e-marker="kept"]')`,
+      );
+    await o.eval(`(() => {
+      document.querySelector('[data-testid="geode-log-box"]').dataset.e2eMarker = "kept";
+      return true;
+    })()`);
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    await expect.poll(debugLogging).toBe(true);
+    expect(await boxKept(), "the log view survives the toggle").toBe(true);
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    await expect.poll(debugLogging).toBe(false);
+    expect(await boxKept(), "still the same, still live").toBe(true);
 
-    // The Errors filter survives a hide/show of the section (same view instance), so go back
-    // to All before asserting the ring streams into the box again.
-    await o.win.locator('[data-testid="geode-log-filter-all"]').click();
-    await expect(o.win.locator('[data-testid="geode-log-filter-all"]')).toHaveClass(/is-active/);
-
-    // The re-added section still streams the ring (live append).
+    // The kept view still streams the ring (live append).
     const countBefore = await lines.count();
     await o.eval(`
       await app.vault.create("note.md", "# gate434\\ntest\\n");
@@ -169,14 +194,11 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
       .poll(async () => await lines.count(), { timeout: 15_000 })
       .toBeGreaterThan(countBefore);
 
-    /* ---- 5. display() hides and re-shows the section in place: no tab re-render ---- */
-    // Obsidian < 1.13 renders this whole tab through display(), where a re-render would wipe and
-    // rebuild every row. The marker on the sync-status dot survives only an in-place update.
+    /* ---- 5. display() (Obsidian < 1.13): the Logs section shows, and the toggle keeps it ---- */
     await closeSettingsPage(o);
     await useDisplayPath(o);
     await expect.poll(() => isDisplayPath(o)).toBe(true);
-    await openSettingsPage(o, "Advanced");
-    // On this path Logs is a collapsible section (a heading), not a page entry.
+    await openSettingsPage(o, "Logs");
     const logsSectionShown = () =>
       o.eval<boolean>(`(() => {
         const heading = [...document.querySelectorAll(
@@ -184,24 +206,12 @@ test("logs section: real details/log, filters, in-place toggle, no re-render", a
         )].find((h) => h.textContent.trim() === "Logs");
         return !!heading && heading.offsetParent !== null;
       })()`);
-    expect(await logsSectionShown(), "Logs section shown while Debug logging is on").toBe(true);
-    // One flip first: clicking a control focuses it, which scrolls the row into view, and the
-    // re-added section moves the pane the way browser scroll anchoring keeps the last content
-    // still. Neither is a re-render: what a re-render destroys is the marker (display() rebuilds
-    // every row) and the pane's depth (it would land back at the top).
-    await setRowControl(o, DEBUG_LOGGING_ROW);
-    await expect.poll(logsSectionShown, { timeout: 10_000 }).toBe(false);
-    const markerPresent = await markNoRerender(o);
-    const deepInTab = 1000;
-    expect(await readScroll(o), "the pane sits deep in the tab").toBeGreaterThan(deepInTab);
-    await setRowControl(o, DEBUG_LOGGING_ROW);
-    await expect.poll(logsSectionShown, { timeout: 10_000 }).toBe(true);
-    await expect.poll(markerPresent, { timeout: 10_000 }).toBe(true);
-    expect(await readScroll(o), "Debug logging on: still in place").toBeGreaterThan(deepInTab);
-    await setRowControl(o, DEBUG_LOGGING_ROW);
-    await expect.poll(logsSectionShown, { timeout: 10_000 }).toBe(false);
-    await expect.poll(markerPresent, { timeout: 10_000 }).toBe(true);
-    expect(await readScroll(o), "Debug logging off: still in place").toBeGreaterThan(deepInTab);
+    expect(await logsSectionShown(), "Logs section shown while unlocked").toBe(true);
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    await expect.poll(debugLogging).toBe(true);
+    expect(await logsSectionShown(), "display(): the toggle never hides the section").toBe(true);
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    await expect.poll(debugLogging).toBe(false);
     await useDisplayPath(o, false);
     await expect.poll(() => isDisplayPath(o)).toBe(false);
   } finally {

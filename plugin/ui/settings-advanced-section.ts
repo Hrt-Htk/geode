@@ -1,7 +1,6 @@
 import { App as ObsidianApp, Notice } from "obsidian";
 import type { SettingsRow } from "./settings-legacy.ts";
 import { setDestructive } from "./api-compat.ts";
-import { DEBUG_LOGGING_ROW } from "./settings-row-names.ts";
 import { formatError, log } from "../plumbing/log.ts";
 import { httpBase } from "../plumbing/scheme.ts";
 import type { PluginSettings } from "../plumbing/settings-types.ts";
@@ -138,10 +137,6 @@ export class SettingsAdvancedSection {
           btn.onClick(() => this.host.openRekeyModal("rekey"));
         });
       },
-    }, {
-      name: DEBUG_LOGGING_ROW,
-      desc: "Log sync activity and show the logs.",
-      control: { type: "toggle", key: "debugLogging" },
     }, {
       name: "Resync from scratch",
       desc: "Download the entire vault from the server. Use only when sync is broken.",

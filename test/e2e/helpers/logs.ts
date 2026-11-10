@@ -2,9 +2,9 @@ import { expect } from "@playwright/test";
 import type { Evaluatable } from "./device-abstraction";
 import { openSettingsPage } from "./settings-tab";
 
-// #434: shared Logs-section driving for specs that read the debug output.
-// The Logs rows show only while Advanced → Debug logging is on: a sub-page on
-// Obsidian 1.13+, a collapsed section after Advanced on display() (#16).
+// #434/#64: shared Logs-section driving for specs that read the debug output.
+// The Logs page shows while the vault is unlocked, without any setting: a sub-page on Obsidian
+// 1.13+, a collapsed section after Advanced on display() (#16).
 
 /** Open the Geode settings tab. Desktop closes first; mobile must NOT (it prevents the tab from rendering). */
 export async function openSettingsTab(instance: Evaluatable, mobile = false): Promise<void> {
@@ -27,8 +27,7 @@ export async function openSettingsTab(instance: Evaluatable, mobile = false): Pr
     .toBe(true);
 }
 
-/** Show the Logs rows (the sub-page on 1.13+, the section on display()). Throws when Debug
- * logging is off. */
+/** Show the Logs rows (the sub-page on 1.13+, the section on display()). */
 export async function expandLogsSection(instance: Evaluatable): Promise<void> {
   await openSettingsPage(instance, "Logs");
   await expect

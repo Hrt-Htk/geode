@@ -9,7 +9,7 @@ import {
   AUTO_LOCK_ROW,
   clearNotices,
   closeSettingsPage,
-  DEBUG_LOGGING_ROW,
+  DEVELOPER_CONSOLE_ROW,
   expectSameRows,
   isDisplayPath,
   openSettingsPage,
@@ -67,7 +67,7 @@ test("settings tab: definitions and display() render the same rows; search finds
       )
     ).toEqual(["Vault", "Devices", "Sync scope", "Trash"]);
     expect(await rowShown(o, "Advanced"), "Advanced is a page entry").toBe(true);
-    expect(await rowShown(o, "Logs"), "Logs is a page entry while debug logging is on").toBe(true);
+    expect(await rowShown(o, "Logs"), "Logs is a page entry while unlocked (#64)").toBe(true);
     await o.win.waitForTimeout(1000);
     await shot("defs-01-top.png");
     for (const [i, group] of ["Vault", "Devices", "Sync scope", "Trash"].entries()) {
@@ -110,15 +110,23 @@ test("settings tab: definitions and display() render the same rows; search finds
       .toBe(false);
     await setRowControl(o, SYNC_CONFIG_ROW);
     await expect.poll(() => rowShown(o, "Config to sync")).toBe(true);
-    await openSettingsPage(o, "Advanced");
-    await setRowControl(o, DEBUG_LOGGING_ROW);
+    /* #64: Developer console sits last on the Logs page, and the page never depends on it. */
+    await openSettingsPage(o, "Logs");
+    expect(
+      (await rowInventory(o)).at(-1),
+      "Developer console is the last row of the Logs page",
+    ).toMatch(/^Developer console \| /);
+    const debugLogging = () =>
+      o.eval<boolean>(`app.plugins.plugins.geode.pluginSettings.debugLogging`);
+    const originalDebugLogging = await debugLogging();
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    await expect.poll(debugLogging).toBe(!originalDebugLogging);
     await closeSettingsPage(o);
-    await expect.poll(() => rowShown(o, "Logs"), { message: "Logs page entry follows the toggle" })
-      .toBe(false);
-    await openSettingsPage(o, "Advanced");
-    await setRowControl(o, DEBUG_LOGGING_ROW);
+    await expect.poll(() => rowShown(o, "Logs"), { message: "Logs stays reachable" }).toBe(true);
+    await openSettingsPage(o, "Logs");
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    await expect.poll(debugLogging).toBe(originalDebugLogging);
     await closeSettingsPage(o);
-    await expect.poll(() => rowShown(o, "Logs")).toBe(true);
 
     /* ---- Settings search: Geode's rows are indexed ---- */
     const retention = await searchSettings(o, "retention");
@@ -127,6 +135,9 @@ test("settings tab: definitions and display() render the same rows; search finds
     const autolock = await searchSettings(o, "auto-lock");
     expect(autolock.join("\n")).toContain(AUTO_LOCK_ROW);
     await shot("defs-09-search-autolock.png");
+    // #64: the row was called Debug logging, so its old search terms still find it.
+    const debugSearch = await searchSettings(o, "debug logging");
+    expect(debugSearch.join("\n")).toContain(DEVELOPER_CONSOLE_ROW);
     await searchSettings(o, "");
 
     /* ---- A re-read of the definitions keeps the live rows bound ---- */
@@ -169,9 +180,12 @@ test("settings tab: definitions and display() render the same rows; search finds
     ).toContain(WHOLE_NUMBER_COPY);
     expect(await o.eval<number>(`app.plugins.plugins.geode.pluginSettings.trashRetentionDays`))
       .toBe(45);
-    await setRowControl(o, DEBUG_LOGGING_ROW);
-    await expect.poll(() => rowShown(o, "Copy logs"), { message: "display(): Logs hides in place" })
-      .toBe(false);
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    await expect.poll(() => rowShown(o, "Copy logs"), {
+      message: "display(): the Logs rows stay shown",
+    })
+      .toBe(true);
+    await setRowControl(o, DEVELOPER_CONSOLE_ROW);
     await useDisplayPath(o, false);
     await expect.poll(() => isDisplayPath(o)).toBe(false);
   } finally {

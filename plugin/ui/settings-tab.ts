@@ -197,8 +197,9 @@ export class GeodeSettingTab extends PluginSettingTab {
     return (this.plugin.pluginSettings as unknown as Record<string, unknown>)[key];
   }
 
-  /** The four real controls: auto lock hours, trash retention days, debug logging, sync
-   * config folder. The last two carry side effects; Logs and Config to sync follow `visible`. */
+  /** The four real controls: auto lock hours, trash retention days, Developer console (mirrors the
+   * log to the DevTools console), sync config folder. The last two carry side effects; Config to
+   * sync follows `visible`. */
   async setControlValue(key: string, value: unknown): Promise<void> {
     (this.plugin.pluginSettings as unknown as Record<string, unknown>)[key] = value;
     if (key === "debugLogging") setDebugLogging(value === true);
@@ -315,13 +316,13 @@ export class GeodeSettingTab extends PluginSettingTab {
         rows: this.advancedRows(),
         visible: shown("advanced"),
       },
-      // #453/#434: after Advanced, only while Debug logging is on.
+      // #453/#434/#64: after Advanced, reachable while unlocked without any setting.
       {
         id: "logs",
         heading: "Logs",
         kind: "page",
         rows: logsSection.rows(),
-        visible: () => shown("advanced")() && this.plugin.pluginSettings.debugLogging,
+        visible: shown("logs"),
       },
     ];
   }

@@ -65,7 +65,8 @@ flowchart TD
   or reconcile now.
 - The devices on the vault, with revoke for a lost or stolen one.
 - Banners when something needs you: an error, a pause, or a plugin update.
-- Debug logging with **Copy logs**, for a bug report.
+- A **Logs** page in settings with **Copy logs** for a bug report, and a Developer console toggle that
+  also mirrors it to the DevTools console.
 
 ![The status icon's menu open on the phone](docs/screenshots/status-menu-phone.png)
 

@@ -6,12 +6,20 @@ import { waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
 import { expandLogsSection, openSettingsTab } from "../helpers/logs";
 import { dismissModals } from "../helpers/mobile-ui";
+import {
+  closeSettingsPage,
+  DEVELOPER_CONSOLE_ROW,
+  openSettingsPage,
+  rowShown,
+  setRowControl,
+  shownSections,
+} from "../helpers/settings-tab";
 
 const PASSPHRASE = "logs-pass";
 
-// #434/#453: the Logs section on the phone: same section after Advanced, the
-// log box keeps its fixed height and scrolls. Screenshot gate on-device.
-
+// #434/#453/#64: the Logs section on the phone: a page entry after Advanced while the vault is
+// unlocked, without any setting; the log box keeps its fixed height and scrolls; the Developer
+// console toggle is its last row. Screenshot gate on-device.
 test("logs section on phone: fixed-height box, real lines, scrollable", async () => {
   test.skip(process.env.GEODE_PHONE !== "1", "requires connected phone (GEODE_PHONE=1)");
   test.slow();
@@ -39,7 +47,32 @@ test("logs section on phone: fixed-height box, real lines, scrollable", async ()
     await dismissModals(o);
 
     await openSettingsTab(o, true);
+
+    /* ---- #64: Logs is a page entry while unlocked, with Developer console off ---- */
+    const debugLogging = () =>
+      o.eval<boolean>(`app.plugins.plugins.geode.pluginSettings.debugLogging`);
+    await openSettingsPage(o, "Logs");
+    if (await debugLogging()) await setRowControl(o, DEVELOPER_CONSOLE_ROW);
+    expect(await debugLogging(), "Developer console off for the #64 shot").toBe(false);
+    await closeSettingsPage(o);
+    expect(await shownSections(o), "Logs last, without any setting").toEqual(
+      ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"],
+    );
+    await o.eval(`
+      document.querySelectorAll(".notice").forEach((n) => n.remove());
+      const pane = document.querySelector(".modal.mod-settings .vertical-tab-content") ??
+        document.querySelector(".modal.mod-settings .modal-content");
+      if (pane) pane.scrollTop = pane.scrollHeight;
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 300));
+    await o.screenshot(shotPath("64-phone-00-nav-logs-entry.png"));
+
     await expandLogsSection(o);
+    expect(
+      await rowShown(o, DEVELOPER_CONSOLE_ROW),
+      "Developer console is a row of the Logs page",
+    ).toBe(true);
 
     /* Real details line with the transport's live state. */
     await expect
@@ -72,14 +105,32 @@ test("logs section on phone: fixed-height box, real lines, scrollable", async ()
     /* Screenshot: Logs expanded on-device, notices cleared. */
     await o.eval(`
       document.querySelectorAll(".notice").forEach((n) => n.remove());
-      document.querySelector('[data-testid="geode-log-box"]')?.scrollIntoView({ block: "center" });
+      [...document.querySelectorAll(".modal.mod-settings .setting-item")]
+        .find((r) => r.querySelector(".setting-item-name")?.textContent?.trim() ===
+          ${JSON.stringify(DEVELOPER_CONSOLE_ROW)})
+        ?.scrollIntoView({ block: "end" });
       return true;
     `);
     await new Promise((r) => setTimeout(r, 300));
-    await o.screenshot(shotPath("434-04-phone-logs.png"));
+    await o.screenshot(shotPath("64-phone-01-logs-developer-console.png"));
+
+    /* Advanced no longer carries the toggle: shoot it where the row used to sit. */
+    await closeSettingsPage(o);
+    await openSettingsPage(o, "Advanced");
+    expect(await rowShown(o, DEVELOPER_CONSOLE_ROW), "Advanced is free of it").toBe(false);
+    await o.eval(`
+      document.querySelectorAll(".notice").forEach((n) => n.remove());
+      [...document.querySelectorAll(".modal.mod-settings .setting-item-name")]
+        .find((e) => e.textContent.trim() === "Resync from scratch")?.scrollIntoView({ block: "center" });
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 300));
+    await o.screenshot(shotPath("64-phone-02-advanced.png"));
 
     /* Errors filter works on-device (a real error is generated first via the
        misconfigured-vault path: empty salt → unlockVault logs "no salt configured"). */
+    await closeSettingsPage(o);
+    await openSettingsPage(o, "Logs");
     await o.eval(`
       const geode = app.plugins.plugins.geode;
       const saved = geode.pluginSettings.salt;

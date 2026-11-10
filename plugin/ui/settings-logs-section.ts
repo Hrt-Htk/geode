@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import type { SettingsRow } from "./settings-legacy.ts";
 import { type LogEntry, subscribeLog } from "../plumbing/log.ts";
+import { DEVELOPER_CONSOLE_ROW } from "./settings-row-names.ts";
 import {
   connectionLabel,
   filterLogEntries,
@@ -20,8 +21,9 @@ export type LogsSectionHost = {
   exportLog: () => string;
 };
 
-/** #453/#434: Logs section rows: the log view (details line, filter tabs, ring-buffer log
- * box) and Copy logs. The view follows the log while it is shown. */
+/** #453/#434/#64: Logs section rows: the log view (details line, filter tabs, ring-buffer log
+ * box), Copy logs, and last the Developer console toggle. The view follows the log while it is
+ * shown. */
 export class SettingsLogsSection {
   private filter: LogFilter = "all";
   private detailsEl: HTMLElement | null = null;
@@ -59,10 +61,16 @@ export class SettingsLogsSection {
           });
         });
       },
+    }, {
+      name: DEVELOPER_CONSOLE_ROW,
+      aliases: ["debug", "logging", "debug logging"],
+      desc: "Also print the log in the developer console.",
+      control: { type: "toggle", key: "debugLogging" },
     }];
   }
 
   private renderView(el: HTMLElement): void {
+    this.unsubscribe?.();
     this.detailsEl = el.createDiv({ cls: "geode-log-details" });
     this.detailsEl.dataset.testid = "geode-log-details";
     this.refreshDetails();

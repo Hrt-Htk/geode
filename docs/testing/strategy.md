@@ -142,7 +142,7 @@ docker compose logs --no-log-prefix geode | jq 'select(.level=="error")'
 ### Plugin-side (`plugin/plumbing/log.ts`)
 
 A ring of the last 2000 entries, fed by the shared sink registry in `core/log.ts`. Console output is
-off unless debug logging is enabled; the ring is what the Logs section renders.
+off unless the Developer console toggle is on; the ring is what the Logs page renders.
 
 ```ts
 log.debug|info|warn|error(msg, fields?): void   // emit
@@ -151,9 +151,10 @@ setDebugLogging(enabled): void                  // also mirror to the console
 formatError(error): string                      // stable error text
 ```
 
-Surfaced in the settings tab's **Logs** page (`plugin/ui/settings-logs-section.ts`, present only
-while debug logging is on; a collapsible section before Obsidian 1.13): a filter per level, a
-details line per entry, and a copy button for bug reports.
+Surfaced in the settings tab's **Logs** page (`plugin/ui/settings-logs-section.ts`, a page of the
+unlocked tab; a collapsible section before Obsidian 1.13): a filter per level, a
+details line per entry, a copy button for bug reports, and last the Developer console toggle that
+turns the console mirror on.
 
 ### Status bar feedback loop
 
