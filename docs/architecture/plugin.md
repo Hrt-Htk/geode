@@ -31,6 +31,8 @@ Unlock paths, in `plugin/plumbing/vault-lock.ts`:
   keys and starts the session.
 - `unlockAfterRemoteRekeyFlow` handles a verifier that was rewritten elsewhere (#560): fetch the vault's
   current salt, verifier and params, derive with those, rebuild the local path hashes, resume.
+- `finishRekey` is the device that ran the re-key: it swaps the keys and restarts the session. Its rows
+  are rebuilt at go-live by the stale-row repair (`sync/stale-rows.ts`, section 6).
 
 Lock (`lockVault`) clears the key cache and disposes the session. `leaveVault` also revokes the device
 on the server (best effort) and deletes every local state file. Disposing starts the last state writes
@@ -233,6 +235,19 @@ This is what keeps the plugin correct against edits it never saw a vault event f
 ### When it runs
 
 - Immediately on start (`startReconciler`), then every 5 minutes (`RECONCILE_INTERVAL`).
+- **Stale-row repair** runs before the scan on a go-live that starts a reconciler (#53). A row whose
+  `path_hash` differs from the hash of its path under the current `mac_key` predates a re-key on this
+  device. A file on disk, a closed row or an out-of-scope path only gets the hash corrected. A live row
+  with its file gone applies the head through `catchUpFolders`, which rewrites the row: a live head
+  restores the file, a head closed elsewhere closes the row. One with no chain under the current hash
+  has nothing to restore and closes at version 0. A failed download stays stale and retries at the next
+  connection.
+- **A stale hash never sends a delete.** It has no chain on the server, so a parent of 0 would open one,
+  and every peer would apply the tombstone. `commitDelete` throws `StaleHashDelete`: a conflict resolution
+  shows the error, the activity log records it, and the queue neither retries nor counts it as dropped,
+  because a retry could land after the repair brought the file back. A mass delete decision on such a
+  path does not take effect: the file returns at the next go-live. A rename made while stale is not undone: its new name stands,
+  and the old name comes back when the server has a head for it.
 - On every go-live: `SyncManager.startReconciler` stops the previous reconciler first, so reconnects
   never leave a second scanner running (#622).
 - "Reconcile now" forces a pass; otherwise a run within half the interval is skipped.
@@ -629,7 +644,7 @@ retention floor (#677, `../ops/trash-soft-delete.md` §5).
 | `plumbing/window.ts` | `windowGlobal`: the renderer's window for timers and the default transport (popout windows need it; Deno tests only have `self`) |
 | `plumbing/provisioning-client.ts`, `rekey-client.ts`, `trash-client.ts`, `storage-client.ts`, `scope-pending.ts` | server calls outside the sync core |
 | `sync/transport.ts`, `http-client.ts`, `commit-channel.ts`, `commit-queue.ts` | connectivity, HTTP, commit serialization and queueing |
-| `sync/events.ts`, `reconciler.ts`, `enumerate-disk.ts`, `vault-io.ts` | vault → op translation, full scans, disk IO |
+| `sync/events.ts`, `reconciler.ts`, `stale-rows.ts`, `enumerate-disk.ts`, `vault-io.ts` | vault → op translation, full scans, stale-row repair, disk IO |
 | `sync/apply.ts`, `replay.ts`, `merger.ts`, `conflict-handler.ts`, `conflicts.ts` | inbound apply, merge, conflict surfacing |
 | `sync/commit.ts`, `path-lock.ts`, `rename-*.ts`, `parked-moves.ts` | outbound commits, one-writer-per-path, rename links |
 | `sync/history-*.ts`, `export-vault.ts`, `recovery.ts`, `rebuild-flow.ts`, `join-plan.ts`, `rejoin.ts`, `rekey-*.ts` | history, export, resync and rejoin rebuilds, join mode, rejoin backup, re-key |

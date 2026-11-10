@@ -33,7 +33,7 @@ import {
   unlockAfterRemoteRekeyFlow,
   unlockVault,
 } from "../plugin/plumbing/vault-lock.ts";
-import type { RekeyCursor } from "../plugin/sync/rekey-run.ts";
+import type { RekeyCursor, RekeyCursorStore } from "../plugin/sync/rekey-run.ts";
 import { SERVER_VERSION } from "../server/version-gate.ts";
 import { MASS_DELETE_NEEDS_RESUME, type MassDeleteHold } from "../plugin/sync/mass-delete-hold.ts";
 import { isMarkdownPath, normalizeMarkdownLineEndings } from "../core/normalize.ts";
@@ -284,6 +284,33 @@ export class FakeVault {
 // cheap enough for tests. Shared so a re-key's switch params and a re-join's
 // derivation can never disagree.
 export const TEST_KDF = { ops: 1, mem: 8 * 1024 * 1024 };
+
+/** A re-key cursor store that lives in memory. */
+export function memoryCursor(): RekeyCursorStore {
+  let c: RekeyCursor | null = null;
+  return {
+    load: () => c,
+    save: (x: RekeyCursor) => {
+      c = x;
+    },
+    clear: () => {
+      c = null;
+    },
+  };
+}
+
+/** The newest version the server holds for a path hash, or null. */
+export function headOf(
+  server: { db: { prepare(sql: string): { get(...args: unknown[]): unknown } } },
+  vaultId: string,
+  pathHash: string,
+): { version: number; deleted: number } | null {
+  return (server.db
+    .prepare(
+      "SELECT version, deleted FROM file_versions WHERE vault_id = ? AND path_hash = ? ORDER BY version DESC LIMIT 1",
+    )
+    .get(vaultId, pathHash) ?? null) as { version: number; deleted: number } | null;
+}
 
 // ── TestPlugin ─────────────────────────────────────────────────────────
 

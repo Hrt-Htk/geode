@@ -6,12 +6,14 @@ import {
   type VersionRecord,
 } from "../../core/protocol.ts";
 import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
+import { hashPathHex } from "../../core/hash.ts";
 
 import { StateDB } from "../plumbing/state.ts";
 import { Transport } from "./transport.ts";
 import { CommitQueue, type PendingOp } from "./commit-queue.ts";
 import { ReplayPipeline } from "./replay.ts";
 import { Reconciler } from "./reconciler.ts";
+import { planStaleRows } from "./stale-rows.ts";
 import { ConflictHandler } from "./conflict-handler.ts";
 import { applyVersion, renameHeadOf } from "./apply.ts";
 import { existsOnDisk } from "./commit.ts";
@@ -180,13 +182,14 @@ export class SyncManager {
     if (this.paused || this.deciding || this.deps.settings.massDeleteHold) return;
     await this.replay.flushReplayBuffer();
     if (!this.state) return;
+    // #622: a reconnect starts a fresh pass; the previous scanner must not keep its own
+    // 5-minute interval alive. #53: and no pass on rows from before the repair may finish.
+    this.reconciler?.stop();
+    if (this.keys) await this.repairStaleRows(this.state, this.keys);
     // #342: bound pendingMoveOuts on every go-live: dead entries (source row
     // gone) drop, moves whose destination is back in scope complete, and the
     // list stays capped even for folders that are never re-included.
     await this.parkedMoves.release([]);
-    // #622: a reconnect starts a fresh pass; the previous scanner must not keep
-    // its own 5-minute interval alive.
-    this.reconciler?.stop();
     this.reconciler = new Reconciler(
       this.deps.vault,
       this.state,
@@ -346,6 +349,49 @@ export class SyncManager {
 
   private setGate(): void {
     this.commitQueue.setPaused(this.paused || this.deps.settings.massDeleteHold !== null);
+  }
+
+  /** #53: docs/architecture/plugin.md section 6. Rows are re-read: an apply can land during
+   * the plan's disk checks. */
+  private async repairStaleRows(state: StateDB, keys: VaultKeys): Promise<void> {
+    const settings = this.deps.settings;
+    const plan = await planStaleRows(
+      state.getAllLocalFiles().values(),
+      keys.mac_key,
+      (path) => existsOnDisk(path, this.deps.vault.adapter),
+      (path) => isSyncable(path, this.deps.configDir, settings),
+    );
+    if (plan.corrected.length === 0 && plan.restore.length === 0) return;
+    log.info("repairing stale path hashes", {
+      corrected: plan.corrected.length,
+      restore: plan.restore,
+    });
+    for (const path of plan.corrected) {
+      const row = state.getLocalFile(path);
+      if (row) state.upsertLocalFile({ ...row, path_hash: hashPathHex(keys.mac_key, path) });
+    }
+    if (plan.restore.length === 0) return;
+    try {
+      await this.catchUpFolders(plan.restore);
+      for (const path of plan.restore) await this.closeIfNeverOnServer(state, keys, path);
+    } catch (error) {
+      log.warn("stale row restore failed, retrying at the next connection", {
+        error: String(error),
+      });
+    }
+  }
+
+  /** The download rewrites a row it restored. One still stale with no chain under the current
+   * hash has nothing to restore and nothing to delete. Version 0: any later version applies. */
+  private async closeIfNeverOnServer(
+    state: StateDB,
+    keys: VaultKeys,
+    path: string,
+  ): Promise<void> {
+    const pathHash = hashPathHex(keys.mac_key, path);
+    if (state.getLocalFile(path)?.path_hash === pathHash) return;
+    const chain = await this.transport.getVersionChain(pathHash);
+    if (chain.length === 0) state.closeLocalRow(path, pathHash, 0);
   }
 
   private stopReconciler(): void {

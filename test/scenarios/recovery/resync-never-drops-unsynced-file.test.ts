@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import { pair, restartPlugin, type TestPlugin, type TestServer } from "../../two-vault-driver.ts";
+import { headOf, pair, restartPlugin, type TestPlugin } from "../../two-vault-driver.ts";
 import { openSessionState } from "../../../plugin/session.ts";
 import { rebuildFromScratch } from "../../../plugin/sync/recovery.ts";
 import { isSyncable } from "../../../plugin/plumbing/settings-types.ts";
@@ -14,14 +14,6 @@ import { hashPathHex } from "../../../core/hash.ts";
 const DELETED = Array.from({ length: 10 }, (_, i) => `gone/n${i}.md`);
 const CREATED = "new.md";
 const CREATED_BODY = "created while the guard was holding the pass\n";
-
-function headOf(server: TestServer, vaultId: string, pathHash: string) {
-  return (server.db
-    .prepare(
-      "SELECT version, deleted FROM file_versions WHERE vault_id = ? AND path_hash = ? ORDER BY version DESC LIMIT 1",
-    )
-    .get(vaultId, pathHash) ?? null) as { version: number; deleted: number } | null;
-}
 
 /** The state file a resync starts from is written on a 2s throttle (#328): wait until
  * the row under test is durable, or the scenario begins from a state that never had it. */
