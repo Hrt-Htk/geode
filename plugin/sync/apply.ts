@@ -318,7 +318,7 @@ async function followsNote(from: string, to: string, deps: ApplyDeps): Promise<b
  * create there); the move is then wasted, never lossy: the next applied version overwrites it. A note still in flight leaves no head at all, so the name is re-read
  * for a moment: the peer commits a rename's marker and its note back to back. When the
  * note's version lands before the marker (a retry after a rename conflict), the destination
- * file is already here, `destinationTaken` keeps it, and the old name closes as before. */
+ * file is already here, `followRename` finds it taken, and the old name closes as before. */
 async function openedByNote(path: string, deps: ApplyDeps): Promise<boolean> {
   const headOf = deps.renameHeadOf;
   if (headOf === undefined) return false; // a rebuild has no transport to ask
