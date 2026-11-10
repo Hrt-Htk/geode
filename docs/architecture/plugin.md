@@ -454,15 +454,17 @@ the engine's own message, replaced with it when the rebuild fails and `Resync di
 crash left no message. A retry that fails before its head list still sees the marker a previous failure
 left, so it keeps the session stopped instead of restarting on rows that one may have changed.
 
-The marker is cleared by a completed resync (before its own restart, so a restart that throws leaves no
-marker: the rows are consistent by then, and that failure is answered with the dispose path), by leaving
-the vault, and by a new vault identity (`withVaultIdentity`: create or join). While it is set, every
+The marker is cleared by a completed resync (once the rebuilt rows are durable and before its own
+restart, so a restart that throws leaves no marker: the rows are consistent by then, and that failure is
+answered with the dispose path), by leaving the vault, and by a new vault identity (`withVaultIdentity`:
+create or join). While it is set, every
 session start lands on the stop: a reload and an unlock both come up showing `Resync stopped. <reason>`
 with Try again, and a held mass delete is still announced behind it. That state also outranks the user
 pause, because "changes upload when you resume" would be false with no session behind it; every other
-state keeps its usual order. Resync always drives its own transport (the session it disposes is about to
-be torn down, or never started for a paused vault), so Try again works with no session at all; a retry
-that cannot even start is shown as a stop, never only logged. A rebuild that can never complete is left
+state keeps its usual order. The rebuild builds its own transport and starts it only once the session's
+is stopped, so a held delete's reconnect and the rebuild never hold two live connections from one device
+(the server evicts the second as a duplicate); that also makes Try again work with no session at all. A
+retry that cannot even start is shown as a stop, never only logged. A rebuild that can never complete is left
 with one way out, like a stuck rejoin: leave the vault and join again.
 
 A rejoin whose cause cannot be fixed (no space for the backup folder, a file named `Geode backup` in the
@@ -631,13 +633,15 @@ everything (the transport reads disconnected by design). A stopped one outranks 
 a pause, a version refusal, a held delete or a real outage of the restarted session wins over it, and so
 does the outage banner, except for a rebuild that left no session behind (nothing retries then, so the
 stopped row is the whole answer). A stop keeps its reason until the next resync, a lock or a leave, and
-the persisted marker brings it back on the next reload or unlock. A reason from a failed head list is
-cut at 96 characters: a status row and a notice are not a place for dozens of hashes. Progress
+the persisted marker brings it back on the next reload or unlock. A failed head list reads as
+`1 file could not be downloaded.` / `N files could not be downloaded.`, with the engine's own message
+(and its path hashes) left in the log; any other reason longer than 96 characters is cut. Progress
 publishing is throttled to about four renders a second, with the first and last count always shown, and
 the palette joins a run already in flight instead of starting a second one. A run reports only to the
-session epoch it started in, bumped by `disposeRuntime` (a lock, a leave, an unload, a re-key lock; the
-rebuild's own teardown opts out) and by a new server address: a late settle cannot land in the next
-session. A rejoin shows the same running surfaces but keeps its own failure answer: the pause and its
+session epoch it started in, bumped by `disposeRuntime` (a lock, a leave, an unload, a re-key lock) and
+by `startUnlockedSession` (a re-key finish, a join, a new server address). The rebuild's own teardown and
+its recovery restart pass `keepEpoch`, so its run keeps reporting through them: a late settle cannot land
+in the next session. A rejoin shows the same running surfaces but keeps its own failure answer: the pause and its
 notice.
 
 **Modals & views**: setup wizard, passphrase/forgot, config scope, folders, conflicts, trash, history

@@ -104,9 +104,10 @@ function describeGated(
   now: number,
   backup: string,
 ): SyncStatusResult | null {
-  // #54 review: a marker stop has no session behind it, so "changes upload when you resume"
-  // would be false, and Try again is the only thing left to act on. It leads here, in the
-  // no-session state only; every other state keeps the order below.
+  // #54 review: in the no-session state a marker stop outranks the pause, the version
+  // refusal and the hold row: "changes upload when you resume" would be false, and Try again
+  // is the only thing left to act on (a held delete is still announced and keeps its banner).
+  // Every state that is not a marker stop keeps the order below.
   if (resyncStopsSync(i.resync)) return resyncResult(i.resync);
   if (i.pausedAt > 0) return describePaused(i, now);
   if (i.versionStatus.kind === "blocked") {

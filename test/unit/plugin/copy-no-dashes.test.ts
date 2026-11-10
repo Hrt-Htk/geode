@@ -58,6 +58,7 @@ import {
   resyncButtonText,
   resyncCopy,
   resyncDoneNotice,
+  resyncStopReason,
 } from "../../../plugin/ui/resync-status.ts";
 import { describeStorage, type StorageState } from "../../../plugin/ui/storage-status.ts";
 import { describeErrorBanner } from "../../../plugin/ui/sync-banner.ts";
@@ -364,6 +365,9 @@ Deno.test("copy-no-dashes - the resync surfaces (#54)", () => {
       resyncButtonText(state),
     ]),
     [0, 1, 4].map(resyncDoneNotice),
+    // #54: a failed head list reads as a count, never as path hashes.
+    resyncStopReason(new Error("resync failed for 1 file(s): aaaa")),
+    resyncStopReason(new Error("resync failed for 12 file(s): aaaa, bbbb")),
   ]);
 });
 

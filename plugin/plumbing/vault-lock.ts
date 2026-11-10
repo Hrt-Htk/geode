@@ -18,6 +18,7 @@ import {
   awaitStateWrites,
   disposeSession,
   openSessionState,
+  type SessionStartOptions,
   startUnlockedSession,
   type SyncSessionHost,
 } from "../session.ts";
@@ -52,7 +53,7 @@ export type VaultLockHost = SyncSessionHost & {
       setStoppedResync(reason: string): void;
     })
     | null;
-  restartUnlockedSession(existingState?: StateDB): Promise<void>;
+  restartUnlockedSession(existingState?: StateDB, opts?: SessionStartOptions): Promise<void>;
   /** #464: the in-memory keys changed (locked, left, re-keyed): close surfaces
    * that decrypt, so none of them runs on stale keys. */
   onKeysChanged?: () => void;
@@ -183,6 +184,7 @@ function clearKeyStore(host: VaultLockHost): void {
 export async function restartUnlockedSession(
   host: VaultLockHost,
   existingState?: StateDB,
+  opts?: SessionStartOptions,
 ): Promise<void> {
   // #54: a resync that may have changed rows and has not finished leaves sync stopped. A
   // session on those rows would read the files it never restored as local deletes (the
@@ -195,7 +197,7 @@ export async function restartUnlockedSession(
     host.statusBar?.setStoppedResync(host.pluginSettings.resyncStop);
     return;
   }
-  await startUnlockedSession(host, existingState);
+  await startUnlockedSession(host, existingState, opts);
 }
 
 export async function tryCachedKeys(host: VaultLockHost): Promise<boolean> {

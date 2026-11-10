@@ -47,6 +47,9 @@ function makeHost(
       saveLocalStorage: () => {},
       vault: {
         adapter: { readBinary: () => Promise.reject(new Error("no state file")) },
+        on: () => {},
+        off: () => {},
+        getAllLoadedFiles: () => [],
       },
       workspace: { onLayoutReady: () => {} },
     },
@@ -80,6 +83,15 @@ Deno.test("vault-lock - a teardown ends the resync epoch unless the run owns it"
   assertEquals(host.syncEpoch, 1, "lock, leave and unload end the run");
   disposeRuntime(host, { clearKeys: false, updateStatus: true, keepEpoch: true });
   assertEquals(host.syncEpoch, 1, "the rebuild's own teardown does not");
+});
+
+Deno.test("vault-lock - a session replaced by the shared start bumps the epoch, a recovery does not", async () => {
+  const calls: string[] = [];
+  const host = makeHost({}, calls);
+  await restartUnlockedSession(host);
+  assertEquals(host.syncEpoch, 1, "finishRekey, a join and an address change all end the run");
+  await restartUnlockedSession(host, undefined, { keepEpoch: true });
+  assertEquals(host.syncEpoch, 1, "the rebuild's own recovery restart keeps its epoch");
 });
 
 Deno.test("vault-lock - a re-key lock ends the run's epoch too", () => {

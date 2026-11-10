@@ -46,9 +46,9 @@ export interface SyncSessionStatusBar {
 export interface SyncSessionHost {
   keys: VaultKeys | null;
   pluginSettings: PluginSettings;
-  /** #54: bumped whenever this session ends or is replaced (disposeRuntime, a new server
-   * address). A resync run reports only to the epoch it started in, so a settle cannot land
-   * in the next session. */
+  /** #54: bumped whenever this session ends or is replaced (disposeRuntime,
+   * startUnlockedSession). A resync run reports only to the epoch it started in, so a settle
+   * cannot land in the next session. */
   syncEpoch: number;
   manifest: { version: string };
   app: {
@@ -163,10 +163,16 @@ export async function readActivityFile(host: SyncSessionHost): Promise<string | 
   }
 }
 
+/** #54: a rebuild's own recovery restart replaces the session it dropped, and stays part of
+ * the run that reports through it. */
+export type SessionStartOptions = { keepEpoch?: boolean };
+
 export async function startUnlockedSession(
   host: SyncSessionHost,
   existingState?: StateDB,
+  opts?: SessionStartOptions,
 ): Promise<void> {
+  if (!opts?.keepEpoch) host.syncEpoch += 1;
   if (!host.keys) throw new Error("vault must be unlocked");
   disposeSession(host);
   const state = existingState ?? await openSessionState(host);

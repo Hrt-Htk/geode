@@ -85,26 +85,22 @@ class ResyncProgress {
 }
 
 /** "Resync from scratch": the surfaces run with the rebuild, and a stop keeps its reason.
- * The run drives its own transport, as a rejoin does: the session it disposes is about to be
- * torn down (or was never started, a paused vault), so borrowing its transport can hand the
- * rebuild one with no client. */
+ * The rebuild builds and owns its transport (`null` here): it starts it only once the
+ * session's is stopped, so a held delete's reconnect and the rebuild never hold two live
+ * connections from one device at once. */
 export async function runResync(host: ResyncRunHost): Promise<void> {
   const progress = new ResyncProgress(host);
   progress.update({ current: 0, total: 0 });
-  const transport = startRebuildTransport(host);
   try {
-    const result = await rebuildVault(host, transport, {
+    const result = await rebuildVault(host, null, {
       onProgress: (p) => progress.update(p),
     });
     progress.done(result.appliedFiles);
   } catch (error) {
-    // Even a transport that could not be started is a visible stop, not only a log line.
     // A restart leaves a transport behind; a rebuild that stopped for good leaves none, and
     // then the stopped state is the only thing telling sync's own story.
     progress.failed(resyncStopReason(error), host.transport === null);
     throw error;
-  } finally {
-    transport.stop();
   }
 }
 

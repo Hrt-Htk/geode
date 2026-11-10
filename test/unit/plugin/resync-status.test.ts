@@ -97,15 +97,30 @@ Deno.test("resync-status - progress renders at most about four times a second", 
   assertEquals(resyncRenderDue(p(822), start, start + 1, 1), true);
 });
 
-Deno.test("resync-status - a failed head list cannot stretch the row or the notice", () => {
+Deno.test("resync-status - a failed head list reads as a count, never as path hashes", () => {
   const hashes = Array.from({ length: 40 }, (_, i) => `${i}`.padStart(64, "a")).join(", ");
-  const long = {
+  const message = `resync failed for 40 file(s): ${hashes}`;
+  assertEquals(resyncStopReason(new Error(message)), "40 files could not be downloaded.");
+  assertEquals(
+    resyncStopReason(new Error("resync failed for 1 file(s): aaaa")),
+    "1 file could not be downloaded.",
+  );
+  // The engine keeps the hashes; the row and the notice show the count.
+  const stopped = {
     phase: "failed",
-    reason: `resync failed for 40 file(s): ${hashes}`,
+    reason: resyncStopReason(new Error(message)),
     syncStopped: true,
   } as const;
+  assertEquals(resyncCopy(stopped), {
+    notice: "Geode: resync stopped. 40 files could not be downloaded.",
+    tooltip: "Geode: resync stopped. 40 files could not be downloaded.",
+    row: "Resync stopped. 40 files could not be downloaded.",
+  });
+});
+
+Deno.test("resync-status - any other long reason is cut, not dumped", () => {
+  const long = { phase: "failed", reason: "x".repeat(400), syncStopped: true } as const;
   const copy = resyncCopy(long);
   assertEquals(copy.row.length <= 120, true, `row stays short: ${copy.row.length}`);
   assertEquals(copy.notice.endsWith("…"), true, "cut with an ellipsis");
-  assertEquals(copy.row.includes("resync failed for 40 file(s): aaaa"), true);
 });

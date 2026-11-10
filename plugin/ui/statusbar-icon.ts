@@ -71,9 +71,9 @@ export function resolveIcon(i: IconInput): IconState {
   // icon for the whole run.
   if (i.resync?.phase === "running") return resyncIconState(i.resync);
 
-  // #54 review: a rebuild that left sync stopped has no session behind it, so the stopped
-  // state speaks for sync here, ahead of a pause that would promise uploads. Every other
-  // state keeps the order below.
+  // #54 review: in the no-session state a marker stop outranks the pause, the version
+  // refusal and the hold icon: nothing else can be acted on but Try again (a held delete is
+  // still announced and keeps its banner). Every other state keeps the order below.
   if (resyncStopsSync(i.resync)) return resyncIconState(i.resync);
 
   if (i.pausedAt > 0) return pausedIcon(i.pausedAt, i.now);

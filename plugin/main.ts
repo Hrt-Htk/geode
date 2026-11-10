@@ -61,6 +61,7 @@ import {
   pauseSessionSync,
   readActivityFile,
   resumeSessionSync,
+  type SessionStartOptions,
   writeActivityFile,
   writePluginDataFile,
 } from "./session.ts";
@@ -117,8 +118,9 @@ export default class GeodePlugin extends Plugin {
   adminToken: string | null = null;
   lastBackupAt = 0;
   blockedNoticeShown = false;
-  /** #54: bumped by every session boundary (see disposeRuntime/startUnlockedSession), so a
-   * resync run still settling cannot project its stop into the next session. */
+  /** #54: bumped by every session boundary (`disposeRuntime` ends one, `startUnlockedSession`
+   * replaces one), so a resync run still settling cannot project its stop into the next
+   * session. A rebuild's own recovery restart keeps it. */
   syncEpoch = 0;
   private syncingProgress: { current: number; total: number } | null = null;
   deferredStartCleanup: (() => void) | null = null;
@@ -538,12 +540,12 @@ export default class GeodePlugin extends Plugin {
   async exportDecryptedVault(targetDir: string): Promise<void> {
     await exportVaultFlow(this, targetDir);
   }
-  restartUnlockedSession(existingState?: StateDB): Promise<void> {
+  restartUnlockedSession(existingState?: StateDB, opts?: SessionStartOptions): Promise<void> {
     // #701: a failed rejoin left the old rows armed: finish the rejoin, never start a
     // session that would replay them. A successful rejoin clears the marker first, so the
     // restart inside the rebuild takes this branch once, not in a loop.
     if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
-    return restartUnlockedSession(this, existingState);
+    return restartUnlockedSession(this, existingState, opts);
   }
   // #424: save the new server address and apply it live: restart the unlocked
   // session against the new URL (vault stays unlocked, cursor kept). A later
@@ -556,8 +558,6 @@ export default class GeodePlugin extends Plugin {
       this.pluginSettings.serverUrl = url;
       await this.saveSettings();
       if (!this.isUnlocked) return;
-      // #54: the session a resync may be reporting to is replaced here.
-      this.syncEpoch += 1;
       await this.restartUnlockedSession();
     };
     const run = this.serverAddressChain.then(apply);

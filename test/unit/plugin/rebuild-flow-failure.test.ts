@@ -220,6 +220,38 @@ Deno.test("rebuild-flow - a held paused rebuild is refused before it touches any
   assertEquals(settings.massDeleteHold?.files.length, 1);
 });
 
+Deno.test("rebuild-flow - the rebuild's own transport starts after the session's is stopped", async () => {
+  const { host, settings } = makeHost();
+  settings.massDeleteHold = {
+    files: [{ path: "a.md", mtime: 1 }],
+    totalTracked: 30,
+    detectedAt: 5,
+  };
+  const order: string[] = [];
+  host.transport = {
+    isLive: () => true,
+    stop: () => order.push("session-stopped"),
+    retryNow: () => {},
+  } as unknown as NonNullable<Host["transport"]>;
+  const own = {
+    stop: () => order.push("own-stopped"),
+    getHeads: async function* () {},
+    getBlob: () => Promise.reject(new Error("unused")),
+    getVersionChain: () => Promise.resolve([]),
+  } as unknown as Transport;
+
+  await rebuildVault(host, null, {
+    createTransport: () => {
+      order.push("own-started");
+      return own;
+    },
+  });
+
+  // One handshake at a time: the held delete's reconnect uses the session's transport, and
+  // the rebuild starts its own only once that one is stopped.
+  assertEquals(order, ["session-stopped", "own-started", "own-stopped"]);
+});
+
 Deno.test("rebuild-flow - a completed rebuild whose restart throws leaves no marker", async () => {
   const { host, settings } = makeHost();
   host.restartUnlockedSession = () => Promise.reject(new Error("restart blew up"));

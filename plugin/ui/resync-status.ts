@@ -78,11 +78,19 @@ export const RESYNC_UNFINISHED = "Resync did not finish.";
 /** Connection-level failures have no message worth showing: the approved copy names the
  * one thing the user can act on. Every other failure keeps its own message. */
 const UNREACHABLE = /net::ERR_|Failed to fetch|fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/;
+/** The rebuild engine's own words for heads it could not restore: a path hash per file. */
+const FAILED_HEADS = /^resync failed for (\d+) file\(s\)/;
 
 export function resyncStopReason(error: unknown): string {
   const message = (error instanceof Error ? error.message : String(error)).trim();
   // A crash mid rebuild leaves the marker without a reason: say that, never nothing.
   if (message === "") return RESYNC_UNFINISHED;
+  const failed = FAILED_HEADS.exec(message);
+  if (failed) {
+    const count = Number(failed[1]);
+    // The hashes stay in the log; the user gets the count.
+    return `${count} file${count === 1 ? "" : "s"} could not be downloaded.`;
+  }
   return UNREACHABLE.test(message) ? "Server unreachable." : message;
 }
 

@@ -6,7 +6,7 @@ import { Transport } from "./transport.ts";
 import { formatError, log } from "../plumbing/log.ts";
 import { isSyncable, type PluginSettings } from "../plumbing/settings-types.ts";
 import type { StateDB } from "../plumbing/state.ts";
-import { openSessionState, reconnectAndWaitLive } from "../session.ts";
+import { awaitStateWrites, openSessionState, reconnectAndWaitLive } from "../session.ts";
 import { disposeRuntime, type VaultLockHost } from "../plumbing/vault-lock.ts";
 import { rebuildFromScratch, type RecoveryStats, type ResyncDeps } from "./recovery.ts";
 import { RESYNC_UNFINISHED } from "../ui/resync-status.ts";
@@ -44,17 +44,21 @@ type RebuildOptions = {
   rejoin?: boolean;
   /** #54: once per head, so the caller can show how far the rebuild got. */
   onProgress?: (progress: { current: number; total: number }) => void;
+  /** With no transport passed, the rebuild builds its own (default: a bare one carrying this
+   * device's credentials). Injected so a test can watch when it starts. */
+  createTransport?: (host: RebuildHost) => Transport;
 };
 
 /** The rebuild both entry points run, on the persisted rows: the only witness of what
  * this device last agreed on. */
 export async function rebuildVault(
   host: RebuildHost,
-  transport: Transport,
+  transport: Transport | null,
   opts: RebuildOptions = {},
 ): Promise<RecoveryStats> {
   const rejoin = opts.rejoin === true;
   const onProgress = opts.onProgress;
+  const createTransport = opts.createTransport ?? startRebuildTransport;
   if (!host.keys) throw new Error("vault must be unlocked before resync");
   // #601: the hold stays in force until the rebuild has RETURNED: a rebuild that dies
   // half-way leaves rows open, and releasing the hold here would let the next start sync
@@ -66,6 +70,10 @@ export async function rebuildVault(
     await reconnectAndWaitLive(host);
   }
   let freshState: StateDB | null = null;
+  /** The rebuild's own transport, when the caller has none: it is started only after a held
+   * delete's reconnect, so two live transports from one device never meet (the server evicts
+   * the second as a duplicate). */
+  let ownTransport: Transport | null = null;
   /** The rebuild finished: its rows are consistent, whatever happens to the restart. */
   let completed = false;
   try {
@@ -74,9 +82,12 @@ export async function rebuildVault(
     // them. Both are inside the try so a failure here stops sync too.
     disposeRuntime(host, { clearKeys: false, updateStatus: true, keepEpoch: true });
     freshState = await openSessionState(host);
+    // The session's transport is stopped by now, so the rebuild's own is the only handshake.
+    const active = rebuildTransport(host, transport, createTransport);
+    ownTransport = active.own;
     const result = await rebuildFromScratch({
       vault: host.app.vault as unknown as ResyncDeps["vault"],
-      transport,
+      transport: active.transport,
       state: freshState,
       keys: host.keys,
       vaultId: host.pluginSettings.vaultId,
@@ -99,26 +110,54 @@ export async function rebuildVault(
       latestSeq: result.latestSeq,
       backedUp: result.backup?.count ?? 0,
     });
-    if (held) {
-      host.pluginSettings.massDeleteHold = null;
-      host.statusBar?.setMassDeleteHold(null);
-      await host.saveSettings();
-    }
-    if (rejoin) await finishRejoin(host);
-    // #54: the rows are consistent again, so the stop must not survive this run's own
-    // restart: a crash from here on starts a normal session on rebuilt rows.
-    await setResyncMarker(host, null);
+    await finishRebuild(host, freshState, { held, rejoin });
     completed = true;
-    await host.restartUnlockedSession(freshState);
     return result;
   } catch (error) {
     if (rejoin) await pauseForIncompleteRejoin(host, freshState);
-    else if (completed) disposeRuntime(host, { clearKeys: false, updateStatus: true });
-    else if (host.pluginSettings.resyncStop !== "") {
+    // The rebuild finished and only its restart threw: answer through the teardown, and keep
+    // the run's epoch so its stop shows instead of a session-less "Offline. Retrying".
+    else if (completed) {
+      disposeRuntime(host, { clearKeys: false, updateStatus: true, keepEpoch: true });
+    } else if (host.pluginSettings.resyncStop !== "") {
       await setResyncMarker(host, failureMessage(error));
     } else await restartAfterFailedRebuild(host, freshState);
     throw error;
+  } finally {
+    ownTransport?.stop();
   }
+}
+
+/** The transport a rebuild runs over: the caller's, or the one it starts itself. Built after
+ * the session's transport is stopped, so one device never holds two live connections. */
+function rebuildTransport(
+  host: RebuildHost,
+  passed: Transport | null,
+  create: (host: RebuildHost) => Transport,
+): { transport: Transport; own: Transport | null } {
+  if (passed) return { transport: passed, own: null };
+  const own = create(host);
+  return { transport: own, own };
+}
+
+/** The success path after the head loop: release the held delete, finish a rejoin, make the
+ * rebuilt rows durable, clear the stop and restart the session on them. */
+async function finishRebuild(
+  host: RebuildHost,
+  state: StateDB,
+  opts: { held: boolean; rejoin: boolean },
+): Promise<void> {
+  if (opts.held) {
+    host.pluginSettings.massDeleteHold = null;
+    host.statusBar?.setMassDeleteHold(null);
+    await host.saveSettings();
+  }
+  if (opts.rejoin) await finishRejoin(host);
+  // #54: the rows are consistent again, and durable before the marker goes: a crash from
+  // here on starts a normal session on rebuilt rows and must not find the stop.
+  await awaitStateWrites();
+  await setResyncMarker(host, null);
+  await host.restartUnlockedSession(state, { keepEpoch: true });
 }
 
 /** #701: clear the marker that would send the next session back here, and lift the pause
@@ -163,7 +202,7 @@ async function restartAfterFailedRebuild(
 ): Promise<void> {
   if (!state) return;
   try {
-    await host.restartUnlockedSession(state);
+    await host.restartUnlockedSession(state, { keepEpoch: true });
   } catch (error) {
     log.error("rebuild restart failed", { error: formatError(error) });
     // #54 review: a restart can die after it created the transport. Leave the truth (nothing

@@ -21,7 +21,12 @@ import { deriveKeys, VaultKeys } from "../core/crypto.ts";
 import { DEFAULT_SETTINGS, isSyncable, PluginSettings } from "../plugin/plumbing/settings-types.ts";
 import { b64decode, b64encode } from "../core/protocol.ts";
 import { type HelloRekeyDecision } from "../plugin/sync/rekey-signal.ts";
-import { disposeSession, pauseSessionSync, reconnectAndWaitLive } from "../plugin/session.ts";
+import {
+  disposeSession,
+  pauseSessionSync,
+  reconnectAndWaitLive,
+  type SessionStartOptions,
+} from "../plugin/session.ts";
 import { rebuildVault, rejoinAction, startRebuildTransport } from "../plugin/sync/rebuild-flow.ts";
 import {
   enterRekeyLockedState,
@@ -446,14 +451,14 @@ export class TestPlugin {
     }
   }
 
-  restartUnlockedSession(existingState?: StateDB): Promise<void> {
+  restartUnlockedSession(existingState?: StateDB, opts?: SessionStartOptions): Promise<void> {
     // Mirrors GeodePlugin.restartUnlockedSession: an incomplete rejoin finishes instead of
     // starting a session over the rows it left armed.
     if (rejoinAction(this.pluginSettings) === "rejoin") {
       return this.rejoinOverOldCopy().then(() => {});
     }
     // The shared path (#701/#54): a resync marker keeps the session stopped.
-    return restartSession(this, existingState).then(() => {
+    return restartSession(this, existingState, opts).then(() => {
       // Nothing goes live behind a marker: release the test's live-wait the way a held
       // device does. Otherwise re-attach the listeners to the fresh Transport.
       if (this.pluginSettings.resyncStop !== "") this.liveResolve();
