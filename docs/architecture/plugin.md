@@ -726,6 +726,8 @@ leaves its row bare: `Deleted`, `Restored from trash`.
 as wide as the phone (the desktop sizing no longer overrides it); the rows are `--touch-size-s` tap
 targets. The title wraps in the space left of ✕, the list or the preview takes the rest of the height
 (the list scrolls; Back opens the preview), and the two-pane sizing stays behind `body:not(.is-phone)`.
+The code splits the window the way the styles do: `history-view.ts` `singlePane(Platform)` asks
+`Platform.isPhone`, not `isMobile`, so a tablet keeps the desktop two-pane window (#24).
 
 **Admin token gate** (`ui/admin-token-modal.ts`): `withAdminToken(host, ask, onOk)` runs a privileged
 action with the session's in-memory admin token, prompting for it (validated against the server, never
@@ -793,3 +795,6 @@ reviewer can check against those gates:
 - Phone history fits: the title stays clear of ✕, no row or toolbar button is cut, and the list or the
   preview takes over half the screen height
   (`test/e2e/scenarios/file-history.phone.spec.ts`).
+- Tablet history is the desktop window: the list at 40% with the preview beside it, nothing empty on
+  the right, no Back button (`test/e2e/scenarios/file-history-tablet.phone.spec.ts`, which runs with
+  `GEODE_TABLET=1`).
