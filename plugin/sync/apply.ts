@@ -20,13 +20,7 @@ import {
   type Vault,
   writeVaultBinary,
 } from "./vault-io.ts";
-import {
-  carryLocalEdit,
-  dropOldName,
-  dropOldSpelling,
-  followRename,
-  freeConflictPath,
-} from "./rename-carry.ts";
+import { carryLocalEdit, dropOldSpelling, followRename, freeConflictPath } from "./rename-carry.ts";
 
 export interface ApplyDeps {
   vault: Vault;
@@ -47,8 +41,9 @@ export interface ApplyDeps {
   recordActivity?: ActivityRecord;
   /** #342: folder scope; out-of-scope versions are skipped (cursor still advances). */
   isSyncable?: (path: string) => boolean;
-  /** #583: names a conflict file kept next to a renamed file. */
-  deviceName?: string;
+  /** #583: names a conflict file kept next to a renamed file. Required: a caller that
+   * forgets it writes the fallback label into a name that syncs to every device (#55). */
+  deviceName: string;
   /** #583: a closed destination is only reusable when the server has no marker on
    * it (a marker means it was renamed away again: writing there would loop). */
   renameHeadOf?: (
@@ -351,16 +346,12 @@ async function followCarriedEdit(from: string, to: string, deps: ApplyDeps): Pro
   if (from === to || !row || row.deleted || row.last_seen_version !== 0) return;
   const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, deps);
   if (carried.kind === "none") return;
-  // #55: the new name already holds these bytes, so nothing was carried. The abandoned
-  // name still closes, or its file would be committed again as a new note there.
-  if (carried.kind === "same") {
-    await dropOldName(from, to, deps);
-    deps.state.closeLocalRow(from, row.path_hash, row.last_seen_version);
-    log.info("carried edit is already at the note's new name", { from, to });
-    return;
-  }
   deps.state.closeLocalRow(from, row.path_hash, row.last_seen_version);
-  deps.markLocalEdit(carried.kind === "kept" ? carried.conflictPath : carried.to);
+  // #55: "same" carried nothing (the carry emptied the abandoned name), so the version
+  // landing at `to` is the note itself, not an edit to merge there.
+  if (carried.kind !== "same") {
+    deps.markLocalEdit(carried.kind === "kept" ? carried.conflictPath : carried.to);
+  }
   log.info("carried edit follows the note to its new name", { from, to, carried: carried.kind });
 }
 

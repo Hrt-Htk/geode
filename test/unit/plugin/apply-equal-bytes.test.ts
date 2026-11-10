@@ -84,6 +84,7 @@ async function harness(withBlobs: boolean): Promise<Harness> {
     onConflict: () => {},
     markLocalEdit: () => {},
     myDeviceId: "device-a",
+    deviceName: "Laptop",
     suppressSelfWrite: () => {},
     pendingRenameTarget: () => undefined,
   };

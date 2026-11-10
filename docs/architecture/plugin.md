@@ -354,9 +354,13 @@ follows its own name. Wire rename, row bookkeeping, merge and cursor advance are
 
 **A carry that finds its own bytes at the destination carries nothing (#55).** A case-only rename on
 a case-insensitive filesystem is one inode under both names, so the pending edit read at the old
-spelling is the destination's own file: `carryLocalEdit` compares the two by content identity and
-answers "same" instead of keeping a sibling that would sync as a duplicate note. The caller then
-closes the old spelling as before (case-only: drop it without taking the new spelling with it).
+spelling is the destination's own file: `carryLocalEdit` compares the two by content identity, each
+hashed under its own name (a rename that changes markdown-ness is never "the same bytes"), and answers
+"same" instead of keeping a sibling that would sync as a duplicate note. The bytes decide, not the
+destination's row: its own head may have applied first. The renamed-away name is emptied in every
+outcome, so the caller only closes its row: a file left there is re-derived as a new note beside the
+real one on each reconcile pass. Before a separate old file goes, the destination is re-read; when a
+peer wrote there since the match, both are kept in a sibling instead.
 
 **When a clean note follows.** The old file moves onto the destination only while the server's head
 there is open, meaning no marker closed it. An open head need not be this rename's note; the move is

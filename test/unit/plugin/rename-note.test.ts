@@ -30,6 +30,7 @@ import { type PendingOp, VaultEventHandler } from "../../../plugin/sync/events.t
 import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import type { CommitRequest, CommitResult } from "../../../plugin/sync/commit-channel.ts";
 import type { VersionRecord } from "../../../core/protocol.ts";
+import { diskVault } from "../../helpers/disk-vault.ts";
 
 const FAST = { opsLimit: 1, memLimit: 8192 };
 
@@ -72,38 +73,6 @@ function stubTransport(
   return { transport, commits };
 }
 
-/** A mutable disk with optional case-insensitive path matching (a real APFS/NTFS
- * vault holds one inode for "a.md" and "A.md"). */
-function diskVault(files: Record<string, string>, opts: { caseInsensitive?: boolean } = {}) {
-  const disk = new Map(Object.entries(files));
-  const key = (p: string) => {
-    if (!opts.caseInsensitive) return p;
-    for (const k of disk.keys()) if (k.toLowerCase() === p.toLowerCase()) return k;
-    return p;
-  };
-  return {
-    getAbstractFileByPath: (p: string) => (disk.has(key(p)) ? { path: key(p) } : null),
-    adapter: {
-      readBinary: (p: string) => {
-        const body = disk.get(key(p));
-        if (!body) return Promise.reject(new Error(`missing: ${p}`));
-        return Promise.resolve(new TextEncoder().encode(body));
-      },
-      writeBinary: (p: string, data: Uint8Array) => {
-        disk.set(p, new TextDecoder().decode(data));
-        return Promise.resolve();
-      },
-      remove: (p: string) => {
-        disk.delete(key(p));
-        return Promise.resolve();
-      },
-      exists: (p: string) => Promise.resolve(disk.has(key(p))),
-      stat: (p: string) => Promise.resolve(disk.has(key(p)) ? { size: 1, mtime: 4 } : null),
-    },
-    disk,
-  };
-}
-
 async function markerVersion(
   keys: VaultKeys,
   meta: FileMeta,
@@ -140,6 +109,7 @@ function applyDepsFor(
     onConflict: () => {},
     markLocalEdit: () => {},
     myDeviceId: "dev-self",
+    deviceName: "Laptop",
     suppressSelfWrite: () => {},
     pendingRenameTarget: () => undefined,
     ...over,
@@ -696,8 +666,81 @@ Deno.test("rename-note - a carry whose bytes match the destination keeps no copy
   });
 
   assertEquals(carried, { kind: "same" });
-  assertEquals([...vault.disk.keys()].sort(), [from, to].sort(), "no conflict copy");
+  assertEquals([...vault.disk.keys()], [to], "no conflict copy, and the old name is emptied");
   assertEquals(vault.disk.get(to), "same", "the destination is untouched");
+  state.close();
+});
+
+Deno.test("rename-note - a carry changing markdown-ness is never the same content", async () => {
+  const keys = await keysFor();
+  const state = openStateDB();
+  const from = "board.md";
+  const to = "board.canvas";
+  state.upsertLocalFile({
+    path: from,
+    path_hash: hashPathHex(keys.mac_key, from),
+    size: 12,
+    mtime: 1,
+    plaintext_hash: "old",
+    last_seen_version: 1,
+    chunk_hashes: [],
+  });
+  // One side is markdown, the other is not: normalizing both under the closed name would
+  // read these two different files as the same bytes and drop the note.
+  const vault = diskVault({ [from]: "line1\nline2\n", [to]: "line1\r\nline2\r\n" });
+
+  const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, {
+    pendingRenameTarget: () => undefined,
+    vault: vault as never,
+    state,
+    keys,
+    suppressSelfWrite: () => {},
+  });
+
+  assertEquals(carried.kind, "kept", "different files are both kept");
+  assertEquals(vault.disk.get(to), "line1\r\nline2\r\n", "the destination keeps its bytes");
+  const copy = (carried as { conflictPath: string }).conflictPath;
+  assertEquals(vault.disk.get(copy), "line1\nline2\n", "the note's bytes are kept beside it");
+  state.close();
+});
+
+Deno.test("rename-note - a destination that moved on after the match keeps both", async () => {
+  const keys = await keysFor();
+  const state = openStateDB();
+  const from = "a.md";
+  const to = "b.md";
+  state.upsertLocalFile({
+    path: from,
+    path_hash: hashPathHex(keys.mac_key, from),
+    size: 4,
+    mtime: 1,
+    plaintext_hash: "old",
+    last_seen_version: 1,
+    chunk_hashes: [],
+  });
+  const vault = diskVault({ [from]: "same", [to]: "same" });
+  // A peer writes the destination between the carry's match and its removal: the edit then
+  // has no copy at the destination, so removing the old name would lose it.
+  const read = vault.adapter.readBinary;
+  let reads = 0;
+  vault.adapter.readBinary = async (path: string) => {
+    const bytes = await read(path);
+    if (path === to && ++reads === 1) vault.disk.set(to, "theirs");
+    return bytes;
+  };
+
+  const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, {
+    pendingRenameTarget: () => undefined,
+    vault: vault as never,
+    state,
+    keys,
+    suppressSelfWrite: () => {},
+  });
+
+  assertEquals(carried.kind, "kept", "the edit is kept instead of dropped");
+  assertEquals(vault.disk.get(to), "theirs", "the peer's bytes stay at the destination");
+  const copy = (carried as { conflictPath: string }).conflictPath;
+  assertEquals(vault.disk.get(copy), "same", "the edit survives in the sibling");
   state.close();
 });
 

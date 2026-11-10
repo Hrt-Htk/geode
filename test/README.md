@@ -16,7 +16,7 @@ One line per directory; the naming convention at the bottom is the rule, not a s
 | `e2e/helpers/` | Spec-level helpers: waits, shots, mobile UI, interrupt/relaunch, rekey runs. `*.deno.ts` are scripts spawned, never imported. |
 | `e2e/scenarios/` | The Playwright specs (projects `default`, `phone`, `hybrid`, `docs`), flat. |
 | `e2e/screenshots/` | Screenshot output, gitignored: `<spec>/<project>/`. The committed product images are `docs/screenshots/`, written by the `docs` project (`deno task docs:screenshots`). |
-| `helpers/` | Shared Deno-test helpers: byte equality + the mass-delete guard (`bytes.ts`), `serveOnPortZero`, `makeTempDataDir`. |
+| `helpers/` | Shared Deno-test helpers: byte equality + the mass-delete guard (`bytes.ts`), the vault and server-head doubles (`disk-vault.ts`, `head-record.ts`), `serveOnPortZero`, `makeTempDataDir`. |
 | `two-vault-driver.ts` | The scenario harness every `scenarios/` and many `unit/plugin/` tests import. |
 
 ## Naming convention

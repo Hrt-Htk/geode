@@ -104,6 +104,7 @@ Deno.test({
       onConflict: () => {},
       markLocalEdit: () => {},
       myDeviceId,
+      deviceName: "Laptop",
       suppressSelfWrite: () => {},
     });
 

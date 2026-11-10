@@ -6,6 +6,7 @@ import { toUint8Array } from "../plumbing/bytes.ts";
 import { log } from "../plumbing/log.ts";
 import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { enumerateDisk } from "./enumerate-disk.ts";
+import { plaintextHashOf, readVaultBinary } from "./vault-io.ts";
 import { existsOnDisk, nextRenameId, type RenameLink } from "./commit.ts";
 import { type MassDeleteGuard, shouldHoldMassDelete } from "./mass-delete-hold.ts";
 import { windowGlobal } from "../plumbing/window.ts";
@@ -225,12 +226,8 @@ export class Reconciler {
   /** The identity hash a create would commit under (markdown normalized, exactly as
    * `commit` and the tracked rows compute it). Unreadable ⇒ not a rename candidate. */
   private async contentHash(path: string): Promise<string | null> {
-    try {
-      const raw = toUint8Array(await this.vault.adapter.readBinary(path));
-      return blake3Hex(normalizeForHash(path, raw));
-    } catch {
-      return null;
-    }
+    const raw = await readVaultBinary(path, this.vault);
+    return raw === null ? null : plaintextHashOf(path, raw);
   }
 
   /** Tracked files missing from disk, verified gone by stat. Rows already marked

@@ -4,12 +4,12 @@
 
 import { RENAME_MARKER } from "../../core/protocol.ts";
 import { VaultKeys } from "../../core/crypto.ts";
-import { blake3Hex, hashPathHex } from "../../core/hash.ts";
-import { normalizeForHash } from "../../core/normalize.ts";
+import { hashPathHex } from "../../core/hash.ts";
 import { StateDB } from "../plumbing/state.ts";
 import { log } from "../plumbing/log.ts";
 import { generateConflictPath } from "./conflicts.ts";
 import {
+  plaintextHashOf,
   readVaultBinary,
   removeVaultPath,
   renameableFile,
@@ -46,8 +46,8 @@ type RenameCarryDeps = {
 /** #583 (decision 2): carry this device's uncommitted edit from a path the server
  * closed as a rename to the name its marker points at. A taken destination keeps both:
  * the destination holds its own bytes, the edit goes to a sibling conflict file, and
- * the renamed-away name is always left empty (never resurrected). A destination that
- * already holds this edit carries nothing (#55). */
+ * the renamed-away name is always left empty (never resurrected, whatever the outcome).
+ * A destination that already holds this edit carries nothing (#55). */
 export async function carryLocalEdit(
   closed: { path: string; renamedTo?: string; pendingEdit: boolean },
   deps: RenameCarryDeps,
@@ -56,39 +56,55 @@ export async function carryLocalEdit(
   const { path: from, renamedTo: to } = closed;
   const body = await readVaultBinary(from, deps.vault);
   if (body === null) return { kind: "none" };
+  // The name's own bookkeeping first: it answers without a disk read.
+  if (await nameRefusesCarry(to, deps)) return await keepNextToDestination(from, to, body, deps);
   const atDestination = await readVaultBinary(to, deps.vault);
-  // Nothing was carried: the bytes are already at the destination. A case-only rename on
-  // a case-insensitive filesystem is one inode under both names, so the "pending edit"
-  // read there is the destination's own file (#55).
-  if (atDestination !== null && sameContent(from, body, atDestination)) return { kind: "same" };
-  if (await destinationTaken(to, deps, atDestination)) {
+  // Nothing is carried when the destination holds this edit (a case-only rename is one
+  // inode under both names on a case-insensitive disk), but the abandoned name is emptied
+  // all the same: a file left there is re-derived as a new note beside the real one.
+  if (atDestination !== null && sameContent(from, to, body, atDestination)) {
+    // A peer may have written the destination since that read: the removal would then have
+    // no copy to fall back on, so both are kept instead.
+    if (await stillHoldsContent(from, to, body, deps)) {
+      await dropOldName(from, to, deps);
+      log.info("carried edit is already at the new name", { from, to });
+      return { kind: "same" };
+    }
+    return await keepNextToDestination(from, to, body, deps);
+  }
+  if (atDestination !== null || deps.state.getLocalFile(to)?.deleted === false) {
     return await keepNextToDestination(from, to, body, deps);
   }
   await moveNextToDestination(from, to, body, deps);
   return { kind: "moved", to };
 }
 
-/** The content identity the rest of the pipeline compares (markdown line endings and BOM
- * normalized, both sides under the closed name), so a CRLF save of the same note counts
- * as the same bytes. */
-function sameContent(path: string, left: Uint8Array, right: Uint8Array): boolean {
-  return blake3Hex(normalizeForHash(path, left)) === blake3Hex(normalizeForHash(path, right));
+/** One content identity for both sides, each hashed under its own name: a rename that
+ * changes markdown-ness (`x.md` → `x.canvas`) must not read two different files as the
+ * same bytes. */
+function sameContent(from: string, to: string, left: Uint8Array, right: Uint8Array): boolean {
+  return plaintextHashOf(from, left) === plaintextHashOf(to, right);
 }
 
-/** Is the destination held by something else (a name this device is renaming away, a
- * live row, a file, or a name the server renamed away again)? `onDisk` is the
- * destination's bytes as the carry read them. */
-async function destinationTaken(
+/** #55: the destination must still hold this edit before the old name goes. A case-only
+ * removal needs no re-read: it verifies the destination itself and puts its bytes back. */
+async function stillHoldsContent(
+  from: string,
   to: string,
+  body: Uint8Array,
   deps: RenameCarryDeps,
-  onDisk: Uint8Array | null,
 ): Promise<boolean> {
-  // This device is closing the name right now: writing the edit there re-creates it.
+  if (isCaseOnlyPath(from, to)) return true;
+  const again = await readVaultBinary(to, deps.vault);
+  return again !== null && sameContent(from, to, body, again);
+}
+
+/** The destination's bookkeeping refuses the edit: a name this device is closing right now,
+ * or one the server renamed away again (writing there would walk a rename cycle). */
+async function nameRefusesCarry(to: string, deps: RenameCarryDeps): Promise<boolean> {
   if (deps.pendingRenameTarget(to) !== undefined) return true;
   const row = deps.state.getLocalFile(to);
-  if (row !== null && !row.deleted) return true;
-  if (row?.deleted === true && !await closedDestinationIsFree(to, deps)) return true;
-  return onDisk !== null;
+  return row?.deleted === true && !await closedDestinationIsFree(to, deps);
 }
 
 /** Keep both: the destination row is left alone (its version and hash stay valid) and
@@ -140,7 +156,13 @@ export async function followRename(
   to: string,
   deps: RenameCarryDeps,
 ): Promise<boolean> {
-  if (await destinationTaken(to, deps, await readVaultBinary(to, deps.vault))) return false;
+  const onDisk = await readVaultBinary(to, deps.vault);
+  if (
+    onDisk !== null || deps.state.getLocalFile(to)?.deleted === false ||
+    await nameRefusesCarry(to, deps)
+  ) {
+    return false;
+  }
   if (!await moveByRename(from, to, deps)) return false;
   // The destination stays tracked while the note is in flight: an untracked file would be
   // reconciled as a new one, and a second marker for that name must read it as taken. The
@@ -206,7 +228,7 @@ export async function freeConflictPath(
 /** Drop the renamed-away name. A case-only rename is one inode on a case-insensitive
  * filesystem, so there the removal is verified and the bytes are put back at the new
  * spelling if it went with it. */
-export async function dropOldName(from: string, to: string, deps: RenameCarryDeps): Promise<void> {
+async function dropOldName(from: string, to: string, deps: RenameCarryDeps): Promise<void> {
   if (isCaseOnlyPath(from, to)) return await dropOldSpelling(from, to, deps);
   deps.suppressSelfWrite(from);
   await removeVaultPath(from, deps.vault);
