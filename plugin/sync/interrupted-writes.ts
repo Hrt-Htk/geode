@@ -21,24 +21,32 @@ export interface InterruptedWriteDeps {
   chainHead: (pathHash: string) => Promise<VersionRecord | null>;
 }
 
-/** Resolve every recorded write from a killed session. Nothing survives the pass: a record
- * never outlives the start that read it, so no path can be frozen by a stale entry. */
+/** Resolve every recorded write from a killed session. A resolved entry (any of the
+ * outcomes below) is cleared; one whose resolution failed, because the server could not
+ * answer or a vault write errored, stays recorded and gated, and the next connection tries
+ * again. That is not a frozen path: it only waits while nothing can sync anyway. */
 export async function resolveInterruptedWrites(deps: InterruptedWriteDeps): Promise<void> {
   const entries = deps.state.getInterruptedWrites();
   if (entries.length === 0) return;
+  const resolved: string[] = [];
   let torn = 0;
   for (const entry of entries) {
     try {
       if (await resolveOne(entry, deps)) torn++;
+      resolved.push(entry.path_hash);
     } catch (error) {
-      log.warn("interrupted write left as it is", {
+      log.warn("interrupted write not resolved, retrying at the next connection", {
         path: entry.path,
         error: error instanceof Error ? error.message : String(error),
       });
     }
   }
-  await deps.state.clearInterruptedWrites();
-  log.info("resolved interrupted writes", { entries: entries.length, torn });
+  await deps.state.clearInterruptedWrites(resolved);
+  log.info("resolved interrupted writes", {
+    entries: entries.length,
+    resolved: resolved.length,
+    torn,
+  });
 }
 
 /** One entry. True = the bytes on disk were a fragment of this device's own write. */

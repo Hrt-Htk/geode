@@ -353,8 +353,8 @@ applyVersion(v):
 **A kill mid-write leaves a fragment, not an edit (#59).** A download, a merge result, a history
 restore, a kept conflict sibling and a rejoin backup copy all go through `recordedWrite`, which records
 the path (with the hash the bytes are meant to have) right before the write and clears it right after.
-One pass at the next start resolves every entry and clears them all, so nothing survives it and no path
-is ever frozen by a stale record:
+One pass at the next connection resolves every entry, and clears each one it resolved, so no path is
+ever frozen by a stale record:
 
 | Disk holds | Resolution |
 | --- | --- |
@@ -363,6 +363,11 @@ is ever frozen by a stale record:
 | the entry's expected hash | the write completed and the commit/merge after it did not run: clear, the normal reconciler takes the bytes |
 | anything else, with a head | torn: the head is applied over it (the record is still up, so the apply never reads the fragment as an edit) |
 | anything else, no head | torn copy this device made for itself (a conflict sibling, a rejoin backup): the file is removed and nothing is committed. Heads are never compacted away, so no head means never committed |
+
+An entry the pass could not resolve (the server did not answer, or a vault write errored) stays
+recorded, and with it gated, and the next connection tries again: that only waits while nothing can
+sync anyway. Fetch bounds are per request (60 s) and a blob is one chunk of at most 1 MB
+(`core/chunker.ts`), so no request a large file needs can outlast that.
 
 While a path is torn, `StateDB.isTorn` is what both the apply and the reconciler gate consult: no pass
 may commit or close it, and a rename marker does not carry it to the new name. An edit the user has

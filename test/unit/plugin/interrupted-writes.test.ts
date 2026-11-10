@@ -29,6 +29,7 @@ type Harness = {
   ) => StateDB;
   /** The one start pass, over a state built by `started`. */
   pass: (state: StateDB) => Promise<void>;
+  applyDeps: (state: StateDB) => ApplyDeps;
   writes: string[];
 };
 
@@ -143,7 +144,7 @@ async function harness(): Promise<Harness> {
     }
   };
 
-  return { vault, keys, pathHash, started, pass, writes };
+  return { vault, keys, pathHash, started, pass, applyDeps, writes };
 }
 
 const disk = (h: Harness, path = PATH) =>
@@ -213,6 +214,36 @@ Deno.test("interrupted-writes - an entry whose head equals the disk is cleared w
 
   assertEquals(disk(h), V2);
   assertEquals(h.writes, [], "a landed write is not rewritten");
+});
+
+Deno.test("interrupted-writes - a head fetch that fails keeps the entry gated for the next connection", async () => {
+  const h = await harness();
+  // The record survives the first connection's pass: the server could not answer, so the
+  // fragment is still unprotected and must stay gated (never committed) until it resolves.
+  h.vault.files.set(PATH, new TextEncoder().encode(FRAGMENT));
+  h.writes.length = 0;
+  const state = h.started([{ expected: identityHash(PATH, new TextEncoder().encode(V2)) }]);
+
+  await resolveInterruptedWrites({
+    state,
+    keys: h.keys,
+    vaultId: "vault",
+    apply: { ...h.applyDeps(state), force: true },
+    chainHead: () => Promise.reject(new Error("heads GET timed out after 60000ms")),
+  });
+
+  assertEquals(state.getInterruptedWrites().length, 1, "an unresolved entry stays recorded");
+  assertEquals(state.isTorn(h.pathHash), true, "and stays gated: no pass may commit it");
+  assertEquals(h.writes, [], "nothing is written over a fragment the server cannot answer for");
+  assertEquals(disk(h), FRAGMENT, "the fragment is untouched");
+
+  // The next connection: the server answers, the head goes over the fragment, the record
+  // is cleared.
+  await h.pass(state);
+
+  assertEquals(disk(h), V2);
+  assertEquals(h.writes, [PATH], "the head is written once the fetch succeeds");
+  state.close();
 });
 
 Deno.test("interrupted-writes - no record, no pass", async () => {

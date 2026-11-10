@@ -281,11 +281,14 @@ export class StateDB {
     return [...this.interrupted.values()];
   }
 
-  /** #59: nothing survives the start that read the record, so no path can be frozen by it. */
-  async clearInterruptedWrites(): Promise<void> {
-    if (this.interrupted.size === 0) return;
-    this.interrupted.clear();
-    await this.flushCursor();
+  /** #59: these entries are resolved (any of the five outcomes). One the server could not
+   * answer for stays recorded, and with it gated, until a later connection resolves it. */
+  async clearInterruptedWrites(resolved: string[]): Promise<void> {
+    let cleared = false;
+    for (const pathHash of resolved) {
+      if (this.interrupted.delete(pathHash)) cleared = true;
+    }
+    if (cleared) await this.flushCursor();
   }
 
   /** #59: may this path's disk bytes be a fragment right now? One predicate for the apply

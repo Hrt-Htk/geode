@@ -175,7 +175,7 @@ Deno.test("state - a record read back is torn until the start pass clears it", a
   assertEquals(db.getInterruptedWrites(), [ENTRY], "the start pass reads it once");
   assertEquals(db.isTorn("hash-a"), true, "the apply must treat its bytes as a fragment");
 
-  await db.clearInterruptedWrites();
+  await db.clearInterruptedWrites(["hash-a"]);
   assertEquals(db.getInterruptedWrites(), []);
   assertEquals(db.isTorn("hash-a"), false, "nothing survives the start that read it");
   db.close();

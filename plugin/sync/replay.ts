@@ -71,7 +71,8 @@ export class ReplayPipeline {
    * held seq must be released, and two versions of one path are two held seqs. */
   private deferredVersions = new Map<string, { msg: ServerVersion; destination: string }>();
   readonly versionCache = new Map<string, ServerVersion>();
-  /** #59: the start pass runs once per session (N4). */
+  /** #59: the start pass runs once per connection (N4): a failed resolution retries on the
+   * next one, not on every flush of this one. */
   private resolvedStart = false;
 
   constructor(private deps: ReplayDeps) {
@@ -238,8 +239,8 @@ export class ReplayPipeline {
     return run;
   }
 
-  /** #59: the record a killed session left is resolved once per session, before the first
-   * drain: see `resolveInterruptedWrites`. */
+  /** #59: the record a killed session left is resolved once per connection, before its
+   * first drain: see `resolveInterruptedWrites`. */
   private async resolveStartRecord(state: StateDB, keys: VaultKeys): Promise<void> {
     if (this.resolvedStart) return;
     this.resolvedStart = true;
@@ -330,6 +331,9 @@ export class ReplayPipeline {
 
   private onReplayInterrupt(state: TransportState): void {
     if (state === "live" || state === "syncing") return;
+    // #59: leaving live gives the next connection its own chance to resolve what a kill
+    // left (a head fetch that failed is retried then, not once per flush).
+    this.resolvedStart = false;
     if (this.replayBuffer.length === 0) return;
     // Everything buffered is > the contiguous persisted cursor. Rewind the
     // in-memory cursor to the persisted one so the next reconnect re-requests
