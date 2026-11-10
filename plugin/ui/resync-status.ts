@@ -2,6 +2,7 @@
  * the settings row and the button label. The notice itself and the run live in
  * resync-run.ts. No obsidian import (deno-tested). */
 import type { ProgressInfo } from "../sync/recovery.ts";
+import { formatError } from "../plumbing/log.ts";
 
 export type ResyncState =
   /** `progress.total` 0: the rebuild has not read the file list yet. */
@@ -61,6 +62,12 @@ export function resyncIcon(state: ResyncState): {
  * restarted a session hands the status back: the restarted session's own state (offline,
  * paused, a version refusal, a held delete) is then the truth, and the stop keeps its
  * reason for when nothing more important is going on. */
+/** #54: the resync owns the sync status while it runs, and after a stop that left no session
+ * behind. A stop that restarted a session leaves the restarted session's state to speak. */
+export function resyncOwnsStatus(state: ResyncState | null): boolean {
+  return state?.phase === "running" || resyncStopsSync(state);
+}
+
 export function resyncStopsSync(
   state: ResyncState | null,
 ): state is Extract<ResyncState, { phase: "failed" }> {
@@ -82,8 +89,9 @@ const UNREACHABLE = /net::ERR_|Failed to fetch|fetch failed|ECONNREFUSED|ENOTFOU
 const FAILED_HEADS = /^resync failed for (\d+) file\(s\)/;
 
 export function resyncStopReason(error: unknown): string {
-  const message = (error instanceof Error ? error.message : String(error)).trim();
-  // A crash mid rebuild leaves the marker without a reason: say that, never nothing.
+  const message = formatError(error).trim();
+  // A blank error is not a reason: say something, never nothing. (A crash mid rebuild
+  // leaves RESYNC_UNFINISHED in the marker, not a blank.)
   if (message === "") return RESYNC_UNFINISHED;
   const failed = FAILED_HEADS.exec(message);
   if (failed) {

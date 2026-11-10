@@ -172,8 +172,8 @@ export async function startUnlockedSession(
   existingState?: StateDB,
   opts?: SessionStartOptions,
 ): Promise<void> {
-  if (!opts?.keepEpoch) host.syncEpoch += 1;
   if (!host.keys) throw new Error("vault must be unlocked");
+  if (!opts?.keepEpoch) host.syncEpoch += 1;
   disposeSession(host);
   const state = existingState ?? await openSessionState(host);
   if (existingState) {

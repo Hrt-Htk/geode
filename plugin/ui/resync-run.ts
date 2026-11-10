@@ -1,7 +1,7 @@
 import { Notice } from "obsidian";
 import type { RejoinBackup } from "../sync/rejoin.ts";
 import type { ProgressInfo } from "../sync/recovery.ts";
-import { rebuildVault, startRebuildTransport } from "../sync/rebuild-flow.ts";
+import { type RebuildHost, rebuildVault, startRebuildTransport } from "../sync/rebuild-flow.ts";
 import {
   resyncCopy,
   resyncDoneNotice,
@@ -12,13 +12,9 @@ import {
 
 /** #54: what the two rebuild entry points need from the plugin: the rebuild host, the bar
  * they report through, and the session epoch they belong to. */
-export type ResyncRunHost =
-  & Parameters<typeof rebuildVault>[0]
-  & {
-    statusBar: { setResync(state: ResyncState | null): void; setPausedAt(ts: number): void } | null;
-    /** Bumped by every session boundary (start or teardown). */
-    syncEpoch: number;
-  };
+export type ResyncRunHost = RebuildHost & {
+  statusBar: { setResync(state: ResyncState | null): void; setPausedAt(ts: number): void } | null;
+};
 
 /** #54: one notice that updates in place while the run goes (about four renders a second),
  * mirrored onto the status bar so the settings row shows the same thing. */
@@ -50,15 +46,18 @@ class ResyncProgress {
   /** The progress notice is replaced by a normal one that fades, and the row goes back to
    * the live sync status. */
   done(updated: number): void {
+    const gone = this.gone();
     this.hide();
+    if (gone) return;
     this.host.statusBar?.setResync(null);
     new Notice(resyncDoneNotice(updated));
   }
 
   /** Hand the status bar back without a notice of our own: a rejoin reports its backup. */
   stop(): void {
+    const gone = this.gone();
     this.hide();
-    this.host.statusBar?.setResync(null);
+    if (!gone) this.host.statusBar?.setResync(null);
   }
 
   /** `syncStopped`: no session is left behind, so this state is the whole sync status. */

@@ -16,11 +16,14 @@ type Fake = {
   host: Host;
   restartCalls: (StateDB | undefined)[];
   settings: PluginSettings;
+  /** "write:<file>" per state write, "save" per settings write: their order is the point. */
+  events: string[];
 };
 
 function makeHost(): Fake {
   const settings: PluginSettings = { ...structuredClone(DEFAULT_SETTINGS), vaultId: "vault-1" };
   const restartCalls: (StateDB | undefined)[] = [];
+  const events: string[] = [];
   const host = {
     keys: { enc_key: new Uint8Array(32), mac_key: new Uint8Array(32) } as unknown,
     pluginSettings: settings,
@@ -30,7 +33,10 @@ function makeHost(): Fake {
         configDir: ".obsidian",
         adapter: {
           readBinary: () => Promise.reject(new Error("no state file")),
-          writeBinary: () => Promise.resolve(),
+          writeBinary: (path: string) => {
+            events.push(`write:${path.split("/").pop()}`);
+            return Promise.resolve();
+          },
           rename: () => Promise.resolve(),
           list: () => Promise.resolve({ files: [], folders: [] }),
           stat: () => Promise.resolve(null),
@@ -53,18 +59,22 @@ function makeHost(): Fake {
     rekeyCursor: null,
     rekeyElsewhere: false,
     settingTab: null,
-    saveSettings: () => Promise.resolve(),
+    saveSettings: () => {
+      events.push("save");
+      return Promise.resolve();
+    },
     restartUnlockedSession: (state?: StateDB) => {
       restartCalls.push(state);
+      events.push("restart");
       return Promise.resolve();
     },
     isMobile: false,
     notify: () => {},
   } as unknown as Host;
-  return { host, restartCalls, settings };
+  return { host, restartCalls, settings, events };
 }
 
-type Transport = Parameters<typeof rebuildVault>[1];
+type Transport = NonNullable<Parameters<typeof rebuildVault>[1]>;
 
 /** A transport whose head list fails: the rebuild dies before it reads a single head. */
 function headsFail(message: string): Transport {
@@ -220,15 +230,15 @@ Deno.test("rebuild-flow - a held paused rebuild is refused before it touches any
   assertEquals(settings.massDeleteHold?.files.length, 1);
 });
 
-Deno.test("rebuild-flow - the rebuild's own transport starts after the session's is stopped", async () => {
-  const { host, settings } = makeHost();
-  settings.massDeleteHold = {
+Deno.test("rebuild-flow - the rebuild's own transport is the only live one, and stops first", async () => {
+  const held = makeHost();
+  held.settings.massDeleteHold = {
     files: [{ path: "a.md", mtime: 1 }],
     totalTracked: 30,
     detectedAt: 5,
   };
   const order: string[] = [];
-  host.transport = {
+  held.host.transport = {
     isLive: () => true,
     stop: () => order.push("session-stopped"),
     retryNow: () => {},
@@ -240,7 +250,7 @@ Deno.test("rebuild-flow - the rebuild's own transport starts after the session's
     getVersionChain: () => Promise.resolve([]),
   } as unknown as Transport;
 
-  await rebuildVault(host, null, {
+  await rebuildVault(held.host, null, {
     createTransport: () => {
       order.push("own-started");
       return own;
@@ -250,6 +260,48 @@ Deno.test("rebuild-flow - the rebuild's own transport starts after the session's
   // One handshake at a time: the held delete's reconnect uses the session's transport, and
   // the rebuild starts its own only once that one is stopped.
   assertEquals(order, ["session-stopped", "own-started", "own-stopped"]);
+
+  // The failure path too: nothing may reach the network once the recovery restart runs.
+  const failed = makeHost();
+  const fails = {
+    stop: () => failed.events.push("own-stopped"),
+    getHeads: async function* () {
+      throw new Error("server went away");
+    },
+    getBlob: () => Promise.reject(new Error("unused")),
+    getVersionChain: () => Promise.resolve([]),
+  } as unknown as Transport;
+  await assertRejects(
+    () =>
+      rebuildVault(failed.host, null, {
+        createTransport: () => {
+          failed.events.push("own-started");
+          return fails;
+        },
+      }),
+    Error,
+    "server went away",
+  );
+  const restarted = failed.events.indexOf("restart");
+  assertEquals(failed.events.slice(restarted - 1, restarted + 1), ["own-stopped", "restart"]);
+});
+
+Deno.test("rebuild-flow - the rebuilt rows are flushed before the stop clears", async () => {
+  const { host, settings, events } = makeHost();
+
+  await rebuildVault(host, noHeads());
+
+  // The rows file is on a trailing throttle and the rebuild holds no host.state, so only
+  // closing the fresh state flushes it: that write has to land before the marker clears.
+  const flushed = events.findIndex((event) => event.startsWith("write:"));
+  const cleared = events.lastIndexOf("save");
+  assertEquals(flushed >= 0, true, `state write missing: ${events.join(",")}`);
+  assertEquals(
+    flushed < cleared,
+    true,
+    `the marker cleared before the rows were durable: ${events.join(",")}`,
+  );
+  assertEquals(settings.resyncStop, "");
 });
 
 Deno.test("rebuild-flow - a completed rebuild whose restart throws leaves no marker", async () => {

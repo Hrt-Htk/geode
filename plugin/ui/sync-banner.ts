@@ -1,7 +1,7 @@
 /** Pure degraded-sync banner copy: no obsidian import (safe for deno unit tests). */
 import { serverHost } from "./server-host.ts";
 import type { SyncStatusInput } from "./sync-status.ts";
-import { resyncStopsSync } from "./resync-status.ts";
+import { resyncOwnsStatus } from "./resync-status.ts";
 
 export function describeErrorBanner(
   input: SyncStatusInput,
@@ -22,7 +22,7 @@ export function describeErrorBanner(
   // outage line is theirs to hide; the upload-failed banner below still shows.
   if (
     input.offlineSince > 0 && now - input.offlineSince >= 10_000 &&
-    !(input.resync?.phase === "running" || resyncStopsSync(input.resync))
+    !resyncOwnsStatus(input.resync)
   ) {
     return {
       name: "Cannot reach your Geode server",

@@ -130,9 +130,6 @@ export async function unlockAfterRemoteRekeyFlow(
   await host.saveSettings();
   registerAuthTofu(host.pluginSettings, result.keys);
   await host.restartUnlockedSession(state);
-  // #54: a resync marker keeps the session from starting, so the state opened here has no
-  // owner: close it rather than leave its persistence wired to a dead session.
-  if (!host.transport) state.close();
   host.settingTab?.applyLockState();
 }
 

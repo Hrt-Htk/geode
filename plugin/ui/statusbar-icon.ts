@@ -3,7 +3,7 @@ import { blockedCopy, type VersionStatus } from "../sync/version-state.ts";
 import type { MassDeleteHold } from "../sync/mass-delete-hold.ts";
 import { pauseAgeColor, pauseTooltip } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
-import { resyncCopy, resyncIcon, type ResyncState, resyncStopsSync } from "./resync-status.ts";
+import { resyncCopy, resyncIcon, resyncOwnsStatus, type ResyncState } from "./resync-status.ts";
 
 export type IconState = {
   icon: string;
@@ -73,8 +73,9 @@ export function resolveIcon(i: IconInput): IconState {
 
   // #54 review: in the no-session state a marker stop outranks the pause, the version
   // refusal and the hold icon: nothing else can be acted on but Try again (a held delete is
-  // still announced and keeps its banner). Every other state keeps the order below.
-  if (resyncStopsSync(i.resync)) return resyncIconState(i.resync);
+  // still announced and keeps its banner). Every other state keeps the order below. A
+  // running resync returned at the top, so this is the stopped case of the same ownership.
+  if (resyncOwnsStatus(i.resync) && i.resync) return resyncIconState(i.resync);
 
   if (i.pausedAt > 0) return pausedIcon(i.pausedAt, i.now);
 

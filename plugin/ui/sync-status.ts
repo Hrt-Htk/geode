@@ -4,7 +4,7 @@ import { blockedCopy, describeVersionHint } from "../sync/version-state.ts";
 import { pauseAgeColor } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
 import { UPDATE_STATUS_UPDATING } from "./server-update-logic.ts";
-import { resyncCopy, resyncRowDot, type ResyncState, resyncStopsSync } from "./resync-status.ts";
+import { resyncCopy, resyncOwnsStatus, resyncRowDot, type ResyncState } from "./resync-status.ts";
 import type { ProgressInfo } from "../sync/recovery.ts";
 
 export type SyncStatusInput = IconInput & {
@@ -108,7 +108,8 @@ function describeGated(
   // refusal and the hold row: "changes upload when you resume" would be false, and Try again
   // is the only thing left to act on (a held delete is still announced and keeps its banner).
   // Every state that is not a marker stop keeps the order below.
-  if (resyncStopsSync(i.resync)) return resyncResult(i.resync);
+  // A running resync returned above, so this is the stopped case of the same ownership.
+  if (resyncOwnsStatus(i.resync) && i.resync) return resyncResult(i.resync);
   if (i.pausedAt > 0) return describePaused(i, now);
   if (i.versionStatus.kind === "blocked") {
     return { text: `${blockedCopy(i.versionStatus.side).row} ${backup}`, dot: "red" };
