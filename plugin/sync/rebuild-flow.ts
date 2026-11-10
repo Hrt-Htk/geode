@@ -65,6 +65,8 @@ export async function rebuildVault(
     await reconnectAndWaitLive(host);
   }
   let freshState: StateDB | null = null;
+  /** The rebuild reached its head list: from here it may have changed rows and files. */
+  let started = false;
   try {
     // #701 review: dispose first: the old instance's close() flushes its rows as a
     // fire-and-forget write, and a stale flush landing after the rebuild would restore
@@ -82,6 +84,9 @@ export async function rebuildVault(
       parkedMoves: () => host.pluginSettings.pendingMoveOuts,
       rejoin,
       onProgress,
+      onApplyStart: () => {
+        started = true;
+      },
     });
     log.info("rebuild done", {
       rejoin,
@@ -105,26 +110,36 @@ export async function rebuildVault(
     await host.restartUnlockedSession(freshState);
     return result;
   } catch (error) {
-    // #701: a rejoin that dies part way must not leave the old rows armed for the next
-    // session: the settings already carry the new device, so a persisted pause (and the
-    // marker that makes the next session finish the rejoin) is what stops the stale state
-    // from being replayed over the server.
     if (rejoin) {
-      freshState?.close();
-      host.pluginSettings.pauseAt = Date.now();
-      host.pluginSettings.rejoinIncomplete = true;
-      await host.saveSettings();
+      await pauseForIncompleteRejoin(host, freshState);
       throw error;
     }
-    await restartAfterFailedRebuild(host, freshState);
+    // #54 review: only a rebuild that never read its heads can be answered by a restart:
+    // the persisted rows are then exactly what a normal start uses. Past that the rebuild
+    // may have rows open whose files it never restored, and a session on them reads the
+    // missing files as deletes (the guard is silent under 20). Leave sync stopped.
+    if (!started) await restartAfterFailedRebuild(host, freshState);
     throw error;
   }
 }
 
-/** #54: the dispose above took the live session with it, so a failed resync must restart
- * it, or sync is stranded in "disconnected" until a reload. On the rows the rebuild got
- * through, never the ones the old instance left; with no rows there is nothing to sync, and
- * the failure that stopped the rebuild is the one to report. */
+/** #701: a rejoin that dies part way must not leave the old rows armed for the next session:
+ * the settings already carry the new device, so a persisted pause (and the marker that makes
+ * the next session finish the rejoin) is what stops the stale state from being replayed over
+ * the server. */
+async function pauseForIncompleteRejoin(
+  host: RebuildHost,
+  state: StateDB | null,
+): Promise<void> {
+  state?.close();
+  host.pluginSettings.pauseAt = Date.now();
+  host.pluginSettings.rejoinIncomplete = true;
+  await host.saveSettings();
+}
+
+/** #54: the dispose above took the live session with it, so a failure BEFORE the rebuild
+ * touched anything must restart it, or sync is stranded in "disconnected" until a reload.
+ * The persisted rows are the same rows a normal start would open. */
 async function restartAfterFailedRebuild(
   host: RebuildHost,
   state: StateDB | null,

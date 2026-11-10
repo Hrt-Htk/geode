@@ -1,11 +1,14 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { rebuildVault } from "../../../plugin/sync/rebuild-flow.ts";
+import { MASS_DELETE_NEEDS_RESUME } from "../../../plugin/sync/mass-delete-hold.ts";
 import { DEFAULT_SETTINGS, type PluginSettings } from "../../../plugin/plumbing/settings-types.ts";
 import type { StateDB } from "../../../plugin/plumbing/state.ts";
 
-// #54: a resync that dies disposes the runtime (that is the rebuild's first step), so a
-// failure that only rethrows leaves sync stopped until a reload. The catch must restart
-// the session on the rows the rebuild rebuilt, never on the ones it disposed.
+// #54: a resync disposes the runtime as its first step, so a failure has to be answered.
+// A failure BEFORE the head list is read can restart the session on the persisted rows
+// (exactly what a normal start reads). A failure AFTER that may have left rows open whose
+// files were never restored: a session on them would read the missing files as deletes
+// (the mass-delete guard stays silent below 20 files), so sync stays stopped instead.
 
 type Host = Parameters<typeof rebuildVault>[0];
 
@@ -29,7 +32,10 @@ function makeHost(): Fake {
           readBinary: () => Promise.reject(new Error("no state file")),
           writeBinary: () => Promise.resolve(),
           rename: () => Promise.resolve(),
+          list: () => Promise.resolve({ files: [], folders: [] }),
+          stat: () => Promise.resolve(null),
         },
+        getAllLoadedFiles: () => [],
       },
       workspace: { onLayoutReady: () => {} },
     },
@@ -58,36 +64,122 @@ function makeHost(): Fake {
   return { host, restartCalls, settings };
 }
 
-/** A transport whose head list fails: the rebuild gets past opening the rows and dies. */
-function failingTransport(message: string): Parameters<typeof rebuildVault>[1] {
+type Transport = Parameters<typeof rebuildVault>[1];
+
+/** A transport whose head list fails: the rebuild dies before it reads a single head. */
+function headsFail(message: string): Transport {
   return {
     getHeads: async function* () {
       throw new Error(message);
     },
     getBlob: () => Promise.reject(new Error("unused")),
     getVersionChain: () => Promise.resolve([]),
-  } as unknown as Parameters<typeof rebuildVault>[1];
+  } as unknown as Transport;
 }
 
-Deno.test("rebuild-flow - a failed rebuild restarts the session on the rebuilt rows", async () => {
+/** Heads the rebuild can list but not apply: the loop runs, every head fails. */
+function headsGarbage(count: number): Transport {
+  return {
+    getHeads: async function* () {
+      for (let index = 0; index < count; index++) {
+        yield {
+          path_hash: `hash-${index}`,
+          version: 1,
+          seq: index + 1,
+          enc_metadata: "AAAA",
+          chunk_hashes: [],
+          deleted: false,
+          path_ciphertext: null,
+          rename_mark: 0,
+        };
+      }
+    },
+    getBlob: () => Promise.reject(new Error("unused")),
+    getVersionChain: () => Promise.resolve([]),
+  } as unknown as Transport;
+}
+
+/** A live session to borrow, for the held-mass-delete path (it reconnects before rebuilding). */
+const liveTransport = () =>
+  ({
+    isLive: () => true,
+    stop: () => {},
+    retryNow: () => {},
+  }) as unknown as NonNullable<Host["transport"]>;
+
+Deno.test("rebuild-flow - a rebuild that never read its heads restarts on the persisted rows", async () => {
   const { host, restartCalls } = makeHost();
 
   await assertRejects(
-    () => rebuildVault(host, failingTransport("server went away")),
+    () => rebuildVault(host, headsFail("server went away")),
     Error,
     "server went away",
   );
 
   assertEquals(restartCalls.length, 1, "sync must run again after a failed resync");
-  // The rows it restarts on are the reconstructed state, not the disposed instance's.
   assertEquals(restartCalls[0]?.getAllLocalFiles() instanceof Map, true);
+});
+
+Deno.test("rebuild-flow - a partially applied rebuild leaves sync stopped", async () => {
+  const { host, restartCalls } = makeHost();
+
+  await assertRejects(
+    () => rebuildVault(host, headsGarbage(3)),
+    Error,
+    "resync failed for 3 file(s)",
+  );
+
+  // A restart here would replay the failed heads as local deletes over the server.
+  assertEquals(restartCalls.length, 0, "a partially applied rebuild must not restart");
+});
+
+Deno.test("rebuild-flow - a held rebuild that dies part way keeps the hold and stays stopped", async () => {
+  const { host, restartCalls, settings } = makeHost();
+  settings.massDeleteHold = {
+    files: [{ path: "a.md", mtime: 1 }],
+    totalTracked: 30,
+    detectedAt: 5,
+  };
+  host.transport = liveTransport();
+
+  await assertRejects(
+    () => rebuildVault(host, headsGarbage(2)),
+    Error,
+    "resync failed for 2 file(s)",
+  );
+
+  assertEquals(restartCalls.length, 0);
+  assertEquals(
+    settings.massDeleteHold?.files.length,
+    1,
+    "the hold stays in force until a rebuild returns",
+  );
+});
+
+Deno.test("rebuild-flow - a held paused rebuild is refused before it touches anything", async () => {
+  const { host, restartCalls, settings } = makeHost();
+  settings.massDeleteHold = {
+    files: [{ path: "a.md", mtime: 1 }],
+    totalTracked: 30,
+    detectedAt: 5,
+  };
+  settings.pauseAt = Date.now();
+
+  await assertRejects(
+    () => rebuildVault(host, headsFail("unused")),
+    Error,
+    MASS_DELETE_NEEDS_RESUME,
+  );
+
+  assertEquals(restartCalls.length, 0);
+  assertEquals(settings.massDeleteHold?.files.length, 1);
 });
 
 Deno.test("rebuild-flow - a failed rejoin keeps its pause and stays stopped", async () => {
   const { host, restartCalls, settings } = makeHost();
 
   await assertRejects(
-    () => rebuildVault(host, failingTransport("server went away"), { rejoin: true }),
+    () => rebuildVault(host, headsFail("server went away"), { rejoin: true }),
     Error,
     "server went away",
   );
