@@ -27,7 +27,21 @@ case "$1 $2" in
     ;;
   "release edit") echo "https://example.invalid/releases/tag/$3" ;;
   "workflow run") ;;
-  "run list") echo '[{"databaseId":7,"name":"Promote image 0.0.2"}]' ;;
+  "run list")
+    n=$(( $(cat "$GH_LISTS" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$GH_LISTS"
+    if [ "\${GH_OLD_RUN:-}" = "true" ]; then
+      case "$n" in
+        1) echo '[{"databaseId":3,"name":"Promote image 0.0.2"}]' ;;
+        2) echo '[]' ;;
+        *) echo '[{"databaseId":9,"name":"Promote image 0.0.2"},{"databaseId":3,"name":"Promote image 0.0.2"}]' ;;
+      esac
+    elif [ "$n" = "1" ]; then
+      echo '[]'
+    else
+      echo '[{"databaseId":7,"name":"Promote image 0.0.2"}]'
+    fi
+    ;;
   "run watch")
     if [ "\${GH_RUN_FAIL:-}" = "true" ]; then
       echo "X Promote image 0.0.2 failed" >&2
@@ -57,13 +71,19 @@ async function tempRepo(): Promise<Fixture> {
   const home = `${base}/home`;
   const bin = `${base}/bin`;
   const log = `${base}/gh.log`;
+  const lists = `${base}/gh_lists`;
   await Deno.mkdir(repo);
   await Deno.mkdir(home);
   await Deno.mkdir(bin);
   await Deno.writeTextFile(`${bin}/gh`, GH_STUB);
   await Deno.chmod(`${bin}/gh`, 0o755);
   await Deno.writeTextFile(log, "");
-  const env = { HOME: home, GH_LOG: log, PATH: `${bin}:${Deno.env.get("PATH") ?? ""}` };
+  const env = {
+    HOME: home,
+    GH_LOG: log,
+    GH_LISTS: lists,
+    PATH: `${bin}:${Deno.env.get("PATH") ?? ""}`,
+  };
 
   const git = (args: string[]) =>
     new Deno.Command("git", {
@@ -224,6 +244,37 @@ Deno.test("promote: a failed image retag leaves main and the manifest alone", as
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
+});
+
+// #65: a rerun after a failed retag must watch its own run, not the earlier one of the
+// same name: `gh run list` is newest-first and the first poll can predate the dispatch.
+Deno.test("promote: a rerun watches the new retag run, not an earlier one", async () => {
+  const fx = await tempRepo();
+  try {
+    fx.env.GH_OLD_RUN = "true";
+    const res = await runPromote(fx);
+    assertEquals(res.code, 0, `promote failed\n${res.stdout}${res.stderr}`);
+    const watched = (await Deno.readTextFile(fx.log))
+      .split("\n")
+      .filter((l) => l.startsWith("run watch"));
+    assertEquals(watched, ["run watch 9 --exit-status"], "watches the dispatched run");
+  } finally {
+    await Deno.remove(fx.base, { recursive: true });
+  }
+});
+
+// The name is the only link between the two files: a rename on either side would leave
+// promote polling for a run that never appears.
+Deno.test("promote: the retag workflow names its run the way promote looks for it", async () => {
+  const yaml = await Deno.readTextFile(
+    new URL("../../../.github/workflows/promote-image.yml", import.meta.url),
+  );
+  const runName = yaml.split("\n").find((l) => l.startsWith("run-name: "));
+  assertEquals(runName, "run-name: Promote image ${{ inputs.version }}");
+  assert(
+    yaml.includes("\n      version:\n"),
+    "the workflow takes the `version` input promote dispatches",
+  );
 });
 
 Deno.test("promote: refuses a release that is not a pre-release", async () => {

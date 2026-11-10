@@ -139,29 +139,24 @@ console.log(`\nPromoted ${version}: the community directory serves it from the n
  * resolves to the digest `release.yml` already attested.
  */
 async function retagImageLatest(version: string): Promise<void> {
-  await run("gh", ["workflow", "run", "promote-image.yml", "-f", `version=${version}`]);
-  // The dispatch answers before its run exists, so the run is found by the name
-  // promote-image.yml's `run-name` gives it: an earlier run can never be watched instead.
+  // promote-image.yml names its run after the version (`run-name`), and a rerun must watch
+  // its own run: `gh run list` is newest-first, and the first poll can still predate the
+  // dispatch, so an earlier run of the same name is the one it would find. Run ids grow
+  // with time, so only an id above the newest existing one counts.
   const name = `Promote image ${version}`;
+  const before = Math.max(0, ...(await actionRuns()).map((r) => r.databaseId));
+  await run("gh", ["workflow", "run", "promote-image.yml", "-f", `version=${version}`]);
   let runId = "";
   for (let attempt = 0; attempt < 30 && !runId; attempt++) {
-    const runs = JSON.parse(
-      await run("gh", [
-        "run",
-        "list",
-        "--workflow=promote-image.yml",
-        "--limit",
-        "20",
-        "--json",
-        "databaseId,name",
-      ]),
-    ) as { databaseId: number; name: string }[];
-    runId = String(runs.find((r) => r.name === name)?.databaseId ?? "");
+    const fresh = (await actionRuns()).find((r) => r.name === name && r.databaseId > before);
+    runId = fresh ? String(fresh.databaseId) : "";
     if (!runId) await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
   if (!runId) {
     throw new Error(
-      `No promote-image run named "${name}" appeared: check gh run list --workflow=promote-image.yml`,
+      `No new promote-image run named "${name}" appeared within 60s. The dispatched run may ` +
+        `still retag latest: gh run list --workflow=promote-image.yml shows it, and this ` +
+        `promote can be rerun once it finished. main and manifest.json are untouched.`,
     );
   }
   const out = await new Deno.Command("gh", {
@@ -176,6 +171,22 @@ async function retagImageLatest(version: string): Promise<void> {
         new TextDecoder().decode(out.stderr).trim(),
     );
   }
+}
+
+type ActionRun = { databaseId: number; name: string };
+
+async function actionRuns(): Promise<ActionRun[]> {
+  return JSON.parse(
+    await run("gh", [
+      "run",
+      "list",
+      "--workflow=promote-image.yml",
+      "--limit",
+      "20",
+      "--json",
+      "databaseId,name",
+    ]),
+  );
 }
 
 async function run(cmd: string, args: string[]): Promise<string> {

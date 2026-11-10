@@ -6,6 +6,9 @@ name: Promote image
 # the tag resolves to the exact digest `release.yml` (and its attestation) covers.
 #
 # Called by `deno task promote X.Y.Z` (scripts/promote.ts), which waits for this run.
+#
+# Maintainer-only by design: a manual dispatch skips the preconditions promote.ts checks
+# (clean main, a pre-release, above the promoted version). It only retags.
 on:
   workflow_dispatch:
     inputs:
@@ -21,6 +24,10 @@ permissions:
 # scripts/promote.ts finds this run by this name: keep the two in step.
 run-name: Promote image ${{ inputs.version }}
 
+concurrency:
+  group: promote-image
+  cancel-in-progress: false
+
 jobs:
   retag:
     name: Retag latest
@@ -30,8 +37,10 @@ jobs:
       - name: Validate the version
         env:
           VERSION: ${{ inputs.version }}
+        # The whole value, not line by line: `grep -qxE` still accepts a multi-line input
+        # whose first line is a version.
         run: |
-          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::version must be X.Y.Z, got '$VERSION'"
             exit 1
           fi
@@ -49,8 +58,9 @@ jobs:
       - name: Retag latest onto the released digest
         env:
           VERSION: ${{ inputs.version }}
-        # No build, no push of new bytes: the same index, one more tag. The digests must
-        # match, or `latest` would point at something no attestation covers.
+        # No build, no push of new bytes: the same index, one more tag. `release.yml`
+        # attests the digest of X.Y.Z, so a different digest behind `latest` would ship an
+        # image with no provenance record.
         run: |
           source_image="ghcr.io/hrt-htk/geode:$VERSION"
           before=$(docker buildx imagetools inspect "$source_image" --format '{{.Manifest.Digest}}')
@@ -58,7 +68,7 @@ jobs:
           after=$(docker buildx imagetools inspect ghcr.io/hrt-htk/geode:latest \
             --format '{{.Manifest.Digest}}')
           if [ "$after" != "$before" ]; then
-            echo "::error::latest is $after, not the attested $before: reattest before promoting"
+            echo "::error::latest is $after, but $VERSION is $before: the retag changed the digest"
             exit 1
           fi
           echo "latest -> $after"

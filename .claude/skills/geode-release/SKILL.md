@@ -94,10 +94,12 @@ Runs `scripts/promote.ts`:
 2. `gh api repos/{owner}/{repo}/releases/generate-notes`: notes for every change since the previously
    promoted version (`previous_tag_name` = the current root `manifest.json` version, resolved to its
    `v`-prefixed tag when it predates #12).
-3. `gh workflow run promote-image.yml -f version=X.Y.Z`, then `gh run watch --exit-status` on it: the
-   job copies that release's image index onto `ghcr.io/hrt-htk/geode:latest`. Same digest, no rebuild,
-   and the run fails if the digest moved, so `latest` stays behind an attested image. It runs **before**
-   the manifest commit: the directory must never offer a plugin whose server image has not caught up.
+3. `gh workflow run promote-image.yml -f version=X.Y.Z`, then `gh run watch --exit-status` on that
+   **new** run (only a run id above the newest existing one counts, so a rerun never watches the
+   earlier run of the same name): the job copies that release's image index onto
+   `ghcr.io/hrt-htk/geode:latest`. Same digest, no rebuild, and the run fails if the digest moved.
+   It runs **before** the manifest commit: the directory must never offer a plugin whose server
+   image has not caught up.
 4. Sets root `manifest.json` `version`, appends `versions.json` `X.Y.Z -> minAppVersion` (never edits
    an existing row).
 5. Commits `chore(release): promote X.Y.Z`, pushes `main`.
@@ -159,11 +161,20 @@ touches a server.
   release tag to the version in `manifest.json`, so a `v` prefix would be rejected. Tags cut before
   #12 keep their `v`: `scripts/promote.ts` resolves that form with `prevReleaseTag` when it needs the
   tag a previous version stands for.
-- **A half-done promote:** if `gh release edit` fails after the push, `main` already advertises
-  `X.Y.Z` with the old body and the pre-release flag still set. Rerunning refuses (the version is no
-  longer above the manifest's): finish it by hand with `gh release edit X.Y.Z --prerelease=false
-  --latest --notes-file <file>`. The image retag is idempotent, so finishing by hand needs nothing there;
-  a retag that failed left `latest` and `main` untouched, and rerunning the promote redoes it.
+- **A half-done promote:** `latest` moves before the manifest commit, so a failure after the retag
+  leaves the image ahead of `main`. Recover by hand, never by deleting the tag:
+  - **`git push` failed:** the promote commit is local. `git push origin main`, then
+    `gh release edit X.Y.Z --prerelease=false --latest --notes-file <file>`. Or drop it and rerun:
+    `git reset --hard origin/main`, then `deno task promote X.Y.Z` (the preconditions hold again and
+    the retag is idempotent).
+  - **`gh release edit` failed:** `main` already advertises `X.Y.Z` with the old body and the
+    pre-release flag still set; rerunning refuses (the version is no longer above the manifest's).
+    Finish with `gh release edit X.Y.Z --prerelease=false --latest --notes-file <file>`.
+  - **The retag failed, or the 60s wait for its run lapsed:** `main` and `manifest.json` are
+    untouched. Check `gh run list --workflow=promote-image.yml`: the run may still be retagging, and
+    the promote can simply be rerun once it finished.
+  While the two disagree, a server pulling `latest` is *newer* than the plugin the directory serves:
+  the compatible direction, since the server gates on wire protocol and minimum version.
 - **The retag workflow must be on `main`:** `gh workflow run promote-image.yml` dispatches the default
   branch's copy, so a promote fails (before touching `main`) on a checkout that predates it.
 - **Check the published artifacts, not the tag.** Verify with `gh release view X.Y.Z --json
