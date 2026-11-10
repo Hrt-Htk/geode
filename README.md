@@ -430,6 +430,9 @@ or icon host, no update endpoint of its own. Those are the only network calls th
 - Keys are kept in Obsidian's storage on each device. Copying the vault folder does not copy them.
 - The server's web log drops the WebSocket protocol header that carries each device token, so tokens
   never reach the log.
+- Geode's container has no Docker access and can't reach the internet or your network. On a machine
+  shared with other services, it can still reach any of them that accept connections from everyone:
+  Docker can't block that, only the machine's firewall can.
 - Use a strong passphrase. Anyone holding a device token, or the server's data, can try passphrases
   offline against your encrypted notes, and only the passphrase's strength stops them. If a device is
   lost, revoke it and change the passphrase.
