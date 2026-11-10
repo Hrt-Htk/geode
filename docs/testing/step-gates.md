@@ -303,7 +303,9 @@ merged-equals-remote case, conflict write order and a missing local row.
   and every file returns on disk identical to before, with no duplicates and a re-anchored cursor.
   `resync-never-drops-unsynced-file.test.ts` and
   `test/scenarios/sync/resync-keeps-divergent-local-file.test.ts` cover the files a rebuild must
-  keep.
+  keep. `test/scenarios/recovery/resync-partial-failure.test.ts`: a rebuild that dies after it
+  started applying leaves sync stopped, and no delete version reaches the server for the files it
+  never restored.
 - `test/scenarios/recovery/export-vault.test.ts`: the exported tree is byte-identical to the vault;
   `export-includes-obsidian.test.ts` covers synced `.obsidian/` files.
 
@@ -315,6 +317,8 @@ merged-equals-remote case, conflict write order and a missing local row.
   never falls back to the offline copy, and the progress count moves and ends at the head count.
 - `test/e2e/scenarios/resync-surfaces.spec.ts` (+ `.phone`): the resync surfaces in real Obsidian:
   the confirm dialog, the running notice and rows, done, and the stop with its reason and Try again.
+  The desktop run also fires the palette command mid run and asserts one monotonic run (a second
+  resync joins, it does not restart).
 - `test/e2e/scenarios/gate6-export-vault.spec.ts` (+ `.phone`): `exportDecryptedVault(dir)` writes
   every seeded file into the target folder, byte-equal to the vault.
 

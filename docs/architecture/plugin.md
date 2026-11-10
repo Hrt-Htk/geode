@@ -443,11 +443,13 @@ the restore-everything decision only for what the rejoin itself stopped. For the
 pending mass-delete hold, exactly as "Resync from scratch" does (and, unlike resync, without waiting for
 the held connection, since a rejoin runs over its own transport).
 
-A rebuild that is not a rejoin (Resync from settings or the palette, Resume) that dies part way
-restarts the session on the rows it did rebuild before rethrowing: the dispose above is the rebuild's
-first step, so without that restart sync would stay stopped until a reload. It never restarts on rows
-it did not rebuild (an unreadable state leaves sync stopped: the failure that stopped it is the one to
-report).
+A rebuild that is not a rejoin (Resync from settings or the palette, Resume) that dies BEFORE it reads
+its head list restarts the session on the persisted rows before rethrowing: the dispose above is the
+rebuild's first step, so without that restart sync would stay stopped until a reload, and those rows are
+exactly what a normal start reads. Past the head list it does not restart: `rebuildFromScratch` reports
+`onApplyStart`, and from there the rebuild may have rows open whose files it never restored, which a
+restarted session would read as local deletes (the mass-delete guard stays silent below 20 files). Sync
+stays stopped, and the resync surfaces carry the reason and Try again.
 
 A rejoin whose cause cannot be fixed (no space for the backup folder, a file named `Geode backup` in the
 vault root, or a blob the server can no longer serve) has one way out: free the space (or rename the file),
@@ -604,15 +606,20 @@ banner.
 state: synced with last-sync age, syncing progress, pending count, offline with the retry delay, locked,
 conflicts. Clicking it opens the status menu (`status-menu.ts`).
 
-**Resync surfaces** (`ui/resync-status.ts` for the state and every string, `ui/resync-progress.ts` for
-the notice, `ui/resync-run.ts` for the two entry points that own them): a resync owns the status while
-it runs, whichever way it started. One state (`running` with a count, or `failed` with a reason) feeds
-the single notice that updates in place, the status bar tooltip and spinner, the settings sync-status
-row (blue, then orange), and the Advanced row's button (`Resyncing…` disabled, then `Try again`).
-Pause and Reconcile are disabled while it runs, because a resync has already disposed the session they
-would act on. A stop keeps its reason in the row until the next resync; a connection failure says so in
-words. A rejoin shows the same running surfaces but keeps its own failure answer: the pause and its
-notice.
+**Resync surfaces** (`ui/resync-status.ts` for the state and every string, `ui/resync-run.ts` for the
+notice and the two entry points that own it): a resync owns the status while it runs, whichever way it
+started. One state (`running` with progress, or `failed` with a reason and whether it left a session
+behind) feeds the single notice that updates in place (at most four renders a second, the last count
+always), the status bar tooltip and spinner, the settings sync-status row (blue, then orange), and the
+Advanced row's button (`Resyncing…` disabled, then `Try again`). Pause and Reconcile are disabled while
+it runs, because a resync has already disposed the session they would act on. A running resync outranks
+everything (the transport reads disconnected by design). A stopped one outranks only a healthy session:
+a pause, a version refusal, a held delete or a real outage of the restarted session wins over it, and so
+does the outage banner, except for a rebuild that left no session behind (nothing retries then, so the
+stopped row is the whole answer). A stop keeps its reason until the next resync, a lock or a leave.
+Progress publishing is throttled, and the palette joins a run already in flight instead of starting a
+second one. A rejoin shows the same running surfaces but keeps its own failure answer: the pause and
+its notice.
 
 **Modals & views**: setup wizard, passphrase/forgot, config scope, folders, conflicts, trash, history
 (view + modal), activity, mass-delete review, re-key, rename vault, server address, export.
