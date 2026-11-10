@@ -4,6 +4,14 @@ import { useRemoteServer } from "../fixtures/phone-server";
 import { expectFits } from "../helpers/fit";
 import { waitForUnlocked } from "../helpers/geode";
 import { dismissModals, evalClick } from "../helpers/mobile-ui";
+import {
+  confirmOpen,
+  noticeTexts,
+  resyncButtonText,
+  seedResyncFiles,
+  statusRowText,
+  trackedCount,
+} from "../helpers/resync";
 import { openSettingsPage, useDisplayPath } from "../helpers/settings-tab";
 import { shotPath } from "../helpers/shots";
 import { waitForStatusBar } from "../helpers/waits";
@@ -37,7 +45,7 @@ test("resync surfaces on device: confirm, running, done, stopped", async () => {
     );
     await waitForUnlocked(o);
     await waitForStatusBar(o, "Geode: synced", 60_000);
-    await seed(o);
+    await seedResyncFiles(o, { notes: NOTES });
     await expect.poll(async () => await trackedCount(o), { timeout: 120_000 })
       .toBeGreaterThanOrEqual(NOTES);
     await waitForStatusBar(o, "Geode: synced", 120_000);
@@ -95,12 +103,20 @@ test("resync surfaces on device: confirm, running, done, stopped", async () => {
     await evalClick(o, '[data-testid="geode-settings-resync"]');
     await expect.poll(async () => await confirmOpen(o), { timeout: 15_000 }).toBe(true);
     await evalClick(o, '[data-testid="geode-confirm-yes"]');
-    await expect.poll(async () => await statusRowText(o), { timeout: 120_000 }).toContain(
-      "Resync stopped",
+    // #54 review: the restarted session is offline, and that outage outranks the stopped
+    // row; the notice carries the reason and the button the retry.
+    await expect.poll(async () => await resyncButtonText(o), { timeout: 120_000 }).toBe(
+      "Try again",
     );
-    await expect.poll(async () => await resyncButtonText(o), { timeout: 15_000 }).toBe("Try again");
+    await expect.poll(async () => await noticeTexts(o), { timeout: 15_000 }).toContain(
+      "Geode: resync stopped. Server unreachable.",
+    );
     await o.screenshot(shotPath("6-stopped-resync-row-phone"));
     await scrollToRow(o, "Sync status");
+    const rowText = await statusRowText(o);
+    expect(rowText.startsWith("Offline. Retrying") || rowText.startsWith("Resync stopped")).toBe(
+      true,
+    );
     await o.screenshot(shotPath("7-stopped-status-row-phone"));
   } finally {
     await o.close();
@@ -126,60 +142,6 @@ function scrollToRow(o: Phone, name: string): Promise<boolean> {
   })()`);
 }
 
-function statusRowText(o: Phone): Promise<string> {
-  return o.eval<string>(`
-    (() => {
-      const row = document.querySelector('[data-testid="geode-settings-sync-status"]');
-      return row?.querySelector(".setting-item-description")?.textContent?.trim() ?? "";
-    })()
-  `);
-}
-
-function resyncButtonText(o: Phone): Promise<string> {
-  return o.eval<string>(`
-    (() => {
-      const btn = document.querySelector('[data-testid="geode-settings-resync"]');
-      return btn?.textContent?.trim() ?? "";
-    })()
-  `);
-}
-
-function confirmOpen(o: Phone): Promise<boolean> {
-  return o.eval<boolean>(`!!document.querySelector(".geode-confirm-modal")`);
-}
-
 function noticeCount(o: Phone): Promise<number> {
   return o.eval<number>(`document.querySelectorAll(".notice").length`);
-}
-
-function trackedCount(o: Phone): Promise<number> {
-  return o.eval<number>(`
-    (() => {
-      const state = app.plugins.plugins.geode.syncManager?.state;
-      return state ? [...state.getAllLocalFiles().values()].filter((r) => !r.deleted).length : 0;
-    })()
-  `);
-}
-
-async function seed(o: Phone): Promise<void> {
-  await o.eval(`
-    const files = [];
-    for (let index = 0; index < ${NOTES}; index++) {
-      files.push({ path: "notes/note-" + String(index).padStart(3, "0") + ".md", size: 700 + index });
-    }
-    for (const [index, file] of files.entries()) {
-      let state = 7919 + index * 104729;
-      const bytes = new Uint8Array(file.size);
-      for (let i = 0; i < bytes.length; i++) {
-        state = (state * 1103515245 + 12345) % 2147483648;
-        bytes[i] = state & 0xff;
-      }
-      if (!(await app.vault.adapter.exists("notes"))) await app.vault.createFolder("notes");
-      await app.vault.createBinary(file.path, bytes.buffer);
-    }
-    await app.plugins.plugins.geode.syncManager.handlePendingOps(
-      files.map((file) => ({ path: file.path, kind: "commit" })),
-    );
-    return true;
-  `);
 }

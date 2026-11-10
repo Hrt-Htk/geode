@@ -30,15 +30,44 @@ function input(overrides: Partial<SyncStatusInput> = {}): SyncStatusInput {
   };
 }
 
+const OUTAGE = { state: "disconnected", offlineSince: NOW - 30_000 };
+
 Deno.test("sync-banner - a running resync is not an outage", () => {
   // #54: the rebuild disposes the transport on purpose. Ten seconds in, the outage banner
   // would sit above the row that says the resync is running.
   assertEquals(
     describeErrorBanner(
+      input({ ...OUTAGE, resync: { phase: "running", progress: { current: 40, total: 120 } } }),
+      NOW,
+      SERVER_URL,
+    ),
+    null,
+  );
+});
+
+Deno.test("sync-banner - an outage after a stopped resync is a real outage", () => {
+  // #54 review: the restart happened, so an unreachable server is the session's problem and
+  // the banner must say so.
+  assert(
+    describeErrorBanner(
       input({
-        state: "disconnected",
-        offlineSince: NOW - 30_000,
-        resync: { phase: "running", current: 40, total: 120 },
+        ...OUTAGE,
+        resync: { phase: "failed", reason: "Server unreachable.", syncStopped: false },
+      }),
+      NOW,
+      SERVER_URL,
+    ) !== null,
+  );
+});
+
+Deno.test("sync-banner - no outage banner for a rebuild that left sync stopped", () => {
+  // Nothing is retrying, so "sync is paused until X is reachable" would promise a retry that
+  // never comes; the stopped row and its Try again are the answer.
+  assertEquals(
+    describeErrorBanner(
+      input({
+        ...OUTAGE,
+        resync: { phase: "failed", reason: "Server unreachable.", syncStopped: true },
       }),
       NOW,
       SERVER_URL,

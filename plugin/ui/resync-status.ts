@@ -1,40 +1,37 @@
 /** #54: the resync surfaces' one state and copy: the notice, the status bar tooltip, the
  * settings row and the button label all read from here. No obsidian import (deno-tested). */
+import type { ProgressInfo } from "../sync/recovery.ts";
 
-/** `total` 0: the rebuild has not read the file list yet. */
 export type ResyncState =
-  | { phase: "running"; current: number; total: number }
-  | { phase: "failed"; reason: string };
+  /** `progress.total` 0: the rebuild has not read the file list yet. */
+  | { phase: "running"; progress: ProgressInfo }
+  /** `syncStopped`: the rebuild left no session behind, so this state IS the sync status. */
+  | { phase: "failed"; reason: string; syncStopped: boolean };
 
-export const RESYNC_ROW_NAME = "Resync from scratch";
+/** The row name and the idle button label are the same words. */
+export const RESYNC_ROW = "Resync from scratch";
 export const RESYNC_ROW_DESC =
   "Download the whole vault from the server again. Use only when sync is broken.";
-export const RESYNC_BUTTON = "Resync from scratch";
-export const RESYNC_BUSY_BUTTON = "Resyncing…";
-export const RESYNC_RETRY_BUTTON = "Try again";
+export const RESYNC_BUSY = "Resyncing…";
+export const RESYNC_RETRY = "Try again";
 
-function counted(state: Extract<ResyncState, { phase: "running" }>): boolean {
-  return state.total > 0;
-}
+export type ResyncCopy = { notice: string; tooltip: string; row: string };
 
-/** The notice: it stays while the rebuild runs and its numbers move. */
-export function resyncNoticeText(state: ResyncState): string {
-  if (state.phase === "failed") return `Geode: resync stopped. ${state.reason}`;
-  return counted(state)
-    ? `Geode: resyncing ${state.current} of ${state.total} files`
-    : "Geode: resyncing";
-}
-
-export function resyncTooltip(state: ResyncState): string {
-  if (state.phase === "failed") return `Geode: resync stopped. ${state.reason}`;
-  return counted(state)
-    ? `Geode: resyncing ${state.current} of ${state.total}`
-    : "Geode: resyncing";
-}
-
-export function resyncRowText(state: ResyncState): string {
-  if (state.phase === "failed") return `Resync stopped. ${state.reason}`;
-  return counted(state) ? `Resyncing: ${state.current} of ${state.total} files.` : "Resyncing.";
+/** The three surfaces' words, from the one state. */
+export function resyncCopy(state: ResyncState): ResyncCopy {
+  if (state.phase === "failed") {
+    const notice = `Geode: resync stopped. ${state.reason}`;
+    return { notice, tooltip: notice, row: `Resync stopped. ${state.reason}` };
+  }
+  const { current, total } = state.progress;
+  if (total === 0) {
+    return { notice: "Geode: resyncing", tooltip: "Geode: resyncing", row: "Resyncing." };
+  }
+  return {
+    notice: `Geode: resyncing ${current} of ${total} files`,
+    tooltip: `Geode: resyncing ${current} of ${total}`,
+    row: `Resyncing: ${current} of ${total} files.`,
+  };
 }
 
 export function resyncRowDot(state: ResyncState): "blue" | "orange" {
@@ -51,9 +48,19 @@ export function resyncIcon(state: ResyncState): {
     : { icon: "refresh-cw", color: "geode-statusbar-syncing", spin: true };
 }
 
+/** #54 review: only a rebuild that LEFT sync stopped owns the sync status. One that
+ * restarted a session hands the status back: the restarted session's own state (offline,
+ * paused, a version refusal, a held delete) is then the truth, and the stop keeps its
+ * reason for when nothing more important is going on. */
+export function resyncStopsSync(
+  state: ResyncState | null,
+): state is Extract<ResyncState, { phase: "failed" }> {
+  return state?.phase === "failed" && state.syncStopped;
+}
+
 export function resyncButtonText(state: ResyncState | null): string {
-  if (state?.phase === "running") return RESYNC_BUSY_BUTTON;
-  return state?.phase === "failed" ? RESYNC_RETRY_BUTTON : RESYNC_BUTTON;
+  if (state?.phase === "running") return RESYNC_BUSY;
+  return state?.phase === "failed" ? RESYNC_RETRY : RESYNC_ROW;
 }
 
 /** Connection-level failures have no message worth showing: the approved copy names the
@@ -68,4 +75,15 @@ export function resyncStopReason(error: unknown): string {
 export function resyncDoneNotice(updated: number): string {
   if (updated === 0) return "Geode: resync done. Nothing to update.";
   return `Geode: resync done. ${updated} file${updated === 1 ? "" : "s"} updated.`;
+}
+
+/** #54: progress renders at most about four times a second; the last count always renders. */
+export const RESYNC_RENDER_MS = 250;
+
+export function resyncRenderDue(
+  progress: ProgressInfo,
+  lastRenderAt: number,
+  now: number,
+): boolean {
+  return progress.current >= progress.total || now - lastRenderAt >= RESYNC_RENDER_MS;
 }

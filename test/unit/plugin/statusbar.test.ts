@@ -223,28 +223,78 @@ Deno.test("statusbar - no green between applying events of a catch-up batch", ()
   );
 });
 
+const RESYNC_RUNNING = {
+  phase: "running",
+  progress: { current: 312, total: 822 },
+} as const;
+const RESYNC_STOPPED = {
+  phase: "failed",
+  reason: "Server unreachable.",
+  syncStopped: false,
+} as const;
+const RESYNC_LEFT_STOPPED = {
+  phase: "failed",
+  reason: "Server unreachable.",
+  syncStopped: true,
+} as const;
+const RESYNC_HOLD = { files: [{ path: "a.md", mtime: 1 }], totalTracked: 10, detectedAt: 5 };
+
 Deno.test("statusbar - a running resync spins with the progress tooltip, not the offline icon", () => {
   // #54: disposeRuntime sets "disconnected" before the rebuild reads a single head.
-  const s = resolveIcon(
-    input({
-      state: "disconnected",
-      resync: { phase: "running", current: 312, total: 822 },
-    }),
-  );
+  const s = resolveIcon(input({ state: "disconnected", resync: RESYNC_RUNNING }));
   assertEquals(s.icon, "refresh-cw");
   assertEquals(s.color, "geode-statusbar-syncing");
   assertEquals(s.spin, true);
   assertEquals(s.tooltip, "Geode: resyncing 312 of 822");
 });
 
-Deno.test("statusbar - a stopped resync is a warning icon that names the reason", () => {
-  const s = resolveIcon(
-    input({ state: "disconnected", resync: { phase: "failed", reason: "Server unreachable." } }),
-  );
+Deno.test("statusbar - a stopped resync names the reason while the session is healthy", () => {
+  const s = resolveIcon(input({ state: "live", resync: RESYNC_STOPPED }));
   assertEquals(s.icon, "triangle-alert");
   assertEquals(s.color, "geode-statusbar-error");
   assertEquals(s.spin, undefined);
   assertEquals(s.tooltip, "Geode: resync stopped. Server unreachable.");
+});
+
+Deno.test("statusbar - a stopped resync never hides a pause, refusal, hold or outage", () => {
+  // #54 review: a restart happened, so the restarted session's own state is the truth.
+  assertEquals(
+    resolveIcon(input({ state: "disconnected", reconnectDelay: 5_000, resync: RESYNC_STOPPED }))
+      .icon,
+    "refresh-cw-off",
+  );
+  assertEquals(resolveIcon(input({ resync: RESYNC_STOPPED, pausedAt: 5 })).icon, "pause-circle");
+  assertEquals(
+    resolveIcon(
+      input({ resync: RESYNC_STOPPED, versionStatus: { kind: "blocked", side: "plugin" } }),
+    )
+      .icon,
+    "triangle-alert",
+  );
+  const refusal = resolveIcon(
+    input({ resync: RESYNC_STOPPED, versionStatus: { kind: "blocked", side: "plugin" } }),
+  );
+  assertEquals(refusal.tooltip.startsWith("Geode: update the plugin"), true);
+  assertEquals(
+    resolveIcon(input({ resync: RESYNC_STOPPED, massDeleteHold: RESYNC_HOLD })).icon,
+    "file-warning",
+  );
+});
+
+Deno.test("statusbar - a rebuild that left sync stopped owns the bar it stopped", () => {
+  const s = resolveIcon(input({ state: "disconnected", resync: RESYNC_LEFT_STOPPED }));
+  assertEquals(s.icon, "triangle-alert");
+  assertEquals(s.color, "geode-statusbar-error");
+  assertEquals(s.tooltip, "Geode: resync stopped. Server unreachable.");
+  // The states that need the user still win over it.
+  assertEquals(
+    resolveIcon(input({ resync: RESYNC_LEFT_STOPPED, pausedAt: 5 })).icon,
+    "pause-circle",
+  );
+  assertEquals(
+    resolveIcon(input({ resync: RESYNC_LEFT_STOPPED, massDeleteHold: RESYNC_HOLD })).icon,
+    "file-warning",
+  );
 });
 
 Deno.test("statusbar - a held mass delete is its own orange warning, not the connecting spinner", () => {

@@ -117,6 +117,8 @@ export default class GeodePlugin extends Plugin {
   adminToken: string | null = null;
   lastBackupAt = 0;
   blockedNoticeShown = false;
+  /** #54: a resync still settling must not project its stop into the next session. */
+  unloaded = false;
   private syncingProgress: { current: number; total: number } | null = null;
   deferredStartCleanup: (() => void) | null = null;
   // SyncSessionHost injectables (session.ts stays obsidian-free).
@@ -180,6 +182,7 @@ export default class GeodePlugin extends Plugin {
     this.showStartupModal();
   }
   onunload(): void {
+    this.unloaded = true;
     this.activity?.flush();
     this.updater.dispose();
     this.statusBar?.dispose();
@@ -267,11 +270,20 @@ export default class GeodePlugin extends Plugin {
     this.statusBar?.setPausedAt(0);
   }
 
+  /** #54: one run at a time. The settings button is disabled meanwhile, but the palette
+   * command is not: a second Resync joins the run instead of starting a second rebuild. */
+  private resyncInFlight: Promise<void> | null = null;
+
   async resyncFromScratch(): Promise<void> {
     // #701: a failed rejoin left the rows armed; only the rejoin rebuild may run on them.
     if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
-    if (!this.transport) throw new Error("vault must be unlocked before resync");
-    await runResync(this, this.transport);
+    if (!this.resyncInFlight) {
+      if (!this.transport) throw new Error("vault must be unlocked before resync");
+      this.resyncInFlight = runResync(this, this.transport).finally(() => {
+        this.resyncInFlight = null;
+      });
+    }
+    await this.resyncInFlight;
   }
 
   /** #701: the join landed on an old copy of this vault: rebuild over a transport with

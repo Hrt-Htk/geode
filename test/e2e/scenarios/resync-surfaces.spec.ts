@@ -2,7 +2,14 @@ import { expect, test } from "@playwright/test";
 import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
-import { waitForStatusBar } from "../helpers/waits";
+import {
+  confirmOpen,
+  noticeTexts,
+  resyncButtonText,
+  seedResyncFiles,
+  statusRowText,
+  trackedCount,
+} from "../helpers/resync";
 import {
   openSettingsPage,
   scrollRowIntoView,
@@ -10,6 +17,7 @@ import {
   useDisplayPath,
 } from "../helpers/settings-tab";
 import { shotPath } from "../helpers/shots";
+import { waitForStatusBar } from "../helpers/waits";
 
 // #54: the resync surfaces in real Obsidian: the confirm dialog, one notice that moves
 // while the rebuild runs, the settings row at each stage, and the stop that keeps its
@@ -19,6 +27,8 @@ const NOTES = 120;
 /** One large file keeps the rebuild busy for seconds: a test vault of notes alone
  * rebuilds in a few hundred milliseconds, too short to photograph. */
 const LARGE = 128 * 1024 * 1024;
+
+type Obsidian = Awaited<ReturnType<typeof launchObsidian>>;
 
 test("resync surfaces: confirm, running, done, stopped", async () => {
   test.slow();
@@ -39,13 +49,24 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
   try {
     await waitForUnlocked(o);
     await waitForStatusBar(o.win, "Geode: synced", 60_000);
-    await seed(o);
+    await seedResyncFiles(o, { notes: NOTES, largeBytes: LARGE });
     // The vault carries a few files of its own besides the seeds.
     await expect.poll(async () => await trackedCount(o), { timeout: 300_000 })
       .toBeGreaterThanOrEqual(NOTES + 1);
+    // The large file is what makes the rebuild last, and it must be ON THE SERVER before the
+    // resync starts: a head the run never sees rebuilds in a blink. The row's version is
+    // stamped when the commit acks, so this waits for the upload, not just for the file.
+    await expect.poll(
+      async () =>
+        await o.eval<number>(`
+          app.plugins.plugins.geode.syncManager?.state?.getLocalFile("media/large.bin")
+            ?.last_seen_version ?? 0
+        `),
+      { timeout: 120_000 },
+    ).toBeGreaterThan(0);
     await waitForStatusBar(o.win, "Geode: synced", 300_000);
 
-    // The display() path keeps Status and Advanced Rows in one pane, the way the mockup
+    // The display() path keeps Status and Advanced rows in one pane, the way the mockup
     // laid them out (1.13+ puts Advanced on its own page).
     await o.eval(`
       app.setting.open();
@@ -58,6 +79,18 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
     await expect.poll(async () => await resyncButtonText(o), { timeout: 10_000 })
       .toBe("Resync from scratch");
 
+    // Record what the run publishes, so the re-entrancy check can prove it never restarted.
+    await o.eval(`
+      window.__geodeResyncStates = [];
+      const bar = app.plugins.plugins.geode.statusBar;
+      const publish = bar.setResync.bind(bar);
+      bar.setResync = (state) => {
+        window.__geodeResyncStates.push(state);
+        publish(state);
+      };
+      return true;
+    `);
+
     /* ---- Confirm ---- */
     await o.eval(
       `document.querySelector('[data-testid="geode-settings-resync"]').click(); return true;`,
@@ -69,25 +102,48 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
     await o.eval(
       `document.querySelector('[data-testid="geode-confirm-yes"]').click(); return true;`,
     );
-    await shootWhileRunning(o, "2-running-status-row-desktop", async () => {
+    // #54 review: the palette is not disabled while a run is going. It must join the run,
+    // not fail and not start a second rebuild.
+    await o.eval(`app.commands.executeCommandById("geode:resync"); return true;`);
+    // One running frame: a desktop rebuild of a test vault can finish in a second, and the
+    // phone spec carries the second (Advanced row) running shot. The busy button is asserted
+    // here instead, in the same bracketed window.
+    await shootWhileRunning(o, "2-running-desktop", async () => {
       await scrollToHeading(o, "Sync status");
     });
-    await shootWhileRunning(o, "3-running-resync-row-desktop", async () => {
-      await scrollRowIntoView(o, "Resync from scratch");
-    });
+    expect(await resyncButtonText(o)).toBe("Resyncing…");
 
     /* ---- Done ---- */
     await expect.poll(async () => await statusRowText(o), { timeout: 300_000 }).toContain(
       "Up to date",
     );
+    const states = await o.eval<Array<{ phase: string; progress?: { current: number } } | null>>(
+      "return window.__geodeResyncStates;",
+    );
+    const counts = states
+      .filter((state) => state?.phase === "running")
+      .map((state) => state!.progress!.current);
+    // One run: a single uncounted start, and the counts only move forward.
+    expect(counts.filter((current) => current === 0)).toHaveLength(1);
+    for (let index = 1; index < counts.length; index++) {
+      expect(counts[index], "progress never restarts").toBeGreaterThanOrEqual(counts[index - 1]);
+    }
+    // The published count moves: the run renders more than one count as it goes.
+    expect(new Set(counts).size).toBeGreaterThan(1);
+    expect(
+      await o.eval<string[]>(`app.plugins.plugins.geode.getRecentLog()
+        .filter((e) => e.level === "error" && e.msg === "resync command failed")
+        .map((e) => e.msg)`),
+    ).toEqual([]);
+
     await scrollRowIntoView(o, "Resync from scratch");
     await expect.poll(async () => await resyncButtonText(o), { timeout: 10_000 })
       .toBe("Resync from scratch");
-    await shoot(o, "4-done-resync-row-desktop");
+    await shoot(o, "3-done-resync-row-desktop");
     await scrollToHeading(o, "Sync status");
-    await shoot(o, "5-done-status-row-desktop");
+    await shoot(o, "4-done-status-row-desktop");
 
-    /* ---- Stopped: the server goes away before the run, so the run stops at once ---- */
+    /* ---- Stopped by an outage: the rebuilt session comes back and retries ---- */
     // The done notice fades like any other: wait it out so the stop notice stands alone.
     await expect.poll(
       async () => await o.eval<number>(`document.querySelectorAll(".notice").length`),
@@ -95,38 +151,42 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
     ).toBe(0);
     await server.stop();
     await scrollRowIntoView(o, "Resync from scratch");
-    await o.eval(
-      `document.querySelector('[data-testid="geode-settings-resync"]').click(); return true;`,
+    await clickResync(o);
+    // #54 review: the restart brought a session back that is now offline, and that outage
+    // outranks the stopped row; the notice carries the reason and the button the retry.
+    await expect.poll(async () => await noticeTexts(o), { timeout: 120_000 }).toContain(
+      "Geode: resync stopped. Server unreachable.",
     );
-    await expect.poll(async () => await confirmOpen(o), { timeout: 10_000 }).toBe(true);
-    await o.eval(
-      `document.querySelector('[data-testid="geode-confirm-yes"]').click(); return true;`,
+    await expect.poll(async () => await statusRowText(o), { timeout: 10_000 }).toContain(
+      "Offline. Retrying",
     );
-    await expect.poll(async () => await statusRowText(o), { timeout: 120_000 }).toContain(
-      "Resync stopped",
-    );
-    // Shoot at once: the stop notice fades like any other, the row keeps the reason.
     await expect.poll(async () => await resyncButtonText(o), { timeout: 10_000 }).toBe("Try again");
-    await shoot(o, "6-stopped-resync-row-desktop");
     await scrollToHeading(o, "Sync status");
-    await shoot(o, "7-stopped-status-row-desktop");
+    await shoot(o, "5-stopped-status-row-desktop");
+    await scrollRowIntoView(o, "Resync from scratch");
+    await shoot(o, "6-stopped-resync-row-desktop");
   } finally {
     await o.close();
     await server.stop().catch(() => {});
   }
 });
 
-async function shoot(
-  o: Awaited<ReturnType<typeof launchObsidian>>,
-  name: string,
-): Promise<void> {
+async function clickResync(o: Obsidian): Promise<void> {
+  await o.eval(
+    `document.querySelector('[data-testid="geode-settings-resync"]').click(); return true;`,
+  );
+  await expect.poll(async () => await confirmOpen(o), { timeout: 10_000 }).toBe(true);
+  await o.eval(`document.querySelector('[data-testid="geode-confirm-yes"]').click(); return true;`);
+}
+
+async function shoot(o: Obsidian, name: string): Promise<void> {
   await o.win.screenshot({ path: shotPath(name) });
 }
 
 /** Bracket a shot with the live row: the frame is a running frame only when the row still
  * says resyncing after the screenshot resolved. */
 async function shootWhileRunning(
-  o: Awaited<ReturnType<typeof launchObsidian>>,
+  o: Obsidian,
   name: string,
   position: () => Promise<void>,
   timeoutMs = 60_000,
@@ -139,79 +199,19 @@ async function shootWhileRunning(
     await shoot(o, name);
     if (await resyncRunning(o)) return;
   }
-  throw new Error(`resync finished before the "${name}" shot`);
+  throw new Error(
+    `resync finished before the "${name}" shot (row: "${await statusRowText(o)}", ` +
+      `button: "${await resyncButtonText(o)}")`,
+  );
 }
 
-function resyncRunning(o: Awaited<ReturnType<typeof launchObsidian>>): Promise<boolean> {
+/** A counted running state: the shots show the progress, not the interim before the list. */
+function resyncRunning(o: Obsidian): Promise<boolean> {
   return o.eval<boolean>(`
     (() => {
       const row = document.querySelector('[data-testid="geode-settings-sync-status"]');
       const text = row?.querySelector(".setting-item-description")?.textContent ?? "";
-      return text.trim().startsWith("Resyncing");
+      return /^Resyncing: \\d+ of \\d+ files\\.$/.test(text.trim());
     })()
-  `);
-}
-
-function statusRowText(o: Awaited<ReturnType<typeof launchObsidian>>): Promise<string> {
-  return o.eval<string>(`
-    (() => {
-      const row = document.querySelector('[data-testid="geode-settings-sync-status"]');
-      return row?.querySelector(".setting-item-description")?.textContent?.trim() ?? "";
-    })()
-  `);
-}
-
-function resyncButtonText(o: Awaited<ReturnType<typeof launchObsidian>>): Promise<string> {
-  return o.eval<string>(`
-    (() => {
-      const btn = document.querySelector('[data-testid="geode-settings-resync"]');
-      return btn?.textContent?.trim() ?? "";
-    })()
-  `);
-}
-
-function confirmOpen(o: Awaited<ReturnType<typeof launchObsidian>>): Promise<boolean> {
-  return o.eval<boolean>(`!!document.querySelector(".geode-confirm-modal")`);
-}
-
-function trackedCount(o: Awaited<ReturnType<typeof launchObsidian>>): Promise<number> {
-  return o.eval<number>(`
-    (() => {
-      const state = app.plugins.plugins.geode.syncManager?.state;
-      return state ? [...state.getAllLocalFiles().values()].filter((r) => !r.deleted).length : 0;
-    })()
-  `);
-}
-
-/** Unique bytes per file, so nothing dedupes away: the rebuild has real work to do. */
-async function seed(o: Awaited<ReturnType<typeof launchObsidian>>): Promise<void> {
-  await o.eval(`
-    const files = [];
-    for (let index = 0; index < ${NOTES}; index++) {
-      files.push({ path: "notes/note-" + String(index).padStart(4, "0") + ".md", size: 900 + index });
-    }
-    const large = new Uint8Array(${LARGE});
-    for (let offset = 0; offset < large.length; offset += 65536) {
-      crypto.getRandomValues(large.subarray(offset, offset + 65536));
-    }
-    if (!(await app.vault.adapter.exists("media"))) await app.vault.createFolder("media");
-    await app.vault.createBinary("media/large.bin", large.buffer);
-    for (const [index, file] of files.entries()) {
-      let state = 7919 + index * 104729;
-      const bytes = new Uint8Array(file.size);
-      for (let i = 0; i < bytes.length; i++) {
-        state = (state * 1103515245 + 12345) % 2147483648;
-        bytes[i] = state & 0xff;
-      }
-      const slash = file.path.lastIndexOf("/");
-      const folder = file.path.slice(0, slash);
-      if (!(await app.vault.adapter.exists(folder))) await app.vault.createFolder(folder);
-      await app.vault.createBinary(file.path, bytes.buffer);
-    }
-    await app.plugins.plugins.geode.syncManager.handlePendingOps([
-      ...files.map((file) => ({ path: file.path, kind: "commit" })),
-      { path: "media/large.bin", kind: "commit" },
-    ]);
-    return true;
   `);
 }

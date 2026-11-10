@@ -2,6 +2,7 @@ import { describeSyncStatus, type SyncStatusInput } from "../../../plugin/ui/syn
 import { assertEquals } from "@std/assert";
 
 const MIN = 60_000;
+const NOW = 10 * MIN;
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
@@ -318,33 +319,87 @@ Deno.test("sync-status - a held mass delete names the hold, not the server", () 
   });
 });
 
+const RUNNING = { phase: "running", progress: { current: 312, total: 822 } } as const;
+const STOPPED = { phase: "failed", reason: "Server unreachable.", syncStopped: false } as const;
+const LEFT_STOPPED = { phase: "failed", reason: "Server unreachable.", syncStopped: true } as const;
+const HOLD = { files: [{ path: "a.md", mtime: 1 }], totalTracked: 10, detectedAt: 5 };
+
 Deno.test("sync-status - a running resync says so instead of offline", () => {
   // #54: the rebuild disposes the runtime first, so the transport reads disconnected for
   // the whole run. The row must describe the resync, not the teardown.
   assertEquals(
     describeSyncStatus(
-      input({
-        state: "disconnected",
-        reconnectDelay: 5_000,
-        resync: { phase: "running", current: 312, total: 822 },
-      }),
+      input({ state: "disconnected", reconnectDelay: 5_000, resync: RUNNING }),
       0,
     ),
     { text: "Resyncing: 312 of 822 files.", dot: "blue" },
   );
   assertEquals(
-    describeSyncStatus(input({ resync: { phase: "running", current: 0, total: 0 } }), 0),
+    describeSyncStatus(
+      input({ resync: { phase: "running", progress: { current: 0, total: 0 } } }),
+      0,
+    ),
     { text: "Resyncing.", dot: "blue" },
+  );
+  // The run outranks a pause the user set before it (it owns the session it disposed).
+  assertEquals(
+    describeSyncStatus(input({ resync: RUNNING, pausedAt: NOW - MIN, lastBackupAt: 0 }), NOW),
+    { text: "Resyncing: 312 of 822 files.", dot: "blue" },
   );
 });
 
-Deno.test("sync-status - a stopped resync keeps its reason and offers a retry", () => {
+Deno.test("sync-status - a stopped resync shows while the session is healthy", () => {
+  assertEquals(describeSyncStatus(input({ state: "live", resync: STOPPED, lastBackupAt: 0 }), 0), {
+    text: "Resync stopped. Server unreachable.",
+    dot: "orange",
+  });
+});
+
+Deno.test("sync-status - a stopped resync never hides a pause, refusal, hold or outage", () => {
+  const now = 10 * MIN;
+  // #54 review: once a restart happened, the restarted session's own state is the truth.
   assertEquals(
     describeSyncStatus(
-      input({ resync: { phase: "failed", reason: "Server unreachable." } }),
-      0,
-    ),
+      input({ state: "disconnected", reconnectDelay: 5_000, resync: STOPPED }),
+      now,
+    ).text.startsWith("Offline. Retrying in 5 s."),
+    true,
+  );
+  assertEquals(
+    describeSyncStatus(input({ resync: STOPPED, pausedAt: now - MIN }), now).text,
+    "Paused. Changes are kept locally and upload when you resume.",
+  );
+  assertEquals(
+    describeSyncStatus(input({ resync: STOPPED, versionStatus: blocked }), now).text,
+    "Update the plugin to keep syncing. Not backed up yet.",
+  );
+  assertEquals(describeSyncStatus(input({ resync: STOPPED, massDeleteHold: HOLD }), now), {
+    text: "1 file missing. Sync is on hold.",
+    dot: "orange",
+  });
+});
+
+Deno.test("sync-status - a rebuild that left sync stopped owns the row it stopped", () => {
+  // No session runs at all here, so the transport's "disconnected" is the teardown, not an
+  // outage: the reason and Try again are the answer.
+  assertEquals(
+    describeSyncStatus(input({ state: "disconnected", resync: LEFT_STOPPED }), 0),
     { text: "Resync stopped. Server unreachable.", dot: "orange" },
+  );
+  // The states that need the user still win over it.
+  assertEquals(
+    describeSyncStatus(input({ resync: LEFT_STOPPED, pausedAt: NOW - MIN }), NOW).text.startsWith(
+      "Paused.",
+    ),
+    true,
+  );
+  assertEquals(
+    describeSyncStatus(input({ resync: LEFT_STOPPED, versionStatus: blocked }), 0).dot,
+    "red",
+  );
+  assertEquals(
+    describeSyncStatus(input({ resync: LEFT_STOPPED, massDeleteHold: HOLD }), 0).text,
+    "1 file missing. Sync is on hold.",
   );
 });
 

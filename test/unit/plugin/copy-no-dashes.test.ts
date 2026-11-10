@@ -51,16 +51,13 @@ import {
 } from "../../../plugin/ui/trash-format.ts";
 import { describeSyncStatus, type SyncStatusInput } from "../../../plugin/ui/sync-status.ts";
 import {
-  RESYNC_BUSY_BUTTON,
-  RESYNC_BUTTON,
-  RESYNC_RETRY_BUTTON,
+  RESYNC_BUSY,
+  RESYNC_RETRY,
+  RESYNC_ROW,
   RESYNC_ROW_DESC,
-  RESYNC_ROW_NAME,
   resyncButtonText,
+  resyncCopy,
   resyncDoneNotice,
-  resyncNoticeText,
-  resyncRowText,
-  resyncTooltip,
 } from "../../../plugin/ui/resync-status.ts";
 import { describeStorage, type StorageState } from "../../../plugin/ui/storage-status.ts";
 import { describeErrorBanner } from "../../../plugin/ui/sync-banner.ts";
@@ -354,19 +351,16 @@ Deno.test("copy-no-dashes - sync status row text across states", () => {
 });
 
 Deno.test("copy-no-dashes - the resync surfaces (#54)", () => {
-  const running = { phase: "running", current: 312, total: 822 } as const;
-  const uncounted = { phase: "running", current: 0, total: 0 } as const;
-  const failed = { phase: "failed", reason: "Server unreachable." } as const;
+  const running = { phase: "running", progress: { current: 312, total: 822 } } as const;
+  const uncounted = { phase: "running", progress: { current: 0, total: 0 } } as const;
+  const stopped = { phase: "failed", reason: "Server unreachable.", syncStopped: false } as const;
   assertNoDashes("resync-status", [
-    RESYNC_ROW_NAME,
+    RESYNC_ROW,
     RESYNC_ROW_DESC,
-    RESYNC_BUTTON,
-    RESYNC_BUSY_BUTTON,
-    RESYNC_RETRY_BUTTON,
-    [running, uncounted, failed].flatMap((state) => [
-      resyncTooltip(state),
-      resyncNoticeText(state),
-      resyncRowText(state),
+    RESYNC_BUSY,
+    RESYNC_RETRY,
+    [running, uncounted, stopped].flatMap((state) => [
+      Object.values(resyncCopy(state)),
       resyncButtonText(state),
     ]),
     [0, 1, 4].map(resyncDoneNotice),

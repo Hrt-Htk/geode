@@ -10,8 +10,8 @@ import { confirmLeaveVault, confirmResyncFromScratch } from "./confirm-copy.ts";
 import { vaultDisplayName } from "./settings-vault-section.ts";
 import { ServerAddressModal } from "./server-address-modal.ts";
 import {
+  RESYNC_ROW,
   RESYNC_ROW_DESC,
-  RESYNC_ROW_NAME,
   resyncButtonText,
   type ResyncState,
 } from "./resync-status.ts";
@@ -156,7 +156,7 @@ export class SettingsAdvancedSection {
         });
       },
     }, {
-      name: RESYNC_ROW_NAME,
+      name: RESYNC_ROW,
       desc: RESYNC_ROW_DESC,
       render: (row) => {
         row.addButton((btn) => {

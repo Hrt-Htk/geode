@@ -4,12 +4,11 @@ import { blockedCopy, describeVersionHint } from "../sync/version-state.ts";
 import { pauseAgeColor } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
 import { UPDATE_STATUS_UPDATING } from "./server-update-logic.ts";
-import { resyncRowDot, resyncRowText, type ResyncState } from "./resync-status.ts";
+import { resyncCopy, resyncRowDot, type ResyncState, resyncStopsSync } from "./resync-status.ts";
+import type { ProgressInfo } from "../sync/recovery.ts";
 
 export type SyncStatusInput = IconInput & {
   lastBackupAt: number;
-  /** #54: a resync owns the row while it runs, and keeps its reason once it stops. */
-  resync: ResyncState | null;
   /** #560: a re-key is running on another device: sync paused, no commits. */
   rekeyInProgress?: boolean;
   /** #560: the vault's passphrase changed elsewhere: locked until re-unlocked. */
@@ -43,12 +42,12 @@ const DAY = 86_400_000;
 export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusResult {
   const backup = backupSuffix(i.lastBackupAt, now);
 
-  if (!i.unlocked) {
-    if (i.rekeyElsewhere) {
-      return { text: `Passphrase changed elsewhere. Unlock to continue. ${backup}`, dot: "red" };
-    }
-    return { text: `Locked. Nothing syncs until you unlock. ${backup}`, dot: "grey" };
-  }
+  const locked = describeLocked(i, backup);
+  if (locked) return locked;
+
+  // #54: the rebuild disposes the session first, so the transport reads disconnected for
+  // the whole run: the resync, not that teardown, is what the row describes.
+  if (i.resync?.phase === "running") return resyncResult(i.resync);
 
   if (i.rekeyInProgress) {
     return {
@@ -64,6 +63,10 @@ export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusR
   const gated = describeGated(i, now, backup);
   if (gated) return gated;
 
+  // #54 review: a rebuild that LEFT sync stopped owns the row it stopped (nothing is
+  // retrying); one that restarted a session only speaks while that session is healthy.
+  if (resyncStopsSync(i.resync)) return resyncResult(i.resync);
+
   if (i.conflictCount > 0) {
     return {
       text: `${i.conflictCount} conflict${i.conflictCount > 1 ? "s" : ""} to review. ${backup}`,
@@ -71,13 +74,10 @@ export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusR
     };
   }
 
-  if (
-    (i.state === "live" || i.state === "syncing") &&
-    i.syncingProgress && i.syncingProgress.current < i.syncingProgress.total
-  ) {
+  const catchUp = catchUpProgress(i);
+  if (catchUp) {
     return {
-      text:
-        `Catching up: ${i.syncingProgress.current} of ${i.syncingProgress.total} changes. ${backup}`,
+      text: `Catching up: ${catchUp.current} of ${catchUp.total} changes. ${backup}`,
       dot: "blue",
     };
   }
@@ -100,17 +100,14 @@ export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusR
   }
 }
 
-/** The states where sync is deliberately not moving, in precedence order: the running or
- * stopped resync (the rebuild disposes the session, so the transport reads disconnected for
- * its whole run, #54), the user pause, then the server's version refusal (#628: nothing can
- * sync, the fix is an update), then the held mass delete (a decision, but it needs the
- * connection the refusal withholds). */
+/** The states where sync is deliberately not moving, in precedence order: the user pause,
+ * then the server's version refusal (#628: nothing can sync, the fix is an update), then
+ * the held mass delete (a decision, but it needs the connection the refusal withholds). */
 function describeGated(
   i: SyncStatusInput,
   now: number,
   backup: string,
 ): SyncStatusResult | null {
-  if (i.resync) return { text: resyncRowText(i.resync), dot: resyncRowDot(i.resync) };
   if (i.pausedAt > 0) return describePaused(i, now);
   if (i.versionStatus.kind === "blocked") {
     return { text: `${blockedCopy(i.versionStatus.side).row} ${backup}`, dot: "red" };
@@ -119,6 +116,26 @@ function describeGated(
     return { text: holdSentence(i.massDeleteHold.files.length), dot: "orange" };
   }
   return null;
+}
+
+/** An inbound apply/commit backlog has its own count line while the transport is up. */
+function catchUpProgress(i: SyncStatusInput): ProgressInfo | null {
+  if (i.state !== "live" && i.state !== "syncing") return null;
+  const progress = i.syncingProgress;
+  if (progress === null || progress.current >= progress.total) return null;
+  return progress;
+}
+
+function describeLocked(i: SyncStatusInput, backup: string): SyncStatusResult | null {
+  if (i.unlocked) return null;
+  if (i.rekeyElsewhere) {
+    return { text: `Passphrase changed elsewhere. Unlock to continue. ${backup}`, dot: "red" };
+  }
+  return { text: `Locked. Nothing syncs until you unlock. ${backup}`, dot: "grey" };
+}
+
+function resyncResult(state: ResyncState): SyncStatusResult {
+  return { text: resyncCopy(state).row, dot: resyncRowDot(state) };
 }
 
 function describePaused(i: SyncStatusInput, now: number): SyncStatusResult {
@@ -136,6 +153,9 @@ function describePaused(i: SyncStatusInput, now: number): SyncStatusResult {
 }
 
 function describeLive(i: SyncStatusInput, backup: string): { text: string; dot: StatusDot | null } {
+  // #54 review: a rebuild that restarted a session keeps its reason while that session is
+  // healthy; an outage or a pause above has already taken the row.
+  if (i.resync) return resyncResult(i.resync);
   const n = i.pendingCount + i.dirtyCount;
   if (n > 0) {
     return { text: `Uploading ${n} change${n > 1 ? "s" : ""}. ${backup}`, dot: "blue" };

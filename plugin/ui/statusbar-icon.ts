@@ -3,7 +3,7 @@ import { blockedCopy, type VersionStatus } from "../sync/version-state.ts";
 import type { MassDeleteHold } from "../sync/mass-delete-hold.ts";
 import { pauseAgeColor, pauseTooltip } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
-import { resyncIcon, type ResyncState, resyncTooltip } from "./resync-status.ts";
+import { resyncCopy, resyncIcon, type ResyncState, resyncStopsSync } from "./resync-status.ts";
 
 export type IconState = {
   icon: string;
@@ -69,7 +69,7 @@ export function resolveIcon(i: IconInput): IconState {
 
   // #54: the rebuild disposes the session first: without this the bar shows the offline
   // icon for the whole run.
-  if (i.resync) return { ...resyncIcon(i.resync), tooltip: resyncTooltip(i.resync) };
+  if (i.resync?.phase === "running") return resyncIconState(i.resync);
 
   if (i.pausedAt > 0) return pausedIcon(i.pausedAt, i.now);
 
@@ -92,6 +92,10 @@ export function resolveIcon(i: IconInput): IconState {
       tooltip: holdSentence(i.massDeleteHold.files.length),
     };
   }
+
+  // #54 review: a rebuild that left sync stopped has no session behind it, so the stopped
+  // state speaks for sync here (a pause, a refusal or a hold above still wins).
+  if (resyncStopsSync(i.resync)) return resyncIconState(i.resync);
 
   // #432: calmer conflicts icon: git-merge in orange; red stays reserved for
   // disconnect / version errors. Zero conflicts falls through to the synced icon.
@@ -134,7 +138,14 @@ export function resolveIcon(i: IconInput): IconState {
   }
 }
 
+function resyncIconState(state: ResyncState): IconState {
+  return { ...resyncIcon(state), tooltip: resyncCopy(state).tooltip };
+}
+
 function liveIcon(i: IconInput): IconState {
+  // #54 review: a rebuild that restarted a session keeps its reason while that session is
+  // healthy; an outage, a pause or a refusal above has already taken the bar.
+  if (i.resync) return resyncIconState(i.resync);
   // Inbound apply backlog takes precedence over the synced checkmark: the
   // transport goes live as soon as all versions are *received*, before the
   // replay buffer drains to disk (#319).
