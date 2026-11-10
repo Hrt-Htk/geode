@@ -33,7 +33,9 @@ type RenameCarryDeps = {
   /** #697: mark this device's own applied rename as the (old, new) pair; the returned
    * function clears the mark when the rename did not happen. */
   suppressSelfRename?: (from: string, to: string) => () => void;
-  deviceName?: string;
+  /** Names a conflict sibling: required, so no carry can write the fallback label into a
+   * name that syncs to every device (#55). */
+  deviceName: string;
   renameHeadOf?: (
     pathHash: string,
   ) => Promise<{ version: number; deleted: number; rename_mark?: number } | null>;
@@ -61,13 +63,16 @@ export async function carryLocalEdit(
   const atDestination = await readVaultBinary(to, deps.vault);
   // Nothing is carried when the destination holds this edit (a case-only rename is one
   // inode under both names on a case-insensitive disk), but the abandoned name is emptied
-  // all the same: a file left there is re-derived as a new note beside the real one. Each
-  // side is hashed under its own name, so a rename that changes markdown-ness (x.md to
-  // x.canvas) never reads two different files as one.
-  if (
-    atDestination !== null &&
-    plaintextHashOf(from, body) === plaintextHashOf(to, atDestination)
-  ) {
+  // all the same: a file left there is re-derived as a new note beside the real one. Both
+  // sides hash under one name when the rename only changes case, or an extension-only case
+  // change (note.md to NOTE.MD) would flip markdown-ness and read that one file as two
+  // contents; a real rename hashes each side under its own name, so a markdown-ness change
+  // (x.md to x.canvas) is never the same bytes.
+  const destinationHash = atDestination === null ? null : plaintextHashOf(
+    isCaseOnlyPath(from, to) ? from : to,
+    atDestination,
+  );
+  if (destinationHash !== null && destinationHash === plaintextHashOf(from, body)) {
     // A peer may have written the destination since that read: the removal would then have
     // no copy to fall back on, so both are kept instead.
     if (await stillHoldsContent(from, to, body, deps)) {
@@ -84,8 +89,10 @@ export async function carryLocalEdit(
   return { kind: "moved", to };
 }
 
-/** #55: the destination must still hold this edit before the old name goes. A case-only
- * removal needs no re-read: it verifies the destination itself and puts its bytes back. */
+/** #55: both sides must still hold this edit before the old name goes. A save can land at
+ * either one while the carry was deciding (the window includes a server round trip), and
+ * removing the old file would then delete bytes nothing else holds. A case-only removal
+ * needs no re-read: it is one inode, and dropOldSpelling verifies the destination itself. */
 async function stillHoldsContent(
   from: string,
   to: string,
@@ -93,8 +100,11 @@ async function stillHoldsContent(
   deps: RenameCarryDeps,
 ): Promise<boolean> {
   if (isCaseOnlyPath(from, to)) return true;
-  const again = await readVaultBinary(to, deps.vault);
-  return again !== null && plaintextHashOf(from, body) === plaintextHashOf(to, again);
+  const id = plaintextHashOf(from, body);
+  const source = await readVaultBinary(from, deps.vault);
+  if (source === null || plaintextHashOf(from, source) !== id) return false;
+  const destination = await readVaultBinary(to, deps.vault);
+  return destination !== null && plaintextHashOf(to, destination) === id;
 }
 
 /** The destination's bookkeeping refuses the edit: a name this device is closing right now,
@@ -154,10 +164,9 @@ export async function followRename(
   to: string,
   deps: RenameCarryDeps,
 ): Promise<boolean> {
-  const onDisk = await readVaultBinary(to, deps.vault);
   if (
-    onDisk !== null || deps.state.getLocalFile(to)?.deleted === false ||
-    await nameRefusesCarry(to, deps)
+    deps.state.getLocalFile(to)?.deleted === false || await nameRefusesCarry(to, deps) ||
+    await readVaultBinary(to, deps.vault) !== null
   ) {
     return false;
   }
@@ -214,11 +223,11 @@ async function closedDestinationIsFree(path: string, deps: RenameCarryDeps): Pro
 /** The first free "(conflict …)" name next to `path`. */
 export async function freeConflictPath(
   path: string,
-  deps: { vault: Vault; deviceName?: string },
+  deps: { vault: Vault; deviceName: string },
 ): Promise<string> {
   const ts = new Date();
   for (let n = 0;; n++) {
-    const candidate = generateConflictPath(path, deps.deviceName ?? "", ts, n);
+    const candidate = generateConflictPath(path, deps.deviceName, ts, n);
     if (await readVaultBinary(candidate, deps.vault) === null) return candidate;
   }
 }

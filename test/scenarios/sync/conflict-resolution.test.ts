@@ -85,6 +85,7 @@ async function resolve(
     transport: plugin.transport,
     onConflict: (p, head) => plugin.syncManager.handleConflict(p, head),
     onConflictFileDeleted: (p) => plugin.syncManager.onConflictFileDeleted(p),
+    deviceName: plugin.pluginSettings.deviceName,
   });
   // The commit queue and replay must drain so the peer receives the resolution.
   await plugin.waitForIdle();

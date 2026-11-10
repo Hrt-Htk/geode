@@ -87,7 +87,9 @@ export interface CommitDeps {
   /** #583: decisions 2/9 need this device's identity and a way to stop the disk
    * writes a carried rename edit makes from enqueueing a second rename. */
   deviceId?: string;
-  deviceName?: string;
+  /** Names a conflict file (#583). Required: the file syncs to every device, so the
+   * fallback label must never reach its name (#55). */
+  deviceName: string;
   suppressSelfWrite?: (path: string) => void;
   /** #697: pair marks of this device's own applied renames. */
   suppressSelfRename?: (from: string, to: string) => () => void;
@@ -582,7 +584,7 @@ async function carryHeadEdit(
       chunkHashes: [],
       reason: "rename_edit_race",
     },
-    { vault: deps.vault, state: deps.state, deviceName: deps.deviceName ?? "" },
+    { vault: deps.vault, state: deps.state, deviceName: deps.deviceName },
   );
   return true;
 }

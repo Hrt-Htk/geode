@@ -58,6 +58,7 @@ function resolveDeps(
     transport: transport as never,
     onConflict: () => {},
     onConflictFileDeleted: (p: string) => deleted.push(p),
+    deviceName: "Laptop",
   };
 }
 

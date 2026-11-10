@@ -387,6 +387,7 @@ export class ConflictHandler {
               log.info("merged commit rejected, retrying on the next reconcile", {
                 path: conflictPath,
               }),
+            deviceName: this.deps.getDeviceName(),
             pendingRenameTarget: this.deps.pendingRenameTarget,
           }, { force: true });
         },

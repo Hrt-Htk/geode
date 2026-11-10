@@ -32,6 +32,19 @@ import type { CommitRequest, CommitResult } from "../../../plugin/sync/commit-ch
 import type { VersionRecord } from "../../../core/protocol.ts";
 import { diskVault } from "../../helpers/disk-vault.ts";
 
+/** The shared disk double plus the vault's own rename (Obsidian's path, #697). */
+function withRename(vault: ReturnType<typeof diskVault>) {
+  return {
+    ...vault,
+    rename: (file: { path: string }, to: string) => {
+      const body = vault.disk.get(file.path);
+      vault.disk.delete(file.path);
+      if (body !== undefined) vault.disk.set(to, body);
+      return Promise.resolve();
+    },
+  };
+}
+
 const FAST = { opsLimit: 1, memLimit: 8192 };
 
 function keysFor(passphrase = "test"): Promise<VaultKeys> {
@@ -631,6 +644,7 @@ Deno.test("rename-note - a cleared destination row does not block the carry", as
     state,
     keys,
     suppressSelfWrite: () => {},
+    deviceName: "Laptop",
     renameHeadOf: () => Promise.resolve(null), // no server history: a free name
   });
 
@@ -663,6 +677,7 @@ Deno.test("rename-note - a carry whose bytes match the destination keeps no copy
     state,
     keys,
     suppressSelfWrite: () => {},
+    deviceName: "Laptop",
   });
 
   assertEquals(carried, { kind: "same" });
@@ -695,12 +710,122 @@ Deno.test("rename-note - a carry changing markdown-ness is never the same conten
     state,
     keys,
     suppressSelfWrite: () => {},
+    deviceName: "Laptop",
   });
 
   assertEquals(carried.kind, "kept", "different files are both kept");
   assertEquals(vault.disk.get(to), "line1\r\nline2\r\n", "the destination keeps its bytes");
   const copy = (carried as { conflictPath: string }).conflictPath;
   assertEquals(vault.disk.get(copy), "line1\nline2\n", "the note's bytes are kept beside it");
+  state.close();
+});
+
+Deno.test("rename-note - a case-only rename with an upper-cased extension is one file", async () => {
+  const keys = await keysFor();
+  const state = openStateDB();
+  const from = "note.md";
+  const to = "NOTE.MD";
+  const body = "\ufeffline1\r\nline2\r\n";
+  state.upsertLocalFile({
+    path: from,
+    path_hash: hashPathHex(keys.mac_key, from),
+    size: body.length,
+    mtime: 1,
+    plaintext_hash: "old",
+    last_seen_version: 1,
+    chunk_hashes: [],
+  });
+  // One inode under two spellings, and only the extension's case changed: markdown-ness
+  // flips with it, so hashing each name by itself would read one file as two contents.
+  const vault = diskVault({ [to]: body }, { caseInsensitive: true });
+
+  const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, {
+    pendingRenameTarget: () => undefined,
+    vault: vault as never,
+    state,
+    keys,
+    suppressSelfWrite: () => {},
+    deviceName: "Laptop",
+  });
+
+  assertEquals(carried, { kind: "same" }, "the same bytes, not a carry");
+  assertEquals([...vault.disk.keys()], [to], "no conflict copy of the note itself");
+  assertEquals(vault.disk.get(to), body, "the note keeps its bytes, BOM and CRLF included");
+  state.close();
+});
+
+Deno.test("rename-note - that case-only rename keeps the name when the vault can rename", async () => {
+  const keys = await keysFor();
+  const state = openStateDB();
+  const from = "note.md";
+  const to = "NOTE.MD";
+  const body = "line1\r\nline2\r\n";
+  state.upsertLocalFile({
+    path: from,
+    path_hash: hashPathHex(keys.mac_key, from),
+    size: body.length,
+    mtime: 1,
+    plaintext_hash: "old",
+    last_seen_version: 1,
+    chunk_hashes: [],
+  });
+  const base = diskVault({ [to]: body }, { caseInsensitive: true });
+  const vault = withRename(base);
+
+  const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, {
+    pendingRenameTarget: () => undefined,
+    vault: vault as never,
+    state,
+    keys,
+    suppressSelfWrite: () => {},
+    deviceName: "Laptop",
+  });
+
+  assertEquals(carried, { kind: "same" });
+  assertEquals([...base.disk.keys()], [to], "the note is not moved onto a sibling");
+  assertEquals(base.disk.get(to), body, "the destination name survives the marker");
+  state.close();
+});
+
+Deno.test("rename-note - a save landing at the old name after the read keeps it", async () => {
+  const keys = await keysFor();
+  const state = openStateDB();
+  const from = "a.md";
+  const to = "b.md";
+  state.upsertLocalFile({
+    path: from,
+    path_hash: hashPathHex(keys.mac_key, from),
+    size: 4,
+    mtime: 1,
+    plaintext_hash: "old",
+    last_seen_version: 1,
+    chunk_hashes: [],
+  });
+  const base = diskVault({ [from]: "base", [to]: "base" });
+  const vault = withRename(base);
+  // A save lands at the old name between the carry's read and its removal (the window also
+  // covers a server round trip): the file it would delete is no longer the one it read.
+  const read = vault.adapter.readBinary;
+  let reads = 0;
+  vault.adapter.readBinary = async (path: string) => {
+    const bytes = await read(path);
+    if (path === from && ++reads === 1) base.disk.set(from, "saved");
+    return bytes;
+  };
+
+  const carried = await carryLocalEdit({ path: from, renamedTo: to, pendingEdit: true }, {
+    pendingRenameTarget: () => undefined,
+    vault: vault as never,
+    state,
+    keys,
+    suppressSelfWrite: () => {},
+    deviceName: "Laptop",
+  });
+
+  assertEquals(carried.kind, "kept", "the old name is not deleted under a fresh save");
+  const copy = (carried as { conflictPath: string }).conflictPath;
+  assertEquals(base.disk.get(copy), "saved", "the save survives in the sibling");
+  assertEquals(base.disk.get(to), "base", "the destination keeps its bytes");
   state.close();
 });
 
@@ -735,6 +860,7 @@ Deno.test("rename-note - a destination that moved on after the match keeps both"
     state,
     keys,
     suppressSelfWrite: () => {},
+    deviceName: "Laptop",
   });
 
   assertEquals(carried.kind, "kept", "the edit is kept instead of dropped");
@@ -842,6 +968,7 @@ Deno.test("rename-note - a destination the server renamed away again keeps both"
     state,
     keys,
     suppressSelfWrite: () => {},
+    deviceName: "Laptop",
     // The name was itself renamed away (a marker is its head): writing there would
     // walk a rename cycle, so both are kept next to it instead.
     renameHeadOf: () => Promise.resolve({ deleted: 1, rename_mark: RENAME_MARKER }),

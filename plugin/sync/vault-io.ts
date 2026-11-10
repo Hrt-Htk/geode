@@ -134,7 +134,10 @@ export function plaintextHashOf(path: string, bytes: Uint8Array): string {
   return blake3Hex(normalizeForHash(path, bytes));
 }
 
-export async function diskPlaintextHash(path: string, vault: Vault): Promise<string | null> {
+export async function diskPlaintextHash(
+  path: string,
+  vault: { adapter: { readBinary?: (path: string) => Promise<Uint8Array> } },
+): Promise<string | null> {
   const raw = await readVaultBinary(path, vault);
   return raw === null ? null : plaintextHashOf(path, raw);
 }

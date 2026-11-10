@@ -11,7 +11,9 @@ export function diskVault(files: Record<string, string>, opts: { caseInsensitive
     return p;
   };
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
+  // Byte-faithful: TextDecoder drops a UTF-8 BOM by default, and the plugin's identity hash
+  // strips it only for markdown.
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
   return {
     getAbstractFileByPath: (p: string) => (disk.has(key(p)) ? { path: key(p) } : null),
     getAllLoadedFiles: () => [...disk.keys()].map((path) => ({ path })),
