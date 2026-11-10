@@ -109,7 +109,7 @@ async function markerVersion(
 
 function applyDepsFor(
   keys: VaultKeys,
-  state: ReturnType<typeof openStateDB>,
+  state: ReturnType<typeof openSessionStateDB>,
   vault: unknown,
   over: Partial<ApplyDeps> = {},
 ): ApplyDeps {
@@ -655,7 +655,7 @@ Deno.test("rename-note - a cleared destination row does not block the carry", as
 
 Deno.test("rename-note - a carry whose bytes match the destination keeps no copy", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   const to = "b.md";
   state.upsertLocalFile({
@@ -688,7 +688,7 @@ Deno.test("rename-note - a carry whose bytes match the destination keeps no copy
 
 Deno.test("rename-note - a carry changing markdown-ness is never the same content", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "board.md";
   const to = "board.canvas";
   state.upsertLocalFile({
@@ -722,7 +722,7 @@ Deno.test("rename-note - a carry changing markdown-ness is never the same conten
 
 Deno.test("rename-note - a case-only rename with an upper-cased extension is one file", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "note.md";
   const to = "NOTE.MD";
   const body = "\ufeffline1\r\nline2\r\n";
@@ -756,7 +756,7 @@ Deno.test("rename-note - a case-only rename with an upper-cased extension is one
 
 Deno.test("rename-note - that case-only rename keeps the name when the vault can rename", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "note.md";
   const to = "NOTE.MD";
   const body = "line1\r\nline2\r\n";
@@ -789,7 +789,7 @@ Deno.test("rename-note - that case-only rename keeps the name when the vault can
 
 Deno.test("rename-note - a save landing at the old name after the read keeps it", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   const to = "b.md";
   state.upsertLocalFile({
@@ -831,7 +831,7 @@ Deno.test("rename-note - a save landing at the old name after the read keeps it"
 
 Deno.test("rename-note - a destination that moved on after the match keeps both", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   const to = "b.md";
   state.upsertLocalFile({
@@ -872,7 +872,7 @@ Deno.test("rename-note - a destination that moved on after the match keeps both"
 
 Deno.test("rename-note - a carried edit already at the new name closes the old one", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   const to = "b.md";
   const body = "the same text\n";
