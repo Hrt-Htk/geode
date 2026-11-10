@@ -35,12 +35,16 @@ Deno.test({
       },
     } as never;
     let upserted: unknown = null;
+    const recorded: string[] = [];
     const state = {
       upsertLocalFile: (f: unknown) => {
         upserted = f;
       },
-      ...record,
-      ...record,
+      beginWrite: (entry: { path: string }) => {
+        recorded.push(entry.path);
+        return Promise.resolve();
+      },
+      endWrite: () => Promise.resolve(),
     } as unknown as StateDB;
 
     let threw = false;
@@ -63,6 +67,11 @@ Deno.test({
 
     assertEquals(threw, true, "path write crash propagates");
     assertEquals(writes.length, 2, "two writes attempted");
+    // #59: both writes are recorded, and the sibling is recorded (and written) first, so a
+    // kill between them leaves the local content recoverable and resolvable.
+    assertEquals(recorded.length, 2, "both untyped writes are recorded");
+    assertEquals(recorded[0].startsWith("note (conflict Laptop "), true, "sibling recorded first");
+    assertEquals(recorded[1], "note.md", "then the path");
     assertEquals(
       writes[0].path.startsWith("note (conflict Laptop "),
       true,

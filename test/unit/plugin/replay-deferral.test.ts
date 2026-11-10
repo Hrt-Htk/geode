@@ -7,11 +7,11 @@ import {
 } from "../../../core/protocol.ts";
 import { deriveKeys, VaultKeys } from "../../../core/crypto.ts";
 import { hashPathHex } from "../../../core/hash.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { ReplayPipeline } from "../../../plugin/sync/replay.ts";
 import type { Transport } from "../../../plugin/sync/transport.ts";
 import { getRecentLog } from "../../../plugin/plumbing/log.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #583: every version a pending rename defers keeps its own held sync seq. Keying the
 // parked set by path hash alone loses the first version's seq until a restart
@@ -52,7 +52,7 @@ async function makePipeline(rows: ParkedRow[]) {
     opsLimit: 1,
     memLimit: 8192,
   });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const transport = new MarkerTransport(rows);
   const pipeline = new ReplayPipeline({
     vault: new FakeVault() as never,

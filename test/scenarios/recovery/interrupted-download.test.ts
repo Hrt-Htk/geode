@@ -57,9 +57,9 @@ Agenda item five.
 Agenda item six.
 `;
 
-/** What the kill left: the write landed a few bytes, nothing else. */
-const FRAGMENT = "# Mee";
-const UPDATE_FRAGMENT = "# Meeting notes\n\n";
+/** What the kill left: a torn write leaves the first bytes of what it was writing. */
+const FRAGMENT = BODY.slice(0, 5);
+const UPDATE_FRAGMENT = V2.slice(0, 20);
 
 const text = (bytes: Uint8Array | undefined) => bytes ? new TextDecoder().decode(bytes) : "<gone>";
 

@@ -72,15 +72,21 @@ export class StateDB {
   private persist: ((json: string) => void) | null = null;
   private syncCursorPersist: ((json: string) => void | Promise<void>) | null = null;
   private persistTimer: number | null = null;
-  /** #59: the writes of this session that have started and not returned: their bytes may be
-   * a fragment, so no pass may commit them and the apply must not read them as an edit. */
-  private readonly writing = new Map<string, InFlightWrite>();
+  /** #59: the writes of this session that have started and not returned, per path: their
+   * bytes may be a fragment, so no pass may commit them and the apply must not read them as
+   * an edit. Counted, because two writers can overlap on one path (an apply's download and a
+   * commit-side merge write): the first to finish must not clear the other's record. */
+  private readonly writing = new Map<string, { entry: InFlightWrite; writers: number }>();
   /** #59: what a killed session left: the start pass resolves each entry and then clears
    * them all, so no path is ever frozen by a record. */
   private readonly interrupted: Map<string, InFlightWrite>;
   /** Set by close(): a queued write that lands afterwards must not touch the state files
    * the next session (or a leave) owns. Re-attaching a state clears it again. */
   private closed = false;
+  /** Set when a strict write timed out: the chain is wedged, so later callers fail at once
+   * instead of each waiting out CURSOR_WAIT_MS (a drain of 45 files would spend 7 minutes
+   * doing nothing). Cleared by the next write that lands. */
+  private cursorStuck = false;
   /** Cursor writes run one at a time, in order: a slow one can never land after a newer
    * one and put a cleared record back. */
   private cursorWrites: Promise<void> = Promise.resolve();
@@ -145,7 +151,7 @@ export class StateDB {
     this.receivedSeqs.clear();
     this.replayEnd = seq;
     this.replayComplete = true;
-    void this.flushCursor();
+    void this.flushCursor({});
   }
 
   // Start a new connection's replay. current_seq is the vault's max seq at
@@ -207,7 +213,7 @@ export class StateDB {
         break;
       }
     }
-    if (changed) void this.flushCursor();
+    if (changed) void this.flushCursor({});
   }
 
   getSyncCursor(): number {
@@ -221,7 +227,7 @@ export class StateDB {
       const now = Date.now();
       if (now - this.lastStampWriteAt >= LAST_BACKUP_STAMP_THROTTLE_MS) {
         this.lastStampWriteAt = now;
-        void this.flushCursor();
+        void this.flushCursor({});
       }
     }
     return next;
@@ -261,19 +267,32 @@ export class StateDB {
   /** #59: record a write immediately before it starts, awaited. Rejects when the record
    * could not be written: bytes must not be written that nothing could finish. */
   async beginWrite(entry: InFlightWrite): Promise<void> {
-    this.writing.set(entry.path_hash, entry);
+    if (this.cursorStuck) {
+      throw new Error("state write: the cursor chain is wedged, nothing can be recorded");
+    }
+    const pathHash = entry.path_hash;
+    const existing = this.writing.get(pathHash);
+    if (existing) existing.writers++;
+    else this.writing.set(pathHash, { entry, writers: 1 });
     try {
-      await this.flushCursor(true);
+      await this.flushCursor({ strict: true });
     } catch (error) {
-      this.writing.delete(entry.path_hash);
+      if (existing) existing.writers--;
+      else this.writing.delete(pathHash);
       throw error;
     }
   }
 
-  /** #59: the write returned: its record is dropped. */
+  /** #59: this writer returned. The record goes when the last writer on the path does. */
   async endWrite(pathHash: string): Promise<void> {
-    if (!this.writing.delete(pathHash)) return;
-    await this.flushCursor();
+    const existing = this.writing.get(pathHash);
+    if (existing === undefined) return;
+    if (existing.writers > 1) {
+      existing.writers--;
+      return;
+    }
+    this.writing.delete(pathHash);
+    await this.flushCursor({});
   }
 
   /** #59: what a killed session left, as the start pass reads it (once, at open). */
@@ -283,12 +302,12 @@ export class StateDB {
 
   /** #59: these entries are resolved (any of the five outcomes). One the server could not
    * answer for stays recorded, and with it gated, until a later connection resolves it. */
-  async clearInterruptedWrites(resolved: string[]): Promise<void> {
+  async clearInterruptedWrites(resolved: InFlightWrite[]): Promise<void> {
     let cleared = false;
-    for (const pathHash of resolved) {
-      if (this.interrupted.delete(pathHash)) cleared = true;
+    for (const entry of resolved) {
+      if (this.interrupted.delete(entry.path_hash)) cleared = true;
     }
-    if (cleared) await this.flushCursor();
+    if (cleared) await this.flushCursor({});
   }
 
   /** #59: may this path's disk bytes be a fragment right now? One predicate for the apply
@@ -301,7 +320,7 @@ export class StateDB {
   /** The record the cursor file carries: this session's writes over the previous one's. */
   private inFlightWrites(): InFlightWrite[] {
     const entries = new Map(this.interrupted);
-    for (const [pathHash, entry] of this.writing) entries.set(pathHash, entry);
+    for (const [pathHash, { entry }] of this.writing) entries.set(pathHash, entry);
     return [...entries.values()];
   }
 
@@ -314,18 +333,37 @@ export class StateDB {
   /** Queue a cursor write in the ONE chain, so the file always reflects the last state. The
    * chain never skips a write: the next one starts only once this one settles, which is what
    * keeps a slow write from landing after a newer one. A caller waits at most
-   * CURSOR_WAIT_MS and then fails closed (strict) or moves on. `final` is the write close()
-   * still owes after the hook is gone. */
-  private flushCursor(strict = false, final = false): Promise<void> {
+   * CURSOR_WAIT_MS and then fails closed (`strict`) or moves on. `final` is the write
+   * close() still owes after the hook is gone. */
+  private flushCursor(opts: { strict?: boolean; final?: boolean }): Promise<void> {
     const hook = this.syncCursorPersist;
-    if (hook === null) return Promise.resolve();
+    if (hook === null) {
+      // Nothing can be persisted, so nothing can be recorded: fail closed rather than write
+      // bytes whose interruption nothing could resolve.
+      return opts.strict === true
+        ? Promise.reject(new Error("state write: no persistence wired"))
+        : Promise.resolve();
+    }
     const run = this.cursorWrites.then(() => {
-      if (this.closed && !final) return;
+      if (this.closed && opts.final !== true) return;
       return hook(this.serializeSyncCursor());
-    });
+    }).then(
+      (value) => {
+        this.cursorStuck = false;
+        return value;
+      },
+      (error) => {
+        throw error;
+      },
+    );
     this.cursorWrites = run.catch(() => {});
-    const waited = withTimeout(run, CURSOR_WAIT_MS, "state write");
-    return strict ? waited : waited.catch(() => {});
+    const waited = withTimeout(run, CURSOR_WAIT_MS, "state write").catch((error) => {
+      // A write that outlived the wait wedges the chain: every later caller would wait it
+      // out again for nothing.
+      this.cursorStuck = true;
+      throw error;
+    });
+    return opts.strict === true ? waited : waited.catch(() => {});
   }
 
   private schedulePersist(): void {
@@ -359,7 +397,7 @@ export class StateDB {
     // The final cursor write still lands; every write queued before it is superseded by
     // it, and any queued or later one is dropped so nothing writes stale state over the
     // next session's files (#328).
-    void this.flushCursor(false, true);
+    void this.flushCursor({ final: true });
     this.closed = true;
     this.persist = null;
     this.syncCursorPersist = null;

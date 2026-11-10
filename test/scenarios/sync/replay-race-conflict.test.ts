@@ -1,6 +1,5 @@
 import { assertEquals } from "@std/assert";
 import { FakeVault, startTestServer, waitFor } from "../../two-vault-driver.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { Transport } from "../../../plugin/sync/transport.ts";
 import { SyncManager } from "../../../plugin/sync/sync-manager.ts";
 import { VaultEventHandler } from "../../../plugin/sync/events.ts";
@@ -9,6 +8,7 @@ import { deriveKeys } from "../../../core/crypto.ts";
 import { b64encode } from "../../../core/protocol.ts";
 import { SERVER_VERSION } from "../../../server/version-gate.ts";
 import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * Regression test: conflict file created on every login.
@@ -180,7 +180,7 @@ function makePlugin(
 async function startPlugin(p: TestPluginResult): Promise<void> {
   const { _internals, handle } = p;
   const keys = await deriveKeys("test", _internals.saltBytes, { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   handle._state = state;
   _internals.syncManager.setState(state, keys);
   _internals.syncManager.setOnStatusUpdate(() => {});
@@ -267,7 +267,7 @@ Deno.test({
 
       // Start with empty state
       const keys = await deriveKeys("test", salt, { opsLimit: 1, memLimit: 8192 });
-      const freshState = openStateDB();
+      const freshState = openSessionStateDB();
       pB2.handle._state = freshState;
       pB2._internals.syncManager.setState(freshState, keys);
       pB2._internals.syncManager.setOnStatusUpdate(() => {});

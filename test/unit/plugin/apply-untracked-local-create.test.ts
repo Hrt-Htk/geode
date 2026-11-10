@@ -4,7 +4,8 @@ import { chunk } from "../../../core/chunker.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode, RENAME_MARKER, type ServerVersion } from "../../../core/protocol.ts";
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
-import { openStateDB, StateDB } from "../../../plugin/plumbing/state.ts";
+import { StateDB } from "../../../plugin/plumbing/state.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #590: device A renames a note to n1.md and commits it; device B creates its own
 // n1.md a moment earlier and the reconciler has not queued it yet (no state row).
@@ -130,7 +131,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const marked: string[] = [];
     const version = await contentVersion(keys, "head\nRN1-17\nbody\n");
     const { deps, writes } = makeDeps(
@@ -158,7 +159,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     state.closeLocalRow(PATH, "hash-n1", 1);
     const marked: string[] = [];
     const version = await contentVersion(keys, "head\nRN1-17\nbody\n");
@@ -188,7 +189,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const marked: string[] = [];
     const version = await contentVersion(keys, "head\nRN1-17\nbody\n");
     const { deps, writes } = makeDeps(
@@ -213,7 +214,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const marked: string[] = [];
     const disk = (path: string) => {
       if (path === "n0.md") return "head\nkept-bytes\n";
@@ -241,7 +242,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     const keys = await keysOf();
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const marked: string[] = [];
     const version = await contentVersion(keys, "head\nRN1-17\nbody\n");
     const { deps, reads, stats, writes } = makeDeps(keys, state, () => null, marked, version.blobs);

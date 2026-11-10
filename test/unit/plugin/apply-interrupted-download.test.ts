@@ -1,12 +1,13 @@
 import { assertEquals } from "@std/assert";
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
-import { type InFlightWrite, openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type InFlightWrite, type StateDB } from "../../../plugin/plumbing/state.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode, RENAME_MARKER, type ServerVersion } from "../../../core/protocol.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { chunk } from "../../../core/chunker.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #59: an interrupted write leaves a torn file whose row never persisted. While the record
 // says the path is torn (this session's write has not returned, or the start pass has not
@@ -44,7 +45,7 @@ async function harness(tornPaths: string[] = []): Promise<Harness> {
     path_hash: path === PATH ? pathHash : hashPathHex(keys.mac_key, path),
     expected_plaintext_hash: "the-write-never-finished",
   }));
-  const state = openStateDB(null, null, null, record);
+  const state = openSessionStateDB(null, null, null, record);
   const blobs = new Map<string, Uint8Array>();
   const promoted: string[] = [];
   const conflicts: string[] = [];

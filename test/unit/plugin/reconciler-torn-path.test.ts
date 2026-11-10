@@ -1,10 +1,11 @@
 import { assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #59: a path whose bytes may be a fragment (a write of this session that has not landed, or
 // one a killed session left) is nobody's to commit: the pass must neither create/modify it
@@ -56,7 +57,7 @@ async function reconcile(
 
 Deno.test("reconciler leaves a torn path alone", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     // A fragment with no row (a create the pass would otherwise commit) and a fragment
     // that diverged from its row (a modify the pass would otherwise commit).

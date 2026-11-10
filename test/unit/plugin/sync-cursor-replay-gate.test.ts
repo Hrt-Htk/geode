@@ -1,5 +1,5 @@
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { assertEquals } from "@std/assert";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * #369: the server registers a connection BEFORE the paced replay (ws-handshake),
@@ -16,7 +16,7 @@ import { assertEquals } from "@std/assert";
  */
 
 function freshDB() {
-  return openStateDB();
+  return openSessionStateDB();
 }
 
 // (a) A live seq above the replay end must not let the cursor skip the in-flight

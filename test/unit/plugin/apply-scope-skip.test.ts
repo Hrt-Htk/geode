@@ -1,5 +1,6 @@
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
-import { StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 import { type ServerVersion } from "../../../core/protocol.ts";
 import { deriveKeys, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode } from "../../../core/protocol.ts";
@@ -18,7 +19,7 @@ Deno.test({
 });
 
 function makeDeps(isSyncable: (path: string) => boolean): { deps: ApplyDeps; state: StateDB } {
-  const state = new StateDB();
+  const state = openSessionStateDB();
   const deps: ApplyDeps = {
     vault: {
       getAllLoadedFiles: () => [],

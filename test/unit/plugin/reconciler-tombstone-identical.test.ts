@@ -1,10 +1,11 @@
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 function makeIsSyncable(): (path: string) => boolean {
   return (path: string) => !path.startsWith("/");
@@ -59,7 +60,7 @@ function seedTombstone(
 
 Deno.test("reconciler commits a tombstoned re-created file with identical content (mtime-drift branch)", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   const path = "note.md";
   const diskMtime = 1_000_000;
@@ -78,7 +79,7 @@ Deno.test("reconciler commits a tombstoned re-created file with identical conten
 
 Deno.test("reconciler commits a tombstoned re-created file even when the mtime matches (fast path)", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   const path = "note.md";
   const diskMtime = 1_000_000;

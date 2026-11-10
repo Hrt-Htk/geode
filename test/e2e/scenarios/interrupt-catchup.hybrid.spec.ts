@@ -35,16 +35,59 @@ async function waitForState(phone: PhoneDevice, timeoutMs = 120_000): Promise<vo
   throw new Error("timeout waiting for the session state to open after relaunch");
 }
 
-/** #59: the phone's own log tail and its conflict files, attached to a failure so the next
- * device failure is readable without a live session. */
+/** #59: the phone's own log, attached to a failure so the next device failure is readable
+ * without a live session. Says WHY it is empty: no plugin (not loaded), no entries (the ring
+ * is empty), or the eval error text. */
+type PhoneDiagnostics = {
+  pluginLoaded: boolean;
+  entries: number;
+  tail: string[];
+  evalError: string | null;
+  conflictFiles: string[];
+};
+
 async function diagnostics(phone: PhoneDevice): Promise<string> {
-  const logTail = await phone.eval<string[]>(
-    "app.plugins.plugins.geode.getRecentLog().slice(-40).map((entry) => JSON.stringify(entry))",
-  ).catch(() => ["<log unavailable>"]);
-  const conflicts = await phone.eval<string[]>(
-    "app.vault.getFiles().map((f) => f.path).filter((p) => p.includes('(conflict'))",
-  ).catch(() => ["<vault unavailable>"]);
-  return `phone log tail:\n${logTail.join("\n")}\nconflict files: ${JSON.stringify(conflicts)}`;
+  const diag = await phone.eval<PhoneDiagnostics>(`(() => {
+    const plugin = app.plugins.plugins.geode;
+    if (!plugin) return { pluginLoaded: false, entries: 0, tail: [], evalError: null, conflictFiles: [] };
+    let tail = [];
+    let evalError = null;
+    let count = 0;
+    try {
+      const entries = plugin.getRecentLog ? plugin.getRecentLog() : [];
+      tail = entries.slice(-40).map((entry) => JSON.stringify(entry));
+      count = entries.length;
+    } catch (error) {
+      evalError = String(error);
+      count = -1;
+    }
+    let conflictFiles = [];
+    try {
+      conflictFiles = app.vault.getFiles().map((f) => f.path).filter((p) => p.includes("(conflict"));
+    } catch (error) {
+      evalError = (evalError ? evalError + " / " : "") + String(error);
+    }
+    return { pluginLoaded: true, entries: count, tail, evalError, conflictFiles };
+  })()`).catch((error) => ({
+    pluginLoaded: false,
+    entries: -1,
+    tail: [],
+    evalError: `eval failed: ${String(error)}`,
+    conflictFiles: [],
+  }));
+  const why = !diag.pluginLoaded
+    ? "the geode plugin is not loaded (app.plugins.plugins.geode is missing)"
+    : diag.entries === 0
+    ? "the plugin is loaded but its in-memory log ring is empty"
+    : diag.entries < 0
+    ? "getRecentLog() threw"
+    : `${diag.entries} entries in the ring`;
+  return [
+    `log: ${why}${diag.evalError ? ` (${diag.evalError})` : ""}`,
+    `conflict files: ${JSON.stringify(diag.conflictFiles)}`,
+    "phone log tail:",
+    ...(diag.tail.length > 0 ? diag.tail : ["<none>"]),
+  ].join("\n");
 }
 
 /** The same first-`n` files the hybrid fixture seeds (sorted relative path, .md only). */

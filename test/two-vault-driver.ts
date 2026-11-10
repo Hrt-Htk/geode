@@ -691,7 +691,9 @@ export class TestPlugin {
   }
 
   resetLocalState(): Promise<void> {
+    // A session state always has persistence wired (#59): recorded writes need it.
     const freshState = openStateDB();
+    freshState.setSyncCursorPersist(() => {});
     this.state?.close();
     this.state = freshState;
     this.syncManager?.setState(this.state, this.keys!);
@@ -721,6 +723,9 @@ export class TestPlugin {
     const freshState = opts.fromPersisted
       ? openStateDB([...this.state!.getAllLocalFiles().values()])
       : openStateDB();
+    // A session state always has persistence wired (#59): a rebuild records each head it
+    // writes, and a write without a record must not happen.
+    freshState.setSyncCursorPersist(() => {});
     disposeSession(this);
     try {
       const result = await rebuildFromScratch({

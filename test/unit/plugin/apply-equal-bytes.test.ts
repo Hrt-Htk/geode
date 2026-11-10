@@ -1,12 +1,13 @@
 import { assertEquals } from "@std/assert";
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode, type ServerVersion } from "../../../core/protocol.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { chunk } from "../../../core/chunker.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // A resync re-applies every head (`force`). A head whose bytes are already on disk
 // must not cost a chunk download or a rewrite; a head whose file is missing must
@@ -32,7 +33,7 @@ async function harness(withBlobs: boolean): Promise<Harness> {
     memLimit: 8192,
   });
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const writes: string[] = [];
   const writeBinary = vault.writeBinary.bind(vault);
   vault.writeBinary = (path: string, data: Uint8Array, opts?: { mtime?: number }) => {

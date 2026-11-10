@@ -1,9 +1,9 @@
 import { assert, assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
 import { ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeMarkdownLineEndings } from "../../../core/normalize.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 Deno.test({
   name:
@@ -21,7 +21,7 @@ Deno.test({
     const normHash = blake3Hex(lfBytes);
 
     // Open a StateDB and seed it with the normalized hash/size
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const pathHash = blake3Hex(new TextEncoder().encode("note.md"));
     state.upsertLocalFile({
       path: "note.md",
@@ -92,7 +92,7 @@ Deno.test({
     const content = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG header bytes
     const hash = blake3Hex(content);
 
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const pathHash = blake3Hex(new TextEncoder().encode("image.png"));
     state.upsertLocalFile({
       path: "image.png",

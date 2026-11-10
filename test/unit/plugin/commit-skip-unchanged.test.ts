@@ -1,9 +1,9 @@
 import { assert, assertEquals } from "@std/assert";
 import { commitFileBytes } from "../../../plugin/sync/commit.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { deriveKeys } from "../../../core/crypto.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 function makeTransport() {
   const calls = { headBlob: 0, putBlob: 0, commit: 0 };
@@ -25,7 +25,7 @@ function makeTransport() {
 
 Deno.test("commit-skip-unchanged - unchanged content never uploads chunks", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   const path = "note.md";
   const body = new TextEncoder().encode("hello world");
@@ -61,7 +61,7 @@ Deno.test("commit-skip-unchanged - unchanged content never uploads chunks", asyn
 
 Deno.test("commit-skip-unchanged - a deleted local file is still committed even when the hash matches", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   const path = "note.md";
   const body = new TextEncoder().encode("hello world");
@@ -98,7 +98,7 @@ Deno.test("commit-skip-unchanged - a deleted local file is still committed even 
 
 Deno.test("commit-skip-unchanged - the merge caller (force) commits even when content is unchanged", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   const path = "note.md";
   const body = new TextEncoder().encode("hello world");

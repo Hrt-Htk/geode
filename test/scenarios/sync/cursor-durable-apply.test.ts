@@ -1,10 +1,10 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
 import { b64encode, type ServerVersion } from "../../../core/protocol.ts";
 import { deriveKeys, encryptChunk, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * #212 regression: the persisted cursor must not advance past a seq whose apply
@@ -71,7 +71,7 @@ Deno.test({
       crypto.getRandomValues(new Uint8Array(16)),
       { opsLimit: 1, memLimit: 8192 },
     );
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const vault = new FakeVault();
 
     const myDeviceId = "device-a";

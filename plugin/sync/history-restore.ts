@@ -5,7 +5,7 @@
 // first. The appended row is plain content, never a rename link (hard rule 6).
 
 import { decryptMetadata, type VaultKeys } from "../../core/crypto.ts";
-import { blake3Hex, hashPathHex } from "../../core/hash.ts";
+import { blake3Hex } from "../../core/hash.ts";
 import { normalizeForHash } from "../../core/normalize.ts";
 import { b64decode, RENAME_MARKER, type VersionRecord } from "../../core/protocol.ts";
 import type { StateDB } from "../plumbing/state.ts";
@@ -16,9 +16,9 @@ import {
   type Vault as CommitVault,
   waitForInFlightCommit,
 } from "./commit.ts";
-import { recordedWrite } from "./apply.ts";
 import { reconstructVersion } from "./history-fetch.ts";
 import type { Transport } from "./transport.ts";
+import { recordedWrite } from "./vault-io.ts";
 import { readVaultBinary, writeVaultBinary } from "./vault-io.ts";
 
 export type RestoreOutcome = "restored" | "unchanged";
@@ -91,11 +91,9 @@ export async function restoreVersion(
     // a later pass commits as the note's content.
     await recordedWrite(
       deps.state,
-      {
-        path: target,
-        path_hash: hashPathHex(deps.keys.mac_key, target),
-        expected_plaintext_hash: restoredHash,
-      },
+      deps.keys,
+      target,
+      bytes,
       () => writeVaultBinary(target, bytes, Date.now(), deps.vault),
     );
     if (!(await commitOp({ path: target, kind: "commit" }, commitDeps(deps)))) {

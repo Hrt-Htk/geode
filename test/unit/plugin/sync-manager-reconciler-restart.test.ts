@@ -1,9 +1,9 @@
 import { SyncManager } from "../../../plugin/sync/sync-manager.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
 import { assertEquals } from "@std/assert";
 import { FakeTime } from "@std/testing/time";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * #622: every go-live calls SyncManager.startReconciler(), which replaced
@@ -19,7 +19,7 @@ Deno.test("sync-manager - N go-lives leave exactly one running reconciler", asyn
   try {
     const vault = new FakeVault();
     vault.write("a.md", "hello");
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const transport = { getState: () => "live", addEventListener: () => {}, stop: () => {} } as any;
     const sm = new SyncManager(transport, {
       vault: vault as any,
@@ -66,7 +66,7 @@ Deno.test("sync-manager - a pass stopped mid-scan enqueues no ops", async () => 
   try {
     const vault = new FakeVault();
     vault.write("a.md", "hello");
-    const state = openStateDB();
+    const state = openSessionStateDB();
     const transport = { getState: () => "live", addEventListener: () => {}, stop: () => {} } as any;
     const mkManager = () => {
       const sm = new SyncManager(transport, {

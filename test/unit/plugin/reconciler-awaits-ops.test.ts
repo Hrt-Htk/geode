@@ -1,8 +1,8 @@
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { assert, assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * isSyncable that mirrors plugin/plumbing/settings-types.ts behavior.
@@ -13,7 +13,7 @@ function makeIsSyncable(): (path: string) => boolean {
 
 Deno.test("reconciler.run() does not resolve until onOps promise settles", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   // Create a file that will trigger a "create" op (not tracked in state).
   vault.write("new.md", "hello world");
@@ -87,7 +87,7 @@ Deno.test("reconciler.run() does not resolve until onOps promise settles", async
 
 Deno.test("reconciler.run() resolves immediately when onOps returns void (no ops)", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   // No files on disk, no files tracked: no ops.
   let opsCalled = false;
@@ -123,7 +123,7 @@ Deno.test("reconciler.run() resolves immediately when onOps returns void (no ops
 
 Deno.test("reconciler.run() awaits async onOps even with empty ops array", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   // Deferred: control when onOps resolves.
   let resolveOnOps: () => void;

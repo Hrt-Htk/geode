@@ -1,8 +1,8 @@
 import { assertEquals } from "@std/assert";
 import { commitOp, waitForInFlightCommit } from "../../../plugin/sync/commit.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { deriveKeys } from "../../../core/crypto.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #583: commitOp dedupes "one commit per path" so two writes of one file never
 // race. That guard is per vault: the module is shared by every plugin instance in
@@ -21,7 +21,7 @@ type FakeTransport = {
 async function depsWith(transport: FakeTransport) {
   const vault = new FakeVault();
   vault.write(PATH, "body");
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
   return {
     vault: { adapter: vault.adapter },

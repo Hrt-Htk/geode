@@ -3,9 +3,9 @@ import { b64encode } from "../../../core/protocol.ts";
 import { deriveKeys, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { prepareRejoin, type RejoinDeps } from "../../../plugin/sync/rejoin.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #701: prepareRejoin decides per path whether the server already holds the bytes, and
 // that decision is what keeps a rejoin from copying a whole unchanged vault into the
@@ -63,7 +63,7 @@ function deps(
   return {
     deps: {
       vault,
-      state: openStateDB(),
+      state: openSessionStateDB(),
       keys: vaultKeys,
       isSyncable: () => true,
       heads,
@@ -119,7 +119,7 @@ Deno.test("rejoin-prepare - a live row whose bytes the chain knows is a stale co
   const vault = new FakeVault();
   vault.write("note.md", "summer copy\n");
   const pathHash = hashPathHex(vaultKeys.mac_key, "note.md");
-  const state = openStateDB([{
+  const state = openSessionStateDB([{
     path: "note.md",
     path_hash: pathHash,
     size: 1,

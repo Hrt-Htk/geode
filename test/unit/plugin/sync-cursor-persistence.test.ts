@@ -175,7 +175,7 @@ Deno.test("state - a record read back is torn until the start pass clears it", a
   assertEquals(db.getInterruptedWrites(), [ENTRY], "the start pass reads it once");
   assertEquals(db.isTorn("hash-a"), true, "the apply must treat its bytes as a fragment");
 
-  await db.clearInterruptedWrites(["hash-a"]);
+  await db.clearInterruptedWrites([ENTRY]);
   assertEquals(db.getInterruptedWrites(), []);
   assertEquals(db.isTorn("hash-a"), false, "nothing survives the start that read it");
   db.close();
@@ -189,36 +189,49 @@ Deno.test("state - a write that cannot be recorded fails closed", async () => {
   assertEquals(db.isTorn("hash-a"), false, "a write that could not be recorded claims nothing");
 });
 
-Deno.test("state - a hung write keeps its place in the chain, so no stale write lands last", async () => {
+Deno.test("state - a slow write keeps its place in the chain, so no stale write lands last", async () => {
+  const db = openStateDB();
+  const landed: string[] = [];
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => release = resolve);
+  let first = true;
+  db.setSyncCursorPersist(async (json) => {
+    if (first) {
+      first = false;
+      await slow; // the bridge is slow on the first write
+    }
+    landed.push((JSON.parse(json).in_flight_apply ?? []).map((e) => e.path_hash).join(","));
+  });
+
+  const begun = db.beginWrite(ENTRY);
+  await Promise.resolve();
+  // A later write must NOT overtake the slow one: it waits in the chain.
+  const next = db.beginWrite({ ...ENTRY, path_hash: "hash-b" });
+  await Promise.resolve();
+  assertEquals(landed, [], "nothing lands while the first write is unsettled");
+
+  release();
+  await Promise.all([begun, next]);
+  assertEquals(landed, ["hash-a", "hash-a,hash-b"], "then both land, in order");
+  db.close();
+});
+
+Deno.test("state - a wedged chain fails later writes at once, not one wait each", async () => {
   const time = new FakeTime();
   try {
     const db = openStateDB();
-    const landed: string[] = [];
-    let release!: () => void;
-    const hung = new Promise<void>((resolve) => release = resolve);
-    let first = true;
-    db.setSyncCursorPersist(async (json) => {
-      if (first) {
-        first = false;
-        await hung; // the bridge stops answering on the first write
-      }
-      landed.push((JSON.parse(json).in_flight_apply ?? []).map((e) => e.path_hash).join(","));
-    });
+    db.setSyncCursorPersist(() => new Promise<void>(() => {})); // the bridge never answers
 
-    // The caller gives up after the bound and fails closed.
-    const begun = db.beginWrite(ENTRY).catch((error) => error);
+    const first = db.beginWrite(ENTRY).catch((error) => error);
     await Promise.resolve();
     time.tick(10_000);
-    assert(await begun instanceof Error, "the write fails closed instead of waiting forever");
+    assert(await first instanceof Error, "the first caller waits out the bound and fails closed");
 
-    // A later write must NOT overtake the hung one: it waits in the chain.
-    const next = db.beginWrite({ ...ENTRY, path_hash: "hash-b" });
-    await Promise.resolve();
-    assertEquals(landed, [], "nothing lands while the first write is unsettled");
-
-    release();
-    await next;
-    assertEquals(landed, ["hash-a", "hash-b"], "then both land, in order");
+    // A drain of 45 files must not spend 45 waits on a chain that cannot move.
+    const second = db.beginWrite({ ...ENTRY, path_hash: "hash-b" }).catch((error) => error);
+    const outcome = await second; // no clock tick: it must reject on its own
+    assert(outcome instanceof Error, "the next caller fails at once");
+    assertEquals((outcome as Error).message.includes("wedged"), true);
     db.close();
   } finally {
     time.restore();

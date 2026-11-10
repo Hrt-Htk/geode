@@ -22,13 +22,19 @@ One line per directory; the naming convention at the bottom is the rule, not a s
 ## Naming convention
 
 - **kebab-case everywhere.** One behavior family per file; no `_`, no camelCase.
-- **`.test.ts`**: a Deno test (`deno test` finds it). Test names read `module - behavior` (`scenario: outcome` in `scenarios/`).
-- **`.spec.ts`**: a Playwright spec, `test/e2e/scenarios/` only. Project suffix: `.phone.spec.ts` (Android device), `.hybrid.spec.ts` (desktop + phone in one run), `docs-shots*.spec.ts` (the committed docs images, `deno task docs:screenshots`; `default` ignores it). Playwright's `testMatch`/`testIgnore` are suffix regexes: a new suffix silently leaves the project, so check `--list` when you add one.
+- **`.test.ts`**: a Deno test (`deno test` finds it). Test names read `module - behavior`
+  (`scenario: outcome` in `scenarios/`).
+- **`.spec.ts`**: a Playwright spec, `test/e2e/scenarios/` only. Project suffix: `.phone.spec.ts`
+  (Android device), `.hybrid.spec.ts` (desktop + phone in one run), `docs-shots*.spec.ts` (the
+  committed docs images, `deno task docs:screenshots`; `default` ignores it). Playwright's
+  `testMatch`/`testIgnore` are suffix regexes: a new suffix silently leaves the project, so check
+  `--list` when you add one.
 - **`.deno.ts`**: a script a spec or helper spawns as a subprocess (not imported, not collected).
 - **`gateN-`**: step-gate evidence only: keep the prefix **only when `docs/testing/step-gates.md`
-  cites the spec (or its family) as gate N's evidence**, N = 1-11. Any other number in a spec name is
-  an issue number: name the spec after the behavior it asserts.
-- **No issue numbers in file names.** Cite the issue in a comment at the top of the file (`// #587 item 3: …`). `git log`/the comment keep provenance; the name describes the behavior.
+  cites the spec (or its family) as gate N's evidence**, N = 1-11. Any other number in a spec name
+  is an issue number: name the spec after the behavior it asserts.
+- **No issue numbers in file names.** Cite the issue in a comment at the top of the file
+  (`// #587 item 3: …`). `git log`/the comment keep provenance; the name describes the behavior.
 
 ## Commands
 

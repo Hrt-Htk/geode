@@ -1,11 +1,11 @@
 import { pruneExtraneousFiles, type ResyncDeps } from "../../../plugin/sync/recovery.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { assert } from "@std/assert";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 Deno.test("pruneExtraneousFiles prunes a file the server closed and keeps one it never saw", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   // Build disk: three files: one tracked live, one the server closed, one the server
   // never saw (held by the mass-delete guard before its first upload, #583).

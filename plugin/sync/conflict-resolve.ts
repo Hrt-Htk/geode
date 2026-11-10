@@ -13,6 +13,7 @@ import { keptConflictPath } from "./conflict-list.ts";
 import { splitExt } from "./conflicts.ts";
 import type { StateDB } from "../plumbing/state.ts";
 import type { Transport } from "./transport.ts";
+import { recordedWrite } from "./vault-io.ts";
 
 export type ResolutionAction = "keep-mine" | "keep-theirs" | "keep-both";
 
@@ -83,14 +84,28 @@ export async function executeResolution(
 ): Promise<string | null> {
   let keptPath: string | null = null;
   if (plan.write) {
-    const data = await deps.vault.adapter.readBinary(plan.write.source);
-    await deps.vault.adapter.writeBinary(plan.write.path, data);
+    const target = plan.write;
+    const data = await deps.vault.adapter.readBinary(target.source);
+    await recordedWrite(
+      deps.state,
+      deps.keys,
+      target.path,
+      data,
+      () => deps.vault.adapter.writeBinary(target.path, data),
+    );
     await commitResolution({ path: plan.write.path, kind: "commit" }, deps);
   }
   if (plan.rename) {
-    keptPath = await uniqueKeptPath(plan.rename.to, deps);
+    const kept = await uniqueKeptPath(plan.rename.to, deps);
+    keptPath = kept;
     const data = await deps.vault.adapter.readBinary(plan.rename.from);
-    await deps.vault.adapter.writeBinary(keptPath, data);
+    await recordedWrite(
+      deps.state,
+      deps.keys,
+      kept,
+      data,
+      () => deps.vault.adapter.writeBinary(kept, data),
+    );
     await deps.vault.adapter.remove(plan.rename.from);
     await commitResolution({ path: keptPath, kind: "commit" }, deps);
     // The conflict file may live on the server (conflict files sync); commit

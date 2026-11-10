@@ -1,8 +1,8 @@
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { assert, assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * isSyncable that mirrors plugin/plumbing/settings-types.ts behavior.
@@ -23,7 +23,7 @@ function makeIsSyncable(syncObsidianConfig: boolean): (path: string) => boolean 
 
 Deno.test("reconciler discovers .obsidian/ files when syncObsidianConfig is enabled", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {
@@ -73,7 +73,7 @@ Deno.test("reconciler discovers .obsidian/ files when syncObsidianConfig is enab
 
 Deno.test("reconciler does NOT discover .obsidian/ files when syncObsidianConfig is disabled", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {
@@ -109,7 +109,7 @@ Deno.test("reconciler does NOT discover .obsidian/ files when syncObsidianConfig
 
 Deno.test("reconciler scans the vault's own config dir, not a hardcoded .obsidian", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {
@@ -155,7 +155,7 @@ Deno.test("reconciler scans the vault's own config dir, not a hardcoded .obsidia
 
 Deno.test("reconciler emits a modify op for a tracked .obsidian/ file whose content changed", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {
@@ -212,7 +212,7 @@ Deno.test("reconciler emits a modify op for a tracked .obsidian/ file whose cont
 
 Deno.test("reconciler handles missing .obsidian/ directory gracefully", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {

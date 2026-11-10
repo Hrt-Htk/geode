@@ -1,12 +1,12 @@
 import { diff3Merge } from "node-diff3";
 import { b64decode, type FileMeta, ServerVersion, VersionRecord } from "../../core/protocol.ts";
 import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
-import { blake3Hex, hashPathHex } from "../../core/hash.ts";
+import { blake3Hex } from "../../core/hash.ts";
 import { normalizeForHash, normalizeMarkdownLineEndings, stripBOM } from "../../core/normalize.ts";
 import { reassemble } from "../../core/reassemble.ts";
 import { log } from "../plumbing/log.ts";
 import { StateDB } from "../plumbing/state.ts";
-import { identityHash, recordedWrite } from "./apply.ts";
+import { recordedWrite } from "./vault-io.ts";
 import { Transport } from "./transport.ts";
 import { conflictDeviceLabel, conflictDeviceName, generateConflictPath } from "./conflicts.ts";
 import type { ActivityRecord } from "./activity-log.ts";
@@ -230,21 +230,18 @@ export async function surfaceConflict(
   const serverHash = blake3Hex(normalizeForHash(input.path, input.serverContent));
   await recordedWrite(
     deps.state,
-    {
-      path: conflictPath,
-      path_hash: hashPathHex(deps.keys.mac_key, conflictPath),
-      expected_plaintext_hash: identityHash(conflictPath, input.localContent),
-    },
+    deps.keys,
+    conflictPath,
+    input.localContent,
     () => deps.vault.adapter.writeBinary(conflictPath, input.localContent),
   );
   await recordedWrite(
     deps.state,
-    {
-      path: input.path,
-      path_hash: input.pathHash,
-      expected_plaintext_hash: serverHash,
-    },
+    deps.keys,
+    input.path,
+    input.serverContent,
     () => deps.vault.adapter.writeBinary(input.path, input.serverContent),
+    input.pathHash,
   );
   deps.state.upsertLocalFile({
     path: input.path,
@@ -278,12 +275,11 @@ export async function orchestrateMerge(
       // #59: a merged write is bytes the user did not type: record it before writing.
       await recordedWrite(
         deps.state,
-        {
-          path: input.path,
-          path_hash: input.pathHash,
-          expected_plaintext_hash: identityHash(input.path, outcome.merged),
-        },
+        deps.keys,
+        input.path,
+        outcome.merged,
         () => deps.vault.adapter.writeBinary(input.path, outcome.merged),
+        input.pathHash,
       );
       const mergedHash = blake3Hex(outcome.merged);
       deps.recordActivity?.({

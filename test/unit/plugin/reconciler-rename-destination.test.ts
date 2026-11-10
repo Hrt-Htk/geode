@@ -4,11 +4,12 @@
 // push a spurious commit at the new name.
 import { assertEquals } from "@std/assert";
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { blake3Hex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 const BASE = "# head\n\nbody\n";
 
@@ -60,7 +61,7 @@ function recordRenameDestination(
 
 Deno.test("reconciler leaves a rename destination waiting for its note alone", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     vault.write("y.md", BASE);
     recordRenameDestination(vault, state, "y.md", BASE);
@@ -73,7 +74,7 @@ Deno.test("reconciler leaves a rename destination waiting for its note alone", a
 
 Deno.test("reconciler still commits a carried edit the row has no version for", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   try {
     vault.write("y.md", `${BASE}edited after the rename\n`);
     recordRenameDestination(vault, state, "y.md", BASE);

@@ -4,10 +4,14 @@ import { b64encode, type VersionRecord } from "../../../core/protocol.ts";
 import { blake3Hex, hashPathHex } from "../../../core/hash.ts";
 import { normalizeForHash } from "../../../core/normalize.ts";
 import { chunk } from "../../../core/chunker.ts";
-import { openStateDB, type StateDB } from "../../../plugin/plumbing/state.ts";
-import { type ApplyDeps, identityHash } from "../../../plugin/sync/apply.ts";
+import { type StateDB } from "../../../plugin/plumbing/state.ts";
+import { type ApplyDeps } from "../../../plugin/sync/apply.ts";
 import { resolveInterruptedWrites } from "../../../plugin/sync/interrupted-writes.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
+
+/** The disk identity of a file's bytes, as the record and the pass compute it. */
+const identityHash = (path: string, bytes: Uint8Array) => blake3Hex(normalizeForHash(path, bytes));
 
 // #59: the ONE start pass. A record entry says "this device was writing these bytes"; the
 // pass decides what actually happened from the disk, the row and the server head, and then
@@ -17,6 +21,7 @@ const PATH = "note.md";
 const V1 = "# note\none\ntwo\nthree\nfour\nfive\nsix\n";
 const V2 = "# note\none\ntwo\nthree\nfour\nfive\nsix\nseven\n";
 const FRAGMENT = "# no";
+const DESTINATION = "renamed.md";
 
 type Harness = {
   vault: FakeVault;
@@ -110,7 +115,7 @@ async function harness(): Promise<Harness> {
         ) ?? null,
       );
     }
-    return openStateDB(
+    return openSessionStateDB(
       rows.map((row) => ({
         ...row,
         path_hash: hashPathHex(keys.mac_key, row.path),
@@ -214,6 +219,39 @@ Deno.test("interrupted-writes - an entry whose head equals the disk is cleared w
 
   assertEquals(disk(h), V2);
   assertEquals(h.writes, [], "a landed write is not rewritten");
+});
+
+Deno.test("interrupted-writes - a completed write to a headless path is kept", async () => {
+  const h = await harness();
+  // The merged carry write landed in full and the kill came before its commit; the
+  // destination has no server head yet. It is real content, not a fragment.
+  const merged = "# note\none\ntwo\npeer\n";
+  h.vault.files.set(DESTINATION, new TextEncoder().encode(merged));
+  h.writes.length = 0;
+
+  await h.pass(h.started([{
+    path: DESTINATION,
+    expected: identityHash(DESTINATION, new TextEncoder().encode(merged)),
+    head: null,
+  }]));
+
+  assertEquals(disk(h, DESTINATION), merged, "a landed write is kept, not deleted");
+  assertEquals(h.writes, [], "and nothing is written over it");
+});
+
+Deno.test("interrupted-writes - an edit made outside Obsidian after the kill is kept", async () => {
+  const h = await harness();
+  // Between the kill and the next connection something outside Obsidian wrote the file:
+  // its bytes are neither the head, nor the row, nor the record's expectation, and they
+  // are not a prefix of our own write. That is the user's text.
+  const typed = "# note\nmine\n";
+  h.vault.files.set(PATH, new TextEncoder().encode(typed));
+  h.writes.length = 0;
+
+  await h.pass(h.started([{ expected: identityHash(PATH, new TextEncoder().encode(V2)) }]));
+
+  assertEquals(disk(h), typed, "the edit is not overwritten");
+  assertEquals(h.writes, [], "the head is not forced over it; the normal edit path owns it");
 });
 
 Deno.test("interrupted-writes - a head fetch that fails keeps the entry gated for the next connection", async () => {

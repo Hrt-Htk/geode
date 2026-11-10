@@ -2,10 +2,12 @@
 // does against Obsidian. Kept apart from the apply rules so the bridge contract (one
 // reason to change: the adapter/index API) has its own module.
 
-import { blake3Hex } from "../../core/hash.ts";
+import type { VaultKeys } from "../../core/crypto.ts";
+import { blake3Hex, hashPathHex } from "../../core/hash.ts";
 import { normalizeForHash } from "../../core/normalize.ts";
 import { toUint8Array } from "../plumbing/bytes.ts";
 import { log } from "../plumbing/log.ts";
+import type { StateDB } from "../plumbing/state.ts";
 
 /** The vault surface apply, the rename link and commit touch (Obsidian's vault is a
  * superset, so sync code and the conflict handler can pass theirs unchanged). */
@@ -38,6 +40,27 @@ function copyToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const out = new Uint8Array(bytes.byteLength);
   out.set(bytes);
   return out.buffer;
+}
+
+/** #59: the ONE way bytes this device did not type reach the vault (a download, a merge
+ * result, a restore, a conflict sibling, a backup copy). The path is recorded immediately
+ * before the write and cleared once it returned, so a kill mid-write leaves a record the
+ * next start can resolve, and nothing is ever written unrecorded. */
+export async function recordedWrite(
+  state: StateDB,
+  keys: VaultKeys,
+  path: string,
+  bytes: Uint8Array,
+  write: () => Promise<void>,
+  pathHash = hashPathHex(keys.mac_key, path),
+): Promise<void> {
+  await state.beginWrite({
+    path,
+    path_hash: pathHash,
+    expected_plaintext_hash: blake3Hex(normalizeForHash(path, bytes)),
+  });
+  await write();
+  await state.endWrite(pathHash);
 }
 
 export async function writeVaultBinary(

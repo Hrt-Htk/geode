@@ -1,8 +1,8 @@
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { assert, assertEquals } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 function makeIsSyncable(): (path: string) => boolean {
   return (path: string) => !path.startsWith(".obsidian/") && !path.startsWith("/");
@@ -45,7 +45,7 @@ async function runReconcile(
 
 Deno.test("reconciler treats a null adapter.stat as absent (real Obsidian contract, #505)", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   vault.write("gone.md", "content");
   seedFile(vault, state, "gone.md");
@@ -65,7 +65,7 @@ Deno.test("reconciler treats a null adapter.stat as absent (real Obsidian contra
 
 Deno.test("reconciler treats a throwing adapter.stat as absent too", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   vault.write("gone.md", "content");
   seedFile(vault, state, "gone.md");

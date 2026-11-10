@@ -1,8 +1,8 @@
 import { type ReconcileOp, Reconciler } from "../../../plugin/sync/reconciler.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { assert } from "@std/assert";
 import { massDeleteGuard } from "../../helpers/bytes.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * isSyncable that mirrors plugin/plumbing/settings-types.ts behavior.
@@ -23,7 +23,7 @@ function makeIsSyncable(syncObsidianConfig: boolean): (path: string) => boolean 
 
 Deno.test("reconciler picks up .obsidian/ files after setSyncObsidianConfig(true) without reconstruction", async () => {
   const vault = new FakeVault();
-  const state = openStateDB();
+  const state = openSessionStateDB();
 
   let capturedOps: ReconcileOp[] = [];
   const onOps = (ops: ReconcileOp[]) => {

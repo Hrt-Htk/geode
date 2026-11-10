@@ -3,7 +3,7 @@ import { pair } from "../../two-vault-driver.ts";
 import { HeadRecord } from "../../../core/protocol.ts";
 import { setTransportHttp, type TransportHttpRequest } from "../../../plugin/sync/http-client.ts";
 import { rebuildFromScratch } from "../../../plugin/sync/recovery.ts";
-import { openStateDB as openStateDBFromPlugin } from "../../../plugin/plumbing/state.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 /**
  * Test: transient blob-fetch failure does NOT drop a file.
@@ -81,7 +81,7 @@ Deno.test({
             }
           },
         },
-        state: openStateDBFromPlugin(A.pluginSettings.vaultId),
+        state: openSessionStateDB(),
         keys: A.keys!,
         vaultId: A.pluginSettings.vaultId,
         deviceName: A.pluginSettings.deviceName,
@@ -142,7 +142,7 @@ Deno.test({
             }
           },
         },
-        state: openStateDBFromPlugin(A.pluginSettings.vaultId),
+        state: openSessionStateDB(),
         keys: A.keys!,
         vaultId: A.pluginSettings.vaultId,
         deviceName: A.pluginSettings.deviceName,

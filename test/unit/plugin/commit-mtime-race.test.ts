@@ -2,7 +2,7 @@ import { assertEquals } from "@std/assert";
 import { blake3Hex } from "../../../core/hash.ts";
 import { deriveKeys } from "../../../core/crypto.ts";
 import { commitOp } from "../../../plugin/sync/commit.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // #630 review: the row a commit's ack writes must describe the bytes it hashed. Reading
 // the body and THEN statting lets a writer outside the path lock (an apply's version
@@ -19,7 +19,7 @@ const B_MTIME = 2_000;
 
 Deno.test("a commit records the mtime of the bytes it hashed, not of a write that landed after them", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   // The disk starts holding A; reading it is the moment the concurrent writer lands
   // (exactly the window between the commit's read and its stat).
   let content = A;

@@ -14,6 +14,7 @@ import { diskPlaintextHash, Vault } from "./vault-io.ts";
 import { CoalescedEntry, coalesceReplay } from "./replay-coalesce.ts";
 import type { ActivityRecord } from "./activity-log.ts";
 import { log } from "../plumbing/log.ts";
+import { withTimeout } from "../plumbing/timeout.ts";
 
 // The inbound replay/apply pipeline: version serialization (versionQueue),
 // replay buffering until live, interrupt handling, and the bounded version
@@ -58,6 +59,25 @@ export interface ReplayDeps {
   /** #59: an edit for this path is still inside the event layer's debounce window. */
   hasUnflushedEdit: (path: string) => boolean;
 }
+
+/** Answer each path once per apply: the predicates around one version ask repeatedly. */
+function memoize(predicate: (path: string) => boolean): (path: string) => boolean {
+  const answers = new Map<string, boolean>();
+  return (path) => {
+    let answer = answers.get(path);
+    if (answer === undefined) {
+      answer = predicate(path);
+      answers.set(path, answer);
+    }
+    return answer;
+  };
+}
+
+/** #59: the start pass is the only thing that rewrites a file a killed process left mid-write,
+ * which is where a native write can wedge (the handle the dead process held). It is bounded
+ * as a whole so the session is never stuck behind it: the entry stays recorded, and with it
+ * gated, so the abandoned write cannot be read as an edit, and the next connection retries. */
+const START_PASS_MS = 10_000;
 
 export class ReplayPipeline {
   static readonly VERSION_CACHE_MAX = 256;
@@ -125,9 +145,19 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      // #59: resolve what a killed session left, once per session, before this
-      // connection's versions are applied.
-      await this.resolveStartRecord(state, keys);
+      // #59: resolve what a killed session left, once per connection, before this
+      // connection's versions are applied. Bounded: see START_PASS_MS.
+      try {
+        await withTimeout(
+          this.resolveStartRecord(state, keys),
+          START_PASS_MS,
+          "interrupted-write pass",
+        );
+      } catch (error) {
+        log.warn("interrupted-write pass did not finish, retrying at the next connection", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       const entries = coalesceReplay(this.replayBuffer);
       this.replayBuffer = [];
       const deps = this.buildApplyDeps(state, keys);
@@ -308,7 +338,8 @@ export class ReplayPipeline {
       hasPendingDelete: this.deps.hasPendingDelete,
       cancelPendingDelete: this.deps.cancelPendingDelete,
       isParkedMove: this.deps.isParkedMove,
-      hasUnflushedEdit: this.deps.hasUnflushedEdit,
+      // #59: read the event layer's pending ops once per apply, not once per check.
+      hasUnflushedEdit: memoize(this.deps.hasUnflushedEdit),
       renameHeadOf: (pathHash) => renameHeadOf(this.deps.transport, pathHash),
       parkDeferred: (msg, destination) => {
         const key = `${msg.path_hash}:${msg.seq}`;

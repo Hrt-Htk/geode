@@ -27,7 +27,6 @@ import { commitOp } from "../../../plugin/sync/commit.ts";
 import { type ApplyDeps, applyVersion } from "../../../plugin/sync/apply.ts";
 import { carryLocalEdit } from "../../../plugin/sync/rename-carry.ts";
 import { type PendingOp, VaultEventHandler } from "../../../plugin/sync/events.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import type { CommitRequest, CommitResult } from "../../../plugin/sync/commit-channel.ts";
 import type { VersionRecord } from "../../../core/protocol.ts";
 import { diskVault } from "../../helpers/disk-vault.ts";
@@ -44,6 +43,7 @@ function withRename(vault: ReturnType<typeof diskVault>) {
     },
   };
 }
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 const FAST = { opsLimit: 1, memLimit: 8192 };
 
@@ -131,7 +131,7 @@ function applyDepsFor(
 
 Deno.test("rename-note - a rename delete sends a marker carrying the new name", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   const pathHash = hashPathHex(keys.mac_key, path);
   state.upsertLocalFile({
@@ -166,7 +166,7 @@ Deno.test("rename-note - a rename delete sends a marker carrying the new name", 
 
 Deno.test("rename-note - a case-only rename keeps its marker when the old name still resolves", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   state.upsertLocalFile({
     path,
@@ -210,7 +210,7 @@ Deno.test("rename-note - a case-only rename keeps its marker when the old name s
 
 Deno.test("rename-note - a rename create sends the note pointing at the marker version", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   state.upsertLocalFile({
     path: from,
@@ -255,7 +255,7 @@ Deno.test("rename-note - a rename create sends the note pointing at the marker v
 
 Deno.test("rename-note - a note capped below the marker is never written", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   // The rename fired before the marker's ack: this row is still the pre-rename
   // generation, so its version is NOT this rename's cap. Capping the note at it makes
@@ -297,7 +297,7 @@ Deno.test("rename-note - a note capped below the marker is never written", async
 
 Deno.test("rename-note - no note when the new name already has its own history", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const to = "b.md";
   state.upsertLocalFile({
     path: "a.md",
@@ -342,7 +342,7 @@ Deno.test("rename-note - no note when the new name already has its own history",
 
 Deno.test("rename-note - a marker promotes over a concurrent plain delete (§6)", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   const pathHash = hashPathHex(keys.mac_key, path);
   state.upsertLocalFile({
@@ -380,7 +380,7 @@ Deno.test("rename-note - a marker promotes over a concurrent plain delete (§6)"
 
 Deno.test("rename-note - a rename that loses to an earlier marker stays a plain copy (decision 9)", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   const pathHash = hashPathHex(keys.mac_key, path);
   state.upsertLocalFile({
@@ -495,7 +495,7 @@ Deno.test("rename-note - a normalization-only rename is one commit, no marker (�
 
 Deno.test("rename-note - a marker is not sent when the head edit cannot be read", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   const pathHash = hashPathHex(keys.mac_key, path);
   state.upsertLocalFile({
@@ -545,7 +545,7 @@ Deno.test("rename-note - a marker is not sent when the head edit cannot be read"
 
 Deno.test("rename-note - a marker carries an edit under a deleted row", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   const pathHash = hashPathHex(keys.mac_key, path);
   const to = "b.md";
@@ -585,7 +585,7 @@ Deno.test("rename-note - a marker carries an edit under a deleted row", async ()
 
 Deno.test("rename-note - a marker carries an edit for an untracked file", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   const pathHash = hashPathHex(keys.mac_key, path);
   const to = "b.md";
@@ -613,7 +613,7 @@ Deno.test("rename-note - a marker carries an edit for an untracked file", async 
 
 Deno.test("rename-note - a cleared destination row does not block the carry", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   const to = "b.md";
   state.upsertLocalFile({
@@ -938,7 +938,7 @@ Deno.test("rename-note - a carried edit already at the new name closes the old o
 
 Deno.test("rename-note - a destination the server renamed away again keeps both", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const from = "a.md";
   const to = "b.md";
   state.upsertLocalFile({
@@ -983,7 +983,7 @@ Deno.test("rename-note - a destination the server renamed away again keeps both"
 
 Deno.test("rename-note - a case-only rename never removes the note's file", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "a.md";
   const to = "A.md";
   const bodyHash = blake3Hex(normalizeForHash(path, new TextEncoder().encode("body")));
@@ -1045,7 +1045,7 @@ Deno.test("rename-note - a create for the new path after the rename keeps the no
 
 Deno.test("rename-note - a deferred version is parked and the cursor stays behind it", async () => {
   const keys = await keysFor();
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const path = "x.md";
   const pathHash = hashPathHex(keys.mac_key, path);
   state.upsertLocalFile({

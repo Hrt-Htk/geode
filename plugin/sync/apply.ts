@@ -7,15 +7,15 @@ import {
 } from "../../core/protocol.ts";
 import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
 import { reassemble } from "../../core/reassemble.ts";
-import { blake3Hex, hashPathHex } from "../../core/hash.ts";
-import { normalizeForHash } from "../../core/normalize.ts";
-import { type InFlightWrite, type LocalFileRow, StateDB } from "../plumbing/state.ts";
+import { hashPathHex } from "../../core/hash.ts";
+import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { log } from "../plumbing/log.ts";
 import { windowGlobal } from "../plumbing/window.ts";
 import type { ActivityRecord } from "./activity-log.ts";
 import {
   diskPlaintextHash,
   diskPlaintextHashIfPresent,
+  recordedWrite,
   removeVaultPath,
   renameableFile,
   type Vault,
@@ -87,33 +87,14 @@ export interface ApplyDeps {
   hasUnflushedEdit?: (path: string) => boolean;
 }
 
-/** #59: are the bytes at this path the fragment of a write that has not landed? The record
- * says so (`StateDB.isTorn`: a write of this session that has not returned, or an entry the
- * start pass has not resolved), so the head is written over them: never merged, promoted,
- * carried or kept as a conflict. An edit the user has queued or not yet flushed wins: that
- * is their typing, not a fragment. */
-function isTornFragment(path: string, pathHash: string, deps: ApplyDeps): boolean {
+/** #59: do the bytes at this path belong to nobody's write (a write that has not landed, or
+ * an entry the start pass has not resolved)? The record says so (`StateDB.isTorn`), and such
+ * bytes are never merged, promoted, carried or kept as a conflict. An edit the user has
+ * queued or not yet flushed wins: that is their typing, not a fragment. */
+function isUnownedFragment(path: string, pathHash: string, deps: ApplyDeps): boolean {
   if (!deps.state.isTorn(pathHash)) return false;
   if (deps.hasLocalEdits(path)) return false;
   return deps.hasUnflushedEdit?.(path) !== true;
-}
-
-/** #59: the ONE way bytes this device did not type reach the disk. The path is recorded
- * immediately before the write and cleared once it returned, so a kill mid-write leaves a
- * record the next start can resolve, and nothing is ever written unrecorded. */
-export async function recordedWrite(
-  state: StateDB,
-  entry: InFlightWrite,
-  write: () => Promise<void>,
-): Promise<void> {
-  await state.beginWrite(entry);
-  await write();
-  await state.endWrite(entry.path_hash);
-}
-
-/** #59: the identity hash a file's bytes have, as the disk side computes it. */
-export function identityHash(path: string, bytes: Uint8Array): string {
-  return blake3Hex(normalizeForHash(path, bytes));
 }
 
 /** #701: whether divergent bytes on disk are this device's own edit. */
@@ -125,7 +106,7 @@ function trustsDivergentDisk(path: string, deps: ApplyDeps): boolean {
  * untracked local edit, promoted to tracked so the reconciler can commit it. */
 async function promoteDivergentDisk(row: LocalFileRow, deps: ApplyDeps): Promise<void> {
   if (row.deleted) return;
-  if (isTornFragment(row.path, row.path_hash, deps)) return;
+  if (isUnownedFragment(row.path, row.path_hash, deps)) return;
   const dh = await diskPlaintextHash(row.path, deps.vault);
   if (dh === null || dh === row.plaintext_hash) return;
   if (!trustsDivergentDisk(row.path, deps)) return;
@@ -329,7 +310,7 @@ async function applyRenameMarker(
   // #59: a fragment is not the note: it stays behind and is removed with the old name.
   const to = meta.renamed_to;
   if (
-    to !== undefined && !isTornFragment(meta.path, msg.path_hash, deps) &&
+    to !== undefined && !isUnownedFragment(meta.path, msg.path_hash, deps) &&
     deps.isSyncable?.(to) !== false && await followsNote(meta.path, to, deps)
   ) {
     closeName(meta.path, msg, deps);
@@ -402,7 +383,7 @@ async function hasPendingEdit(
 ): Promise<boolean> {
   if (deps.hasLocalEdits(path)) return true;
   // #59: an unfinished download's bytes are this device's own write, not an edit.
-  if (isTornFragment(path, pathHash, deps)) return false;
+  if (isUnownedFragment(path, pathHash, deps)) return false;
   if (!trustsDivergentDisk(path, deps)) return false;
   const diskHash = await diskPlaintextHash(path, deps.vault);
   if (diskHash === null) return false;
@@ -459,11 +440,9 @@ export async function keepVersionSibling(
   const conflictPath = await freeConflictPath(basePath, deps);
   await recordedWrite(
     deps.state,
-    {
-      path: conflictPath,
-      path_hash: hashPathHex(deps.keys.mac_key, conflictPath),
-      expected_plaintext_hash: identityHash(conflictPath, bytes),
-    },
+    deps.keys,
+    conflictPath,
+    bytes,
     () => writeVaultBinary(conflictPath, bytes, Date.now(), deps.vault),
   );
   log.info("deferred version kept next to the renamed file", {
@@ -593,7 +572,7 @@ async function keepsDivergentBytes(
 ): Promise<boolean> {
   if (dh === null || dh === tracked || dh === meta.plaintext_hash) return false;
   // #59: a fragment of this device's own interrupted write is not an edit to keep.
-  if (isTornFragment(meta.path, msg.path_hash, deps)) return false;
+  if (isUnownedFragment(meta.path, msg.path_hash, deps)) return false;
   if (!trustsDivergentDisk(meta.path, deps)) return false;
   deps.markLocalEdit(meta.path);
   // For binary files there is no 3-way merge, so the deferred commit would
@@ -670,12 +649,11 @@ async function applyContent(msg: ServerVersion, deps: ApplyDeps, meta: FileMeta)
   // #59: recorded immediately before the write, cleared once it returned.
   await recordedWrite(
     deps.state,
-    {
-      path: meta.path,
-      path_hash: msg.path_hash,
-      expected_plaintext_hash: meta.plaintext_hash,
-    },
+    deps.keys,
+    meta.path,
+    bytes,
     () => writeVaultBinary(meta.path, bytes, meta.mtime, deps.vault),
+    msg.path_hash,
   );
 
   deps.state.upsertLocalFile({

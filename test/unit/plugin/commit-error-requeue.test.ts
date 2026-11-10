@@ -1,9 +1,9 @@
 import { assert, assertEquals } from "@std/assert";
 import { SyncManager } from "../../../plugin/sync/sync-manager.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { deriveKeys } from "../../../core/crypto.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
 import { DEFAULT_SETTINGS } from "../../../plugin/plumbing/settings-types.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 type CommitResult = { kind: "ack"; seq: number; version: number } | {
   kind: "error";
@@ -40,7 +40,7 @@ function sleep(ms: number): Promise<void> {
 
 Deno.test("commit-error-requeue - error result is requeued and retried after reconnect", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };
@@ -78,7 +78,7 @@ Deno.test("commit-error-requeue - error result is requeued and retried after rec
 
 Deno.test("commit-error-requeue - permanently failing commit is dropped after retry cap", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };
@@ -120,7 +120,7 @@ Deno.test("commit-error-requeue - permanently failing commit is dropped after re
 
 Deno.test("commit-dropped - op dropped after retry cap is tracked and reported", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };
@@ -154,7 +154,7 @@ Deno.test("commit-dropped - op dropped after retry cap is tracked and reported",
 
 Deno.test("commit-dropped - a fresh op for the path clears the dropped mark", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };
@@ -186,7 +186,7 @@ Deno.test("commit-dropped - a fresh op for the path clears the dropped mark", as
 
 Deno.test("commit-dropped - clearPending (resync) clears the dropped marks", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };
@@ -222,7 +222,7 @@ Deno.test("commit-dropped - clearPending (resync) clears the dropped marks", asy
 
 Deno.test("commit-dropped - clearPending clears the retry counts", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };
@@ -258,7 +258,7 @@ Deno.test("commit-dropped - clearPending clears the retry counts", async () => {
 
 Deno.test("commit-dropped - retryDropped re-enqueues with a fresh retry budget", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };
@@ -292,7 +292,7 @@ Deno.test("commit-dropped - retryDropped re-enqueues with a fresh retry budget",
 
 Deno.test("commit-error-requeue - a transport throw retries instead of counting the op dropped", async () => {
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const vault = new FakeVault();
   vault.write("a.md", "hello");
   const settings = { ...DEFAULT_SETTINGS };

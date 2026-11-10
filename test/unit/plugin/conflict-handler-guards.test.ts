@@ -1,8 +1,8 @@
 import { assertEquals } from "@std/assert";
 import { ConflictHandler } from "../../../plugin/sync/conflict-handler.ts";
 import { deriveKeys, VaultKeys } from "../../../core/crypto.ts";
-import { openStateDB } from "../../../plugin/plumbing/state.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
+import { openSessionStateDB } from "../../helpers/state.ts";
 
 // Characterization tests for handleConflict's guard early-returns (the branches
 // a real end-to-end sync never reaches cleanly). These pin the retry/drop and
@@ -45,7 +45,7 @@ Deno.test("conflict-handler-guards - locked (no state/keys) is a no-op", async (
 });
 
 Deno.test("conflict-handler-guards - missing server head aborts before any merge", async () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
   const vault = new FakeVault();
   vault.write("a.md", "local");
@@ -81,7 +81,7 @@ Deno.test("conflict-handler-guards - missing server head aborts before any merge
 });
 
 Deno.test("conflict-handler-guards - retry-cap fallback aborts when the head is missing", async () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
   const vault = new FakeVault();
   vault.write("a.md", "local");
@@ -119,7 +119,7 @@ Deno.test("conflict-handler-guards - retry-cap fallback aborts when the head is 
 });
 
 Deno.test("conflict-handler-guards - resolutions of one path are serialized", async () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
   const vault = new FakeVault();
   vault.write("a.md", "local");
@@ -161,7 +161,7 @@ Deno.test("conflict-handler-guards - resolutions of one path are serialized", as
 });
 
 Deno.test("conflict-handler-guards - a head the row already tracks is stale", async () => {
-  const state = openStateDB();
+  const state = openSessionStateDB();
   const keys = await deriveKeys("test", new Uint8Array(16), { opsLimit: 1, memLimit: 8192 });
   const vault = new FakeVault();
   vault.write("a.md", "local");

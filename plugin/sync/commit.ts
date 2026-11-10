@@ -20,7 +20,7 @@ import { type LocalFileRow, StateDB } from "../plumbing/state.ts";
 import { Transport } from "./transport.ts";
 import { acquirePathLock } from "./path-lock.ts";
 import type { CommitResult } from "./commit-channel.ts";
-import { identityHash, recordedWrite, renameHeadOf } from "./apply.ts";
+import { renameHeadOf } from "./apply.ts";
 import { carryLocalEdit } from "./rename-carry.ts";
 import { isLateSave } from "./late-save.ts";
 import {
@@ -30,7 +30,12 @@ import {
   isUnwritten,
 } from "./rename-chain.ts";
 import { noteFor, resolveNoteConflict } from "./rename-note.ts";
-import { readVaultBinary, type Vault as ApplyVault, writeVaultBinary } from "./vault-io.ts";
+import {
+  readVaultBinary,
+  recordedWrite,
+  type Vault as ApplyVault,
+  writeVaultBinary,
+} from "./vault-io.ts";
 import { mergeText, readVersionBytes, surfaceConflict } from "./merger.ts";
 import { toUint8Array } from "../plumbing/bytes.ts";
 import type { ActivityRecord } from "./activity-log.ts";
@@ -573,11 +578,9 @@ async function carryHeadEdit(
     // #59: a merged write is bytes the user did not type either: record it before writing.
     await recordedWrite(
       deps.state,
-      {
-        path: marker.renamedTo,
-        path_hash: hashPathHex(deps.keys.mac_key, marker.renamedTo),
-        expected_plaintext_hash: identityHash(marker.renamedTo, text.merged),
-      },
+      deps.keys,
+      marker.renamedTo,
+      text.merged,
       () => writeVaultBinary(marker.renamedTo, text.merged, Date.now(), deps.vault),
     );
     log.info("carried an edit to the renamed file", { from: marker.path, to: marker.renamedTo });
