@@ -135,6 +135,9 @@ test("settings tab: definitions and display() render the same rows; search finds
     const autolock = await searchSettings(o, "auto-lock");
     expect(autolock.join("\n")).toContain(AUTO_LOCK_ROW);
     await shot("defs-09-search-autolock.png");
+    // #64: the row was called Debug logging, so its old search terms still find it.
+    const debugSearch = await searchSettings(o, "debug logging");
+    expect(debugSearch.join("\n")).toContain(DEVELOPER_CONSOLE_ROW);
     await searchSettings(o, "");
 
     /* ---- A re-read of the definitions keeps the live rows bound ---- */

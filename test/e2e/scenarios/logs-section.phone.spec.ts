@@ -48,7 +48,7 @@ test("logs section on phone: fixed-height box, real lines, scrollable", async ()
 
     await openSettingsTab(o, true);
 
-    /* ---- #64: Logs is a page entry while unlocked, with Debug logging off ---- */
+    /* ---- #64: Logs is a page entry while unlocked, with Developer console off ---- */
     const debugLogging = () =>
       o.eval<boolean>(`app.plugins.plugins.geode.pluginSettings.debugLogging`);
     await openSettingsPage(o, "Logs");

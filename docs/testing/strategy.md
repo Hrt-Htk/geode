@@ -142,7 +142,7 @@ docker compose logs --no-log-prefix geode | jq 'select(.level=="error")'
 ### Plugin-side (`plugin/plumbing/log.ts`)
 
 A ring of the last 2000 entries, fed by the shared sink registry in `core/log.ts`. Console output is
-off unless debug logging is enabled; the ring is what the Logs section renders.
+off unless the Developer console toggle is on; the ring is what the Logs page renders.
 
 ```ts
 log.debug|info|warn|error(msg, fields?): void   // emit

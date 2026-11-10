@@ -25,7 +25,7 @@ import {
 // three screenshots of the real tab.
 const PASSPHRASE = "settings-sections-pass";
 
-const SECTION_ORDER = ["Vault", "Devices", "Sync scope", "Trash", "Advanced"];
+const SECTION_ORDER = ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"];
 
 /**
  * Click a settings button without the native focus-scroll: dispatch an untrusted

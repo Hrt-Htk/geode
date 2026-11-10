@@ -10,6 +10,7 @@ import {
   DEVELOPER_CONSOLE_ROW,
   isDisplayPath,
   openSettingsPage,
+  rowShown,
   setRowControl,
   shownSections,
   useDisplayPath,
@@ -46,7 +47,7 @@ test("logs section: reachable without a setting, real details/log, filters, Deve
     await waitForStatusBar(o.win, "Geode: synced", 60_000);
     await openSettingsTab(o);
 
-    /* ---- 1. Logs sits last, a page entry while unlocked, with Debug logging off (#64) ---- */
+    /* ---- 1. Logs sits last, a page entry while unlocked, with Developer console off (#64) ---- */
     expect(await shownSections(o), "section order with Logs last").toEqual(
       ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"],
     );
@@ -60,6 +61,11 @@ test("logs section: reachable without a setting, real details/log, filters, Deve
     await o.win.locator(".modal.mod-settings").screenshot({
       path: shotPath("64-00-nav-logs-entry.png"),
     });
+
+    /* ---- 1.5. Advanced no longer carries the toggle (#64) ---- */
+    await openSettingsPage(o, "Advanced");
+    expect(await rowShown(o, DEVELOPER_CONSOLE_ROW), "Advanced is free of it").toBe(false);
+    await closeSettingsPage(o);
 
     /* ---- 2. Open: real details line, filter tabs, log box with ring lines ---- */
     await openSettingsPage(o, "Logs");

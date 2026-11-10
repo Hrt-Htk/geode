@@ -34,7 +34,7 @@ Deno.test("tab-state - tabVisibility per state", () => {
 });
 
 // #64: reading the logs must not need a setting first: the Logs page is a page of the unlocked
-// tab, whoever the vault is and whatever Debug logging says. Locked and not-set-up keep it out.
+// tab, whatever the Developer console toggle says. Locked and not-set-up keep it out.
 Deno.test("tab-state - the Logs page shows while unlocked, without any setting", () => {
   assertEquals(tabVisibility("unlocked").sections.includes("logs"), true);
   assertEquals(tabVisibility("locked").sections.includes("logs"), false);

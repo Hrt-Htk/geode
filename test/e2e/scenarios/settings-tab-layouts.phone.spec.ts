@@ -33,7 +33,7 @@ const isHidden = `
   }
 `;
 
-const UNLOCKED_SECTIONS = ["Vault", "Devices", "Sync scope", "Trash", "Advanced"];
+const UNLOCKED_SECTIONS = ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"];
 
 test("tab states (phone): locked rows-only layout, unlock in place, leave → not set up", async () => {
   test.skip(process.env.GEODE_PHONE !== "1", "requires connected phone (GEODE_PHONE=1)");

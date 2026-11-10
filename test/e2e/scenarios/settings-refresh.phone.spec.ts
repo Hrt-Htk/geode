@@ -59,9 +59,14 @@ test("settings tab refreshes to configured state after create", async () => {
 
     // The configured tab also renders every section + the live sync-status row. Logs is a page of
     // the unlocked tab (#64), so it shows without any setting.
-    const sections = await shownSections(A);
-    expect(sections.slice(0, 5)).toEqual(["Vault", "Devices", "Sync scope", "Trash", "Advanced"]);
-    expect(sections.slice(5).every((s) => s === "Logs")).toBe(true);
+    expect(await shownSections(A)).toEqual([
+      "Vault",
+      "Devices",
+      "Sync scope",
+      "Trash",
+      "Advanced",
+      "Logs",
+    ]);
     expect(
       await A.eval<boolean>(
         `!!document.querySelector('[data-testid="geode-settings-sync-status"]')`,

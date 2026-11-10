@@ -30,7 +30,7 @@ const HIDDEN_WHEN_LOCKED = [
   '[data-testid="geode-settings-push"]',
 ];
 
-const UNLOCKED_SECTIONS = ["Vault", "Devices", "Sync scope", "Trash", "Advanced"];
+const UNLOCKED_SECTIONS = ["Vault", "Devices", "Sync scope", "Trash", "Advanced", "Logs"];
 
 /** Shown non-heading rows (locked = 3 incl. the forgot link, notset = 2). */
 async function countVisibleRows(o: { eval: <T>(s: string) => Promise<T> }): Promise<number> {
