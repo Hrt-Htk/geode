@@ -15,6 +15,9 @@ export function describeErrorBanner(
   // #601: a held mass delete stops sync on purpose; the hold banner explains it, and
   // "cannot reach your server" underneath would be a lie.
   if (input.massDeleteHold) return null;
+  // #54: a rebuild disposes the transport on purpose: the resync row and notice say what
+  // is happening, and an outage banner above them would read as a failed sync.
+  if (input.resync) return null;
 
   if (input.offlineSince > 0 && now - input.offlineSince >= 10_000) {
     return {

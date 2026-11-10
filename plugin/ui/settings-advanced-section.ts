@@ -1,4 +1,4 @@
-import { App as ObsidianApp, Notice } from "obsidian";
+import { App as ObsidianApp, ButtonComponent, Notice } from "obsidian";
 import type { SettingsRow } from "./settings-legacy.ts";
 import { setDestructive } from "./api-compat.ts";
 import { formatError, log } from "../plumbing/log.ts";
@@ -9,7 +9,12 @@ import { ConfirmModal } from "./confirm-modal.ts";
 import { confirmLeaveVault, confirmResyncFromScratch } from "./confirm-copy.ts";
 import { vaultDisplayName } from "./settings-vault-section.ts";
 import { ServerAddressModal } from "./server-address-modal.ts";
-import { runWithFeedback } from "./button-feedback.ts";
+import {
+  RESYNC_ROW_DESC,
+  RESYNC_ROW_NAME,
+  resyncButtonText,
+  type ResyncState,
+} from "./resync-status.ts";
 import { STRENGTH_OPTIONS } from "./setup-wizard-logic.ts";
 import {
   REKEY_ROW_BUTTON,
@@ -25,6 +30,8 @@ export type AdvancedSectionHost = {
   saveSettings: () => Promise<void>;
   applyServerAddress: (url: string) => Promise<void>;
   resyncFromScratch: () => Promise<void>;
+  /** #54: what the resync button and the run's notice are in the middle of. */
+  resync: () => ResyncState | null;
   leaveVault: () => Promise<void>;
   /** #559: the re-key modal, entered from the Encryption strength row. */
   openRekeyModal: (kind: RekeyKind) => void;
@@ -33,6 +40,7 @@ export type AdvancedSectionHost = {
 /** Advanced section rows: read-only values + check-gated live server-address edit. */
 export class SettingsAdvancedSection {
   private advServerValueEl: HTMLElement | null = null;
+  private resyncBtn: ButtonComponent | null = null;
 
   constructor(private host: AdvancedSectionHost) {}
 
@@ -100,6 +108,16 @@ export class SettingsAdvancedSection {
     };
   }
 
+  /** #54: the button follows the run: busy and disabled, then a retry once it stops. */
+  updateResyncRow(): void {
+    const btn = this.resyncBtn;
+    if (!btn) return;
+    const state = this.host.resync();
+    const text = resyncButtonText(state);
+    if (btn.buttonEl.textContent !== text) btn.setButtonText(text);
+    btn.setDisabled(state?.phase === "running");
+  }
+
   private copyValue(value: string): void {
     void navigator.clipboard.writeText(value)
       .then(() => new Notice("Copied to clipboard."))
@@ -138,24 +156,26 @@ export class SettingsAdvancedSection {
         });
       },
     }, {
-      name: "Resync from scratch",
-      desc: "Download the entire vault from the server. Use only when sync is broken.",
+      name: RESYNC_ROW_NAME,
+      desc: RESYNC_ROW_DESC,
       render: (row) => {
         row.addButton((btn) => {
-          setDestructive(btn).setButtonText("Resync from scratch");
+          this.resyncBtn = btn;
+          setDestructive(btn);
           btn.buttonEl.dataset.testid = "geode-settings-resync";
           btn.onClick(() => {
             new ConfirmModal(this.host.app, {
               ...confirmResyncFromScratch(),
-              onConfirm: () =>
-                runWithFeedback(
-                  btn,
-                  "Resyncing…",
-                  "Geode: resync complete",
-                  () => this.host.resyncFromScratch(),
-                ),
+              onConfirm: () => {
+                // The run reports itself (notice + status row); this only keeps the
+                // rejection from escaping Obsidian's click handler.
+                void this.host.resyncFromScratch().catch((error) => {
+                  log.error("resync failed", { error: formatError(error) });
+                });
+              },
             }).open();
           });
+          this.updateResyncRow();
         });
       },
     }, {

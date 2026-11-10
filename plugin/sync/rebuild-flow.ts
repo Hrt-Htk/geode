@@ -3,7 +3,7 @@
 
 import { MASS_DELETE_NEEDS_RESUME } from "./mass-delete-hold.ts";
 import { Transport } from "./transport.ts";
-import { log } from "../plumbing/log.ts";
+import { formatError, log } from "../plumbing/log.ts";
 import { isSyncable, type PluginSettings } from "../plumbing/settings-types.ts";
 import type { StateDB } from "../plumbing/state.ts";
 import { openSessionState, reconnectAndWaitLive } from "../session.ts";
@@ -39,13 +39,21 @@ export function startRebuildTransport(
   return transport;
 }
 
+type RebuildOptions = {
+  rejoin?: boolean;
+  /** #54: once per head, so the caller can show how far the rebuild got. */
+  onProgress?: (progress: { current: number; total: number }) => void;
+};
+
 /** The rebuild both entry points run, on the persisted rows: the only witness of what
  * this device last agreed on. */
 export async function rebuildVault(
   host: RebuildHost,
   transport: Transport,
-  rejoin = false,
+  opts: RebuildOptions = {},
 ): Promise<RecoveryStats> {
+  const rejoin = opts.rejoin === true;
+  const onProgress = opts.onProgress;
   if (!host.keys) throw new Error("vault must be unlocked before resync");
   // #601: the hold stays in force until the rebuild has RETURNED: a rebuild that dies
   // half-way leaves rows open, and releasing the hold here would let the next start sync
@@ -73,6 +81,7 @@ export async function rebuildVault(
       deviceName: host.pluginSettings.deviceName,
       parkedMoves: () => host.pluginSettings.pendingMoveOuts,
       rejoin,
+      onProgress,
     });
     log.info("rebuild done", {
       rejoin,
@@ -96,16 +105,34 @@ export async function rebuildVault(
     await host.restartUnlockedSession(freshState);
     return result;
   } catch (error) {
-    freshState?.close();
     // #701: a rejoin that dies part way must not leave the old rows armed for the next
     // session: the settings already carry the new device, so a persisted pause (and the
     // marker that makes the next session finish the rejoin) is what stops the stale state
     // from being replayed over the server.
     if (rejoin) {
+      freshState?.close();
       host.pluginSettings.pauseAt = Date.now();
       host.pluginSettings.rejoinIncomplete = true;
       await host.saveSettings();
+      throw error;
     }
+    await restartAfterFailedRebuild(host, freshState);
     throw error;
+  }
+}
+
+/** #54: the dispose above took the live session with it, so a failed resync must restart
+ * it, or sync is stranded in "disconnected" until a reload. On the rows the rebuild got
+ * through, never the ones the old instance left; with no rows there is nothing to sync, and
+ * the failure that stopped the rebuild is the one to report. */
+async function restartAfterFailedRebuild(
+  host: RebuildHost,
+  state: StateDB | null,
+): Promise<void> {
+  if (!state) return;
+  try {
+    await host.restartUnlockedSession(state);
+  } catch (error) {
+    log.error("rebuild restart failed", { error: formatError(error) });
   }
 }

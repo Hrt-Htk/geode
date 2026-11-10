@@ -763,7 +763,7 @@ export class TestPlugin {
       this.liveResolve = resolve;
     });
     try {
-      const result = await rebuildVault(this, transport, true);
+      const result = await rebuildVault(this, transport, { rejoin: true });
       // A paused device never connects: that is the expected outcome, not a hang.
       if (this.pluginSettings.pauseAt === 0) {
         await this.livePromise;

@@ -18,6 +18,7 @@ function input(overrides: Partial<SyncStatusInput> = {}): SyncStatusInput {
     dirtyCount: 0,
     lastSyncTime: 0,
     syncingProgress: null,
+    resync: null,
     reconnectDelay: 0,
     offlineSince: 0,
     lastAttemptAt: 0,
@@ -28,6 +29,23 @@ function input(overrides: Partial<SyncStatusInput> = {}): SyncStatusInput {
     ...overrides,
   };
 }
+
+Deno.test("sync-banner - a running resync is not an outage", () => {
+  // #54: the rebuild disposes the transport on purpose. Ten seconds in, the outage banner
+  // would sit above the row that says the resync is running.
+  assertEquals(
+    describeErrorBanner(
+      input({
+        state: "disconnected",
+        offlineSince: NOW - 30_000,
+        resync: { phase: "running", current: 40, total: 120 },
+      }),
+      NOW,
+      SERVER_URL,
+    ),
+    null,
+  );
+});
 
 Deno.test("sync-banner - locked shows no banner", () => {
   assertEquals(describeErrorBanner(input({ unlocked: false }), NOW, SERVER_URL), null);

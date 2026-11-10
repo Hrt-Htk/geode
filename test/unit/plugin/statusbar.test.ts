@@ -15,6 +15,7 @@ function input(overrides: Partial<IconInput> = {}): IconInput {
     lastSyncTime: 0,
     lastAckAt: 0,
     syncingProgress: null,
+    resync: null,
     reconnectDelay: 0,
     offlineSince: 0,
     lastAttemptAt: 0,
@@ -220,6 +221,30 @@ Deno.test("statusbar - no green between applying events of a catch-up batch", ()
     resolveIcon(input({ state: "live", syncingProgress: { current: 5, total: 5 }, now: T0 })).icon,
     "circle-check",
   );
+});
+
+Deno.test("statusbar - a running resync spins with the progress tooltip, not the offline icon", () => {
+  // #54: disposeRuntime sets "disconnected" before the rebuild reads a single head.
+  const s = resolveIcon(
+    input({
+      state: "disconnected",
+      resync: { phase: "running", current: 312, total: 822 },
+    }),
+  );
+  assertEquals(s.icon, "refresh-cw");
+  assertEquals(s.color, "geode-statusbar-syncing");
+  assertEquals(s.spin, true);
+  assertEquals(s.tooltip, "Geode: resyncing 312 of 822");
+});
+
+Deno.test("statusbar - a stopped resync is a warning icon that names the reason", () => {
+  const s = resolveIcon(
+    input({ state: "disconnected", resync: { phase: "failed", reason: "Server unreachable." } }),
+  );
+  assertEquals(s.icon, "triangle-alert");
+  assertEquals(s.color, "geode-statusbar-error");
+  assertEquals(s.spin, undefined);
+  assertEquals(s.tooltip, "Geode: resync stopped. Server unreachable.");
 });
 
 Deno.test("statusbar - a held mass delete is its own orange warning, not the connecting spinner", () => {

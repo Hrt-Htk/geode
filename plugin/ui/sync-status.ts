@@ -4,9 +4,12 @@ import { blockedCopy, describeVersionHint } from "../sync/version-state.ts";
 import { pauseAgeColor } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
 import { UPDATE_STATUS_UPDATING } from "./server-update-logic.ts";
+import { resyncRowDot, resyncRowText, type ResyncState } from "./resync-status.ts";
 
 export type SyncStatusInput = IconInput & {
   lastBackupAt: number;
+  /** #54: a resync owns the row while it runs, and keeps its reason once it stops. */
+  resync: ResyncState | null;
   /** #560: a re-key is running on another device: sync paused, no commits. */
   rekeyInProgress?: boolean;
   /** #560: the vault's passphrase changed elsewhere: locked until re-unlocked. */
@@ -97,14 +100,17 @@ export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusR
   }
 }
 
-/** The states where sync is deliberately not moving, in precedence order: the user pause,
- * then the server's version refusal (#628: nothing can sync, the fix is an update), then
- * the held mass delete (a decision, but it needs the connection the refusal withholds). */
+/** The states where sync is deliberately not moving, in precedence order: the running or
+ * stopped resync (the rebuild disposes the session, so the transport reads disconnected for
+ * its whole run, #54), the user pause, then the server's version refusal (#628: nothing can
+ * sync, the fix is an update), then the held mass delete (a decision, but it needs the
+ * connection the refusal withholds). */
 function describeGated(
   i: SyncStatusInput,
   now: number,
   backup: string,
 ): SyncStatusResult | null {
+  if (i.resync) return { text: resyncRowText(i.resync), dot: resyncRowDot(i.resync) };
   if (i.pausedAt > 0) return describePaused(i, now);
   if (i.versionStatus.kind === "blocked") {
     return { text: `${blockedCopy(i.versionStatus.side).row} ${backup}`, dot: "red" };

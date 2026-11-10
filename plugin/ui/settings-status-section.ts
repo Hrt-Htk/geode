@@ -56,6 +56,7 @@ export class SettingsStatusSection {
   private conflictTextEl: HTMLElement | null = null;
   private unlockBtn: ButtonComponent | null = null;
   private rowActionBtn: ButtonComponent | null = null;
+  private reconcileBtn: ButtonComponent | null = null;
   private storageTextEl: HTMLElement | null = null;
   private storageMeterEl: HTMLElement | null = null;
   private storageState: StorageState = { kind: "loading" };
@@ -225,6 +226,7 @@ export class SettingsStatusSection {
       visible,
       render: (s) => {
         s.addButton((btn) => {
+          this.reconcileBtn = btn;
           btn.setButtonText("Reconcile now");
           btn.buttonEl.dataset.testid = "geode-settings-reconcile";
           btn.onClick(() => {
@@ -325,6 +327,14 @@ export class SettingsStatusSection {
     btn.buttonEl.dataset.testid = reviewing ? "geode-settings-review" : "geode-settings-pause";
   }
 
+  /** #54: a resync owns the vault while it runs: pausing or reconciling under it would
+   * fight the rebuild. */
+  private updateResyncControls(): void {
+    const running = this.host.getStatusInput().resync?.phase === "running";
+    this.rowActionBtn?.setDisabled(running);
+    this.reconcileBtn?.setDisabled(running);
+  }
+
   private removePauseBtn(): void {
     this.rowActionBtn?.buttonEl.remove();
     this.rowActionBtn = null;
@@ -334,6 +344,7 @@ export class SettingsStatusSection {
   updateStatusRow(): void {
     if (!this.dotEl || !this.textEl) return;
     this.updatePauseBtn();
+    this.updateResyncControls();
     this.updateServerUpdateRow();
     const { text, dot, conflictText } = describeSyncStatus(this.host.getStatusInput(), Date.now());
     this.textEl.setText(text);

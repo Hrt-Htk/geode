@@ -16,6 +16,7 @@ function input(over: Partial<SyncStatusInput> = {}): SyncStatusInput {
     lastSyncTime: 0,
     lastAckAt: 0,
     syncingProgress: null,
+    resync: null,
     reconnectDelay: 0,
     offlineSince: 0,
     lastAttemptAt: 0,
@@ -315,6 +316,36 @@ Deno.test("sync-status - a held mass delete names the hold, not the server", () 
     text: "1 file missing. Sync is on hold.",
     dot: "orange",
   });
+});
+
+Deno.test("sync-status - a running resync says so instead of offline", () => {
+  // #54: the rebuild disposes the runtime first, so the transport reads disconnected for
+  // the whole run. The row must describe the resync, not the teardown.
+  assertEquals(
+    describeSyncStatus(
+      input({
+        state: "disconnected",
+        reconnectDelay: 5_000,
+        resync: { phase: "running", current: 312, total: 822 },
+      }),
+      0,
+    ),
+    { text: "Resyncing: 312 of 822 files.", dot: "blue" },
+  );
+  assertEquals(
+    describeSyncStatus(input({ resync: { phase: "running", current: 0, total: 0 } }), 0),
+    { text: "Resyncing.", dot: "blue" },
+  );
+});
+
+Deno.test("sync-status - a stopped resync keeps its reason and offers a retry", () => {
+  assertEquals(
+    describeSyncStatus(
+      input({ resync: { phase: "failed", reason: "Server unreachable." } }),
+      0,
+    ),
+    { text: "Resync stopped. Server unreachable.", dot: "orange" },
+  );
 });
 
 Deno.test("sync-status - a server update in flight outranks the dropping connection (#44)", () => {

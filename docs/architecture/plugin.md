@@ -443,6 +443,12 @@ the restore-everything decision only for what the rejoin itself stopped. For the
 pending mass-delete hold, exactly as "Resync from scratch" does (and, unlike resync, without waiting for
 the held connection, since a rejoin runs over its own transport).
 
+A rebuild that is not a rejoin (Resync from settings or the palette, Resume) that dies part way
+restarts the session on the rows it did rebuild before rethrowing: the dispose above is the rebuild's
+first step, so without that restart sync would stay stopped until a reload. It never restarts on rows
+it did not rebuild (an unreadable state leaves sync stopped: the failure that stopped it is the one to
+report).
+
 A rejoin whose cause cannot be fixed (no space for the backup folder, a file named `Geode backup` in the
 vault root, or a blob the server can no longer serve) has one way out: free the space (or rename the file),
 or leave the vault and join again. Nothing else clears the marker, and every session start keeps retrying
@@ -597,6 +603,16 @@ banner.
 **Status bar** (`statusbar.ts`, `statusbar-icon.ts`): a single icon whose color and tooltip encode the
 state: synced with last-sync age, syncing progress, pending count, offline with the retry delay, locked,
 conflicts. Clicking it opens the status menu (`status-menu.ts`).
+
+**Resync surfaces** (`ui/resync-status.ts` for the state and every string, `ui/resync-progress.ts` for
+the notice, `ui/resync-run.ts` for the two entry points that own them): a resync owns the status while
+it runs, whichever way it started. One state (`running` with a count, or `failed` with a reason) feeds
+the single notice that updates in place, the status bar tooltip and spinner, the settings sync-status
+row (blue, then orange), and the Advanced row's button (`Resyncing…` disabled, then `Try again`).
+Pause and Reconcile are disabled while it runs, because a resync has already disposed the session they
+would act on. A stop keeps its reason in the row until the next resync; a connection failure says so in
+words. A rejoin shows the same running surfaces but keeps its own failure answer: the pause and its
+notice.
 
 **Modals & views**: setup wizard, passphrase/forgot, config scope, folders, conflicts, trash, history
 (view + modal), activity, mass-delete review, re-key, rename vault, server address, export.

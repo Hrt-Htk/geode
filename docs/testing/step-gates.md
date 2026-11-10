@@ -311,7 +311,10 @@ merged-equals-remote case, conflict write order and a missing local row.
 
 - `test/e2e/scenarios/gate6-resync-from-scratch.spec.ts` (+ `.hybrid`): B calls
   `resyncFromScratch()` in the real renderer; the tracked-file count matches on both instances and
-  every file is byte-identical, with no duplicates.
+  every file is byte-identical, with no duplicates. The status bar is observed through the run: it
+  never falls back to the offline copy, and the progress count moves and ends at the head count.
+- `test/e2e/scenarios/resync-surfaces.spec.ts` (+ `.phone`): the resync surfaces in real Obsidian:
+  the confirm dialog, the running notice and rows, done, and the stop with its reason and Try again.
 - `test/e2e/scenarios/gate6-export-vault.spec.ts` (+ `.phone`): `exportDecryptedVault(dir)` writes
   every seeded file into the target folder, byte-equal to the vault.
 

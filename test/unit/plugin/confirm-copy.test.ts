@@ -41,7 +41,10 @@ Deno.test("confirmLeaveVault names the vault in the title", () => {
 Deno.test("confirmResyncFromScratch copy", () => {
   assertEquals(confirmResyncFromScratch(), {
     title: "Resync from scratch?",
-    message: "Rebuilds this device's sync state from the server.",
+    message: [
+      "Downloads the whole vault from the server again.",
+      "A notice shows the progress while it runs.",
+    ],
     confirmText: "Resync",
   });
 });

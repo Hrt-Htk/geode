@@ -3,6 +3,7 @@ import { blockedCopy, type VersionStatus } from "../sync/version-state.ts";
 import type { MassDeleteHold } from "../sync/mass-delete-hold.ts";
 import { pauseAgeColor, pauseTooltip } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
+import { resyncIcon, type ResyncState, resyncTooltip } from "./resync-status.ts";
 
 export type IconState = {
   icon: string;
@@ -50,6 +51,8 @@ export type IconInput = {
   pausedAt: number;
   /** #601: the held mass delete: sync waits for a decision, not for the server. */
   massDeleteHold: MassDeleteHold | null;
+  /** #54: a resync owns the bar while it runs, and keeps its reason once it stops. */
+  resync: ResyncState | null;
   now: number;
   /** Highest per-path commit retry count in flight (commit-queue retryCounts). */
   maxRetries: number;
@@ -63,6 +66,10 @@ export function resolveIcon(i: IconInput): IconState {
       tooltip: "Geode: locked",
     };
   }
+
+  // #54: the rebuild disposes the session first: without this the bar shows the offline
+  // icon for the whole run.
+  if (i.resync) return { ...resyncIcon(i.resync), tooltip: resyncTooltip(i.resync) };
 
   if (i.pausedAt > 0) return pausedIcon(i.pausedAt, i.now);
 

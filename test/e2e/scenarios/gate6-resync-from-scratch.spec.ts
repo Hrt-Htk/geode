@@ -36,7 +36,64 @@ test("gate6 resync from scratch rebuilds local state without duplicates in real 
       )
       .toBe(true);
 
-    await pair.B.eval("await app.plugins.plugins.geode.resyncFromScratch(); return true;");
+    // #54: watch the status bar through the real rebuild. The resync disposes the session
+    // first, so an unguarded bar reads "offline" for the whole run.
+    await pair.B.eval(`
+      window.__geodeResyncTitles = [app.plugins.plugins.geode.statusBar.statusEl.title];
+      window.__geodeResyncObserver = new MutationObserver((records) => {
+        for (const record of records) {
+          if (record.attributeName === "title") window.__geodeResyncTitles.push(record.oldValue ?? "");
+        }
+      });
+      window.__geodeResyncObserver.observe(app.plugins.plugins.geode.statusBar.statusEl, {
+        attributes: true,
+        attributeFilter: ["title"],
+        attributeOldValue: true,
+      });
+      void app.plugins.plugins.geode.resyncFromScratch().catch(() => {});
+      return true;
+    `);
+
+    await expect
+      .poll(
+        async () =>
+          (await readStatusBarTitles(pair.B)).some((t) => t.startsWith("Geode: resyncing")),
+        { timeout: 120_000 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        async () => {
+          const titles = await readStatusBarTitles(pair.B);
+          const lastResync = titles.findLastIndex((title) => title.startsWith("Geode: resyncing"));
+          return lastResync >= 0 &&
+            titles.slice(lastResync).some((t) => t.startsWith("Geode: synced"));
+        },
+        { timeout: 120_000 },
+      )
+      .toBe(true);
+
+    const titles = await pair.B.eval<string[]>(`
+      window.__geodeResyncObserver.disconnect();
+      return window.__geodeResyncTitles;
+    `);
+    const firstResync = titles.findIndex((title) => title.startsWith("Geode: resyncing"));
+    const lastResync = titles.findLastIndex((title) => title.startsWith("Geode: resyncing"));
+    // One unbroken resyncing run: the bar never fell back to the offline copy mid rebuild.
+    expect(
+      titles.slice(firstResync, lastResync + 1).filter((t) => !t.startsWith("Geode: resyncing")),
+    )
+      .toEqual([]);
+    // Progress moved, and ended at the server's own file count.
+    const counts = titles
+      .map((title) => /^Geode: resyncing (\d+) of (\d+)$/.exec(title))
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map((match) => ({ current: Number(match[1]), total: Number(match[2]) }));
+    expect(counts.length).toBeGreaterThan(1);
+    expect(new Set(counts.map((count) => count.current)).size).toBeGreaterThan(1);
+    const lastCount = counts.at(-1);
+    expect(lastCount?.current).toBe(lastCount?.total);
+    expect(lastCount?.total).toBeGreaterThanOrEqual(SEEDED_FILES.length);
 
     await waitForStatusBar(pair.B.win, "Geode: synced", 90_000);
     await expect
@@ -88,6 +145,17 @@ async function seedVault(
       files.map((file) => ({ path: file.path, kind: "commit" })),
     );
     return true;
+  `);
+}
+
+async function readStatusBarTitles(
+  instance: Awaited<ReturnType<typeof launchPair>>["B"],
+): Promise<string[]> {
+  return await instance.eval<string[]>(`
+    return [
+      ...window.__geodeResyncTitles,
+      app.plugins.plugins.geode.statusBar.statusEl.title,
+    ];
   `);
 }
 

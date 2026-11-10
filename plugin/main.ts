@@ -17,7 +17,6 @@ import {
 import { formatError, getRecentLog, log, setDebugLogging } from "./plumbing/log.ts";
 import { compareSemVer } from "../core/version.ts";
 import { ServerUpdate } from "./ui/server-update.ts";
-import { formatUserError } from "./plumbing/errors.ts";
 import { formatLogExport } from "./ui/log-format.ts";
 import { makeTrashApi, TrashApi } from "./plumbing/trash-client.ts";
 import { Transport } from "./sync/transport.ts";
@@ -32,8 +31,9 @@ import { mergePendingViews } from "./sync/pending-view.ts";
 import { DEFAULT_SETTINGS, isConfigured, type PluginSettings } from "./plumbing/settings-types.ts";
 import { GeodeSettingTab } from "./ui/settings-tab.ts";
 import { runWithFeedback } from "./ui/button-feedback.ts";
+import { runRejoinRebuild, runResync } from "./ui/resync-run.ts";
 import { exportVaultFlow } from "./sync/export-vault.ts";
-import { rebuildVault, rejoinAction, startRebuildTransport } from "./sync/rebuild-flow.ts";
+import { rejoinAction } from "./sync/rebuild-flow.ts";
 import { detectRejoin as detectRejoinState } from "./sync/join-plan.ts";
 import { rejoinFailedNotice, rejoinResultText } from "./ui/setup-wizard-logic.ts";
 import type { RejoinBackup } from "./sync/rejoin.ts";
@@ -216,9 +216,12 @@ export default class GeodePlugin extends Plugin {
     }
   }
   lockVault(): void {
+    // A stopped resync belongs to the session the user is closing.
+    this.statusBar?.setResync(null);
     lockVault(this);
   }
   leaveVault(): Promise<void> {
+    this.statusBar?.setResync(null);
     return leaveVault(this);
   }
   isUnlockedCheck(): boolean {
@@ -268,33 +271,14 @@ export default class GeodePlugin extends Plugin {
     // #701: a failed rejoin left the rows armed; only the rejoin rebuild may run on them.
     if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
     if (!this.transport) throw new Error("vault must be unlocked before resync");
-    new Notice("Geode: resyncing from scratch…");
-    try {
-      const result = await rebuildVault(this, this.transport);
-      new Notice(`Geode: rebuilt ${result.appliedFiles} files from server`);
-    } catch (error) {
-      new Notice(`Geode: resync failed. ${formatUserError(error)}`);
-      throw error;
-    }
+    await runResync(this, this.transport);
   }
 
   /** #701: the join landed on an old copy of this vault: rebuild over a transport with
    * the device token the join just issued (the live session still holds the old one, a
    * revoked one), then report where the doubt was set aside. */
   async beginRejoinRebuild(): Promise<RejoinBackup | null> {
-    const transport = startRebuildTransport(this);
-    try {
-      const backup = (await rebuildVault(this, transport, true)).backup;
-      // Not an unconditional zero: a pause the user chose survives a rejoin.
-      this.statusBar?.setPausedAt(this.pluginSettings.pauseAt);
-      return backup;
-    } catch (error) {
-      // #701: show the stop at once: the bar would otherwise keep saying disconnected.
-      this.statusBar?.setPausedAt(this.pluginSettings.pauseAt);
-      throw error;
-    } finally {
-      transport.stop();
-    }
+    return await runRejoinRebuild(this);
   }
 
   /** #701: one finish at a time: Resume and a session start can both fire. */

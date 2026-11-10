@@ -101,6 +101,7 @@ export class GeodeSettingTab extends PluginSettingTab {
   private legacy = new LegacySettingsView(this, new Set(["advanced", "logs"]));
   private banners: SettingsBanners;
   private statusSection: SettingsStatusSection | null = null;
+  private advancedSection: SettingsAdvancedSection | null = null;
   private vaultSection: SettingsVaultSection | null = null;
   private logsSection: SettingsLogsSection | null = null;
   private trash: ReturnType<typeof trashSettingsRows> | null = null;
@@ -128,6 +129,7 @@ export class GeodeSettingTab extends PluginSettingTab {
     });
     this.statusBar.subscribe(() => {
       this.statusSection?.updateStatusRow();
+      this.advancedSection?.updateResyncRow();
       this.logsSection?.refreshDetails();
       this.banners.update();
       this.trash?.syncHold();
@@ -182,6 +184,7 @@ export class GeodeSettingTab extends PluginSettingTab {
     this.savedScrollTop = 0;
     this.lastState = null;
     this.statusSection = null;
+    this.advancedSection = null;
     this.vaultSection = null;
     this.logsSection = null;
     this.trash = null;
@@ -349,15 +352,17 @@ export class GeodeSettingTab extends PluginSettingTab {
   }
 
   private advancedRows(): SettingsRow[] {
-    return new SettingsAdvancedSection({
+    this.advancedSection ??= new SettingsAdvancedSection({
       app: this.app,
       settings: () => this.plugin.pluginSettings,
       saveSettings: () => this.plugin.saveSettings(),
       applyServerAddress: (url) => this.plugin.applyServerAddress(url),
       resyncFromScratch: () => this.plugin.resyncFromScratch(),
+      resync: () => this.plugin.getStatusInput().resync,
       leaveVault: () => this.plugin.leaveVault(),
       openRekeyModal: (kind) => this.plugin.openRekeyModal(kind),
-    }).rows();
+    });
+    return this.advancedSection.rows();
   }
 
   /** Closing the tab stops the Logs subscription and the Devices poll (#502); on 1.13+
