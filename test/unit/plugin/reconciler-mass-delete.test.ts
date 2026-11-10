@@ -144,6 +144,8 @@ async function runGuard(opts: {
   deleteCount: number;
   thresholds?: Thresholds;
   keep?: string;
+  /** Rows this device closed long ago (a rename or a delete): still in state, no file. */
+  closedRows?: number;
 }): Promise<{
   ops: ReconcileOp[];
   held: HeldFile[] | null;
@@ -164,6 +166,9 @@ async function runGuard(opts: {
     vault.write(p, `content ${i}`);
     seedFile(vault, state, p);
     mtimes.set(p, vault.mtimes.get(p)!);
+  }
+  for (let i = 0; i < (opts.closedRows ?? 0); i++) {
+    state.closeLocalRow(`gone${i}.md`, `gone${i}.md_hash`, 1);
   }
   for (const p of paths.slice(0, opts.deleteCount)) await vault.delete(p);
   if (opts.keep) vault.write(opts.keep, "created in the same pass");
@@ -208,6 +213,16 @@ Deno.test("reconciler holds a delete that meets both defaults and reports the he
     held!.find((f) => f.path === "f0.md")!.mtime,
     mtimes.get("f0.md"),
     "last known mtime rides along",
+  );
+});
+
+Deno.test("reconciler counts only live rows as tracked (#59: a closed row is not a file)", async () => {
+  const { totalTracked } = await runGuard({ fileCount: 20, deleteCount: 20, closedRows: 1 });
+
+  assertEquals(
+    totalTracked,
+    20,
+    "every tracked file, and nothing a stale closed row adds to the denominator",
   );
 });
 
