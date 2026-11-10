@@ -117,9 +117,9 @@ export default class GeodePlugin extends Plugin {
   adminToken: string | null = null;
   lastBackupAt = 0;
   blockedNoticeShown = false;
-  /** #54: bumped when the session a run reports to ends (lock, leave, unload), so a run
-   * still settling cannot project its stop into the next session. */
-  syncGeneration = 0;
+  /** #54: bumped by every session boundary (see disposeRuntime/startUnlockedSession), so a
+   * resync run still settling cannot project its stop into the next session. */
+  syncEpoch = 0;
   private syncingProgress: { current: number; total: number } | null = null;
   deferredStartCleanup: (() => void) | null = null;
   // SyncSessionHost injectables (session.ts stays obsidian-free).
@@ -183,7 +183,6 @@ export default class GeodePlugin extends Plugin {
     this.showStartupModal();
   }
   onunload(): void {
-    this.syncGeneration += 1;
     this.activity?.flush();
     this.updater.dispose();
     this.statusBar?.dispose();
@@ -221,12 +220,10 @@ export default class GeodePlugin extends Plugin {
   }
   lockVault(): void {
     // A stopped resync belongs to the session the user is closing.
-    this.syncGeneration += 1;
     this.statusBar?.setResync(null);
     lockVault(this);
   }
   leaveVault(): Promise<void> {
-    this.syncGeneration += 1;
     this.statusBar?.setResync(null);
     return leaveVault(this);
   }
@@ -282,8 +279,9 @@ export default class GeodePlugin extends Plugin {
     if (rejoinAction(this.pluginSettings) === "rejoin") return this.finishIncompleteRejoin();
     if (this.resyncInFlight) return await this.resyncInFlight;
     if (!this.isUnlocked) throw new Error("vault must be unlocked before resync");
-    // #54: a stopped resync leaves no session behind; the retry drives its own transport.
-    this.resyncInFlight = runResync(this, this.transport).finally(() => {
+    // #54: the run drives its own transport (a stop may leave no session, and a paused
+    // vault's session never started one).
+    this.resyncInFlight = runResync(this).finally(() => {
       this.resyncInFlight = null;
     });
     await this.resyncInFlight;
@@ -558,6 +556,8 @@ export default class GeodePlugin extends Plugin {
       this.pluginSettings.serverUrl = url;
       await this.saveSettings();
       if (!this.isUnlocked) return;
+      // #54: the session a resync may be reporting to is replaced here.
+      this.syncEpoch += 1;
       await this.restartUnlockedSession();
     };
     const run = this.serverAddressChain.then(apply);

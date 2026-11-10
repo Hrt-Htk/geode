@@ -286,14 +286,14 @@ Deno.test("statusbar - a rebuild that left sync stopped owns the bar it stopped"
   assertEquals(s.icon, "triangle-alert");
   assertEquals(s.color, "geode-statusbar-error");
   assertEquals(s.tooltip, "Geode: resync stopped. Server unreachable.");
-  // The states that need the user still win over it.
+  // #54 review: the stop outranks a pause that would promise uploads, and only that.
   assertEquals(
     resolveIcon(input({ resync: RESYNC_LEFT_STOPPED, pausedAt: 5 })).icon,
-    "pause-circle",
+    "triangle-alert",
   );
   assertEquals(
     resolveIcon(input({ resync: RESYNC_LEFT_STOPPED, massDeleteHold: RESYNC_HOLD })).icon,
-    "file-warning",
+    "triangle-alert",
   );
 });
 

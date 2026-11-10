@@ -71,6 +71,11 @@ export function resolveIcon(i: IconInput): IconState {
   // icon for the whole run.
   if (i.resync?.phase === "running") return resyncIconState(i.resync);
 
+  // #54 review: a rebuild that left sync stopped has no session behind it, so the stopped
+  // state speaks for sync here, ahead of a pause that would promise uploads. Every other
+  // state keeps the order below.
+  if (resyncStopsSync(i.resync)) return resyncIconState(i.resync);
+
   if (i.pausedAt > 0) return pausedIcon(i.pausedAt, i.now);
 
   // #628: a refused device cannot sync at all and the fix is an update, so the red
@@ -92,10 +97,6 @@ export function resolveIcon(i: IconInput): IconState {
       tooltip: holdSentence(i.massDeleteHold.files.length),
     };
   }
-
-  // #54 review: a rebuild that left sync stopped has no session behind it, so the stopped
-  // state speaks for sync here (a pause, a refusal or a hold above still wins).
-  if (resyncStopsSync(i.resync)) return resyncIconState(i.resync);
 
   // #432: calmer conflicts icon: git-merge in orange; red stays reserved for
   // disconnect / version errors. Zero conflicts falls through to the synced icon.

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { renameSync } from "node:fs";
 import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { waitForUnlocked } from "../helpers/geode";
@@ -181,11 +182,88 @@ test("resync surfaces: confirm, running, done, stopped", async () => {
       .toBe("Resync from scratch");
     await scrollToHeading(o, "Sync status");
     await shoot(o, "7-retried-status-row-desktop");
+
+    /* ---- A crash-style stop: the marker survives a plugin reload (M2) ---- */
+    // Pause first: the session must not commit the delete of the file we lose next, and a
+    // paused vault keeps everything on this device. Then the plugin is off, so removing the
+    // file leaves no event behind, and the server loses the head's chunks: the rebuild
+    // restores the other files and cannot restore this one.
+    const lost = "notes/note-0000.md";
+    const chunks = await o.eval<string[]>(`
+      app.plugins.plugins.geode.syncManager?.state?.getLocalFile(${JSON.stringify(lost)})
+        ?.chunk_hashes ?? []
+    `);
+    expect(chunks.length, "the lost file has chunks").toBeGreaterThan(0);
+    await o.eval(`await app.plugins.plugins.geode.pauseSync(); return true;`);
+    await o.eval(`app.plugins.disablePlugin("geode"); return true;`);
+    await o.eval(`await app.vault.adapter.remove(${JSON.stringify(lost)}); return true;`);
+    const hidden = hideBlobs(server, chunks);
+    await o.eval(`await app.plugins.enablePlugin("geode"); return true;`);
+    await waitForUnlocked(o);
+    await o.eval(`app.commands.executeCommandById("geode:resync"); return true;`);
+    await expect.poll(
+      async () => (await noticeTexts(o)).some((text) => text.startsWith("Geode: resync stopped.")),
+      { timeout: 120_000 },
+    ).toBe(true);
+    expect(
+      await o.eval<string>("app.plugins.plugins.geode.pluginSettings.resyncStop"),
+      "the partial failure persisted a marker",
+    ).not.toBe("");
+
+    // The reload: a fresh plugin against the persisted settings. The marker keeps every
+    // session start off the rows the failed rebuild left, and the stop is what comes up.
+    await o.eval(`app.plugins.disablePlugin("geode"); return true;`);
+    await o.eval(`await app.plugins.enablePlugin("geode"); return true;`);
+    await waitForUnlocked(o);
+    await o.eval(`
+      app.setting.open();
+      app.setting.openTabById(app.plugins.plugins.geode.manifest.id);
+      return true;
+    `);
+    await expect.poll(async () => await statusRowText(o), { timeout: 30_000 }).toContain(
+      "Resync stopped.",
+    );
+    expect(
+      await o.eval<boolean>("!!app.plugins.plugins.geode.transport"),
+      "the marker starts no session on the reload",
+    ).toBe(false);
+    await shoot(o, "8-reloaded-stopped-desktop");
+
+    // Try again (the palette runs the same method as the button): with the chunks back it
+    // completes, clears the marker, and sync resumes where the pause left it.
+    restoreBlobs(hidden);
+    await o.eval(`app.commands.executeCommandById("geode:resync"); return true;`);
+    await expect.poll(
+      async () => await o.eval<string>("app.plugins.plugins.geode.pluginSettings.resyncStop"),
+      { timeout: 120_000 },
+    ).toBe("");
+    await o.eval(`await app.plugins.plugins.geode.resumeSync(); return true;`);
+    await waitForStatusBar(o.win, "Geode: synced", 60_000);
+    await expect.poll(async () => await statusRowText(o), { timeout: 30_000 }).toContain(
+      "Up to date",
+    );
+    await shoot(o, "9-marker-recovered-desktop");
   } finally {
     await o.close();
     await server.stop().catch(() => {});
   }
 });
+
+/** Move the given chunk blobs aside: the server can no longer serve that head. */
+function hideBlobs(
+  server: Awaited<ReturnType<typeof startServer>>,
+  hashes: string[],
+): string[] {
+  return hashes.map((hash) => {
+    const blob = `${server.dataDir}/blobs/${server.vaultId}/${hash.slice(0, 2)}/${hash.slice(2)}`;
+    renameSync(blob, `${blob}.away`);
+    return `${blob}.away`;
+  });
+}
+
+function restoreBlobs(hidden: string[]): void {
+  for (const aside of hidden) renameSync(aside, aside.replace(/\.away$/, ""));
+}
 
 async function clickResync(o: Obsidian): Promise<void> {
   await o.eval(

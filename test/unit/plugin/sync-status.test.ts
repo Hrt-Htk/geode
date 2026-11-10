@@ -386,20 +386,19 @@ Deno.test("sync-status - a rebuild that left sync stopped owns the row it stoppe
     describeSyncStatus(input({ state: "disconnected", resync: LEFT_STOPPED }), 0),
     { text: "Resync stopped. Server unreachable.", dot: "orange" },
   );
-  // The states that need the user still win over it.
+  // #54 review: a marker stop has no session, so "changes upload when you resume" would be
+  // false: the stop outranks the pause, and only the pause.
   assertEquals(
-    describeSyncStatus(input({ resync: LEFT_STOPPED, pausedAt: NOW - MIN }), NOW).text.startsWith(
-      "Paused.",
-    ),
-    true,
+    describeSyncStatus(input({ resync: LEFT_STOPPED, pausedAt: NOW - MIN }), NOW),
+    { text: "Resync stopped. Server unreachable.", dot: "orange" },
   );
   assertEquals(
-    describeSyncStatus(input({ resync: LEFT_STOPPED, versionStatus: blocked }), 0).dot,
-    "red",
+    describeSyncStatus(input({ resync: LEFT_STOPPED, versionStatus: blocked }), 0),
+    { text: "Resync stopped. Server unreachable.", dot: "orange" },
   );
   assertEquals(
     describeSyncStatus(input({ resync: LEFT_STOPPED, massDeleteHold: HOLD }), 0).text,
-    "1 file missing. Sync is on hold.",
+    "Resync stopped. Server unreachable.",
   );
 });
 

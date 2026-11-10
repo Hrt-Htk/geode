@@ -11,13 +11,13 @@ import {
 } from "./resync-status.ts";
 
 /** #54: what the two rebuild entry points need from the plugin: the rebuild host, the bar
- * they report through, and the session generation they belong to. */
+ * they report through, and the session epoch they belong to. */
 export type ResyncRunHost =
   & Parameters<typeof rebuildVault>[0]
   & {
     statusBar: { setResync(state: ResyncState | null): void; setPausedAt(ts: number): void } | null;
-    /** Bumped when the session a run reports to ends (lock, leave, unload). */
-    syncGeneration: number;
+    /** Bumped by every session boundary (start or teardown). */
+    syncEpoch: number;
   };
 
 /** #54: one notice that updates in place while the run goes (about four renders a second),
@@ -26,11 +26,12 @@ class ResyncProgress {
   private notice: Notice | null = null;
   private lastRenderAt = 0;
   private renderedCount = 0;
-  /** The session this run started in: a lock, a leave or an unload ends it. */
-  private readonly generation: number;
+  /** The session this run started in: any later boundary (lock, leave, unload, a new
+   * session) ends it. */
+  private readonly epoch: number;
 
   constructor(private host: ResyncRunHost) {
-    this.generation = host.syncGeneration;
+    this.epoch = host.syncEpoch;
   }
 
   update(progress: ProgressInfo): void {
@@ -49,18 +50,15 @@ class ResyncProgress {
   /** The progress notice is replaced by a normal one that fades, and the row goes back to
    * the live sync status. */
   done(updated: number): void {
-    const gone = this.gone();
     this.hide();
-    if (gone) return;
     this.host.statusBar?.setResync(null);
     new Notice(resyncDoneNotice(updated));
   }
 
   /** Hand the status bar back without a notice of our own: a rejoin reports its backup. */
   stop(): void {
-    const gone = this.gone();
     this.hide();
-    if (!gone) this.host.statusBar?.setResync(null);
+    this.host.statusBar?.setResync(null);
   }
 
   /** `syncStopped`: no session is left behind, so this state is the whole sync status. */
@@ -74,9 +72,10 @@ class ResyncProgress {
   }
 
   /** #54 review: a run belongs to the session it started in. Once that session is gone (a
-   * lock, a leave, an unload), settling would project this run's stop into the next one. */
+   * lock, a leave, an unload, a new address or vault), progress and a stop would describe a
+   * session that no longer exists. A done or a stop only clears the run's own state. */
   private gone(): boolean {
-    return this.host.syncGeneration !== this.generation;
+    return this.host.syncEpoch !== this.epoch;
   }
 
   private hide(): void {
@@ -86,17 +85,14 @@ class ResyncProgress {
 }
 
 /** "Resync from scratch": the surfaces run with the rebuild, and a stop keeps its reason.
- * `session` is the live transport, or null when a stop left no session to borrow one from
- * (a reload on the marker): the retry then drives its own, as a rejoin does. */
-export async function runResync(
-  host: ResyncRunHost,
-  session: Parameters<typeof rebuildVault>[1] | null,
-): Promise<void> {
+ * The run drives its own transport, as a rejoin does: the session it disposes is about to be
+ * torn down (or was never started, a paused vault), so borrowing its transport can hand the
+ * rebuild one with no client. */
+export async function runResync(host: ResyncRunHost): Promise<void> {
   const progress = new ResyncProgress(host);
   progress.update({ current: 0, total: 0 });
-  let transport = session;
+  const transport = startRebuildTransport(host);
   try {
-    transport ??= startRebuildTransport(host);
     const result = await rebuildVault(host, transport, {
       onProgress: (p) => progress.update(p),
     });
@@ -108,7 +104,7 @@ export async function runResync(
     progress.failed(resyncStopReason(error), host.transport === null);
     throw error;
   } finally {
-    if (transport !== session) transport?.stop();
+    transport.stop();
   }
 }
 

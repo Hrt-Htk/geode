@@ -63,10 +63,6 @@ export function describeSyncStatus(i: SyncStatusInput, now: number): SyncStatusR
   const gated = describeGated(i, now, backup);
   if (gated) return gated;
 
-  // #54 review: a rebuild that LEFT sync stopped owns the row it stopped (nothing is
-  // retrying); one that restarted a session only speaks while that session is healthy.
-  if (resyncStopsSync(i.resync)) return resyncResult(i.resync);
-
   if (i.conflictCount > 0) {
     return {
       text: `${i.conflictCount} conflict${i.conflictCount > 1 ? "s" : ""} to review. ${backup}`,
@@ -108,6 +104,10 @@ function describeGated(
   now: number,
   backup: string,
 ): SyncStatusResult | null {
+  // #54 review: a marker stop has no session behind it, so "changes upload when you resume"
+  // would be false, and Try again is the only thing left to act on. It leads here, in the
+  // no-session state only; every other state keeps the order below.
+  if (resyncStopsSync(i.resync)) return resyncResult(i.resync);
   if (i.pausedAt > 0) return describePaused(i, now);
   if (i.versionStatus.kind === "blocked") {
     return { text: `${blockedCopy(i.versionStatus.side).row} ${backup}`, dot: "red" };

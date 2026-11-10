@@ -72,12 +72,17 @@ export function resyncButtonText(state: ResyncState | null): string {
   return state?.phase === "failed" ? RESYNC_RETRY : RESYNC_ROW;
 }
 
+/** The marker a rebuild writes before it can change a row: a crash leaves this as the reason. */
+export const RESYNC_UNFINISHED = "Resync did not finish.";
+
 /** Connection-level failures have no message worth showing: the approved copy names the
  * one thing the user can act on. Every other failure keeps its own message. */
 const UNREACHABLE = /net::ERR_|Failed to fetch|fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/;
 
 export function resyncStopReason(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = (error instanceof Error ? error.message : String(error)).trim();
+  // A crash mid rebuild leaves the marker without a reason: say that, never nothing.
+  if (message === "") return RESYNC_UNFINISHED;
   return UNREACHABLE.test(message) ? "Server unreachable." : message;
 }
 

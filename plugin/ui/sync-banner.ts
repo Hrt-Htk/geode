@@ -22,7 +22,7 @@ export function describeErrorBanner(
   // outage line is theirs to hide; the upload-failed banner below still shows.
   if (
     input.offlineSince > 0 && now - input.offlineSince >= 10_000 &&
-    !resyncHidesOutage(input.resync)
+    !(input.resync?.phase === "running" || resyncStopsSync(input.resync))
   ) {
     return {
       name: "Cannot reach your Geode server",
@@ -51,11 +51,6 @@ export function nextOfflineSince(prev: number, state: string, now: number): numb
   if (state === "disconnected") return prev || now;
   if (state === "connecting") return prev;
   return 0;
-}
-
-/** #54: the states that own the outage story: the run itself, and a stop nothing retries. */
-function resyncHidesOutage(state: SyncStatusInput["resync"]): boolean {
-  return state?.phase === "running" || resyncStopsSync(state);
 }
 
 function formatAttemptAge(lastAttemptAt: number, now: number): string {

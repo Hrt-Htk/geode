@@ -4,6 +4,7 @@ import {
   RESYNC_RENDER_MS,
   RESYNC_RETRY,
   RESYNC_ROW,
+  RESYNC_UNFINISHED,
   resyncButtonText,
   resyncCopy,
   resyncDoneNotice,
@@ -73,6 +74,9 @@ Deno.test("resync-status - a connection failure stops in words, not in a network
   assertEquals(resyncStopReason(new TypeError("Failed to fetch")), "Server unreachable.");
   // Everything else keeps its own message: the reason is the real one, not a guess.
   assertEquals(resyncStopReason(new Error("heads GET: 403")), "heads GET: 403");
+  // A crash leaves the marker without a reason: never a blank row.
+  assertEquals(resyncStopReason(new Error("")), RESYNC_UNFINISHED);
+  assertEquals(resyncStopReason("  "), RESYNC_UNFINISHED);
 });
 
 Deno.test("resync-status - done counts what it updated, and nothing to update says so", () => {
