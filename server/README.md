@@ -26,7 +26,7 @@ Deno relay: SQLite version log + content-addressed blob store. It never sees pla
 | `rekey-store.ts` | Re-key staging + blob swap recovery |
 | `compaction.ts` | Version compaction, blob GC, trash purge, retention floor |
 | `fs-usage.ts` | Disk usage for the storage row |
-| `log.ts` | Structured JSON logging to stdout/journald |
+| `log.ts` | Structured JSON logging to stdout (the container's log) |
 
 Size rules (blocking, `deno task standards`): **≤ 300 code lines per file**, per-function ≤ 80 lines,
 cyclomatic complexity ≤ 15, nesting ≤ 4. No total-LOC cap: the guarantee is a small, auditable

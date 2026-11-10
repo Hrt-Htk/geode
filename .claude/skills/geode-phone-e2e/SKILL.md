@@ -297,7 +297,8 @@ which forwards the socket first, then passes the port + expression. `cdp-eval.mj
 When a device "won't finish syncing" or is "missing notes", compare the **server's truth** against the
 **device's persisted state**. Never guess from the status bar.
 
-**Server side** (`$GEODE_SSH_HOST`, DB path and service name from the deploy unit):
+**Server side** (`$GEODE_SSH_HOST`; `<compose dir>` is the Docker install's directory, `<db>` its
+`data/geode.db`):
 
 ```bash
 ssh "$GEODE_SSH_HOST" "sudo sqlite3 -header -column <db> \
@@ -310,7 +311,7 @@ ssh "$GEODE_SSH_HOST" "sudo sqlite3 <db> \
 ssh "$GEODE_SSH_HOST" "sudo sqlite3 -header -column <db> \
   \"SELECT substr(id,-6) dev,name,plugin_version pv FROM devices WHERE vault_id='<vid>';\""
 # live events: the client's blob download storm drowns everything, so strip it:
-ssh "$GEODE_SSH_HOST" "sudo journalctl -u <service> --since '6 hours ago' --no-pager | grep -v 'blob get'"
+ssh "$GEODE_SSH_HOST" "cd <compose dir> && sudo docker compose logs --since 6h --no-log-prefix geode | grep -v 'blob get'"
 ```
 
 A steady one-at-a-time `blob get` stream (~1/s) is a device grinding a cold join; a `ws hello` with

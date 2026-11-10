@@ -50,14 +50,14 @@ Deno.test("citedPaths: globs and placeholders survive extraction", () => {
 Deno.test("citedPaths: fence content is scanned, tagged or not", () => {
   const text = [
     "```bash",
-    "sudo bash deploy/install.sh",
+    "deno run -A scripts/docker-smoke.ts",
     "```",
     "```",
     "plugin/sync/reconciler.ts",
     "```",
   ].join("\n");
   assertEquals(citedPaths(text), [
-    { line: 2, value: "deploy/install.sh" },
+    { line: 2, value: "scripts/docker-smoke.ts" },
     { line: 5, value: "plugin/sync/reconciler.ts" },
   ]);
 });

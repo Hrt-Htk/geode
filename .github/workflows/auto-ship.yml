@@ -3,9 +3,9 @@ name: Auto-ship
 # Green ready PR → merge (#377). Drafts are left alone (#551): mark a PR ready
 # once nothing is owed. Only the maintainer's own PRs from this repo ship; a PR
 # from a fork or another author is merged by hand after review (#682). Runs when the CI workflow completes successfully for a
-# pull_request event. No release and no deploy in Actions,
-# release/deploy stays local (see the issue): the agent prunes and runs
-# `deno task release X.Y.Z` after the merge.
+# pull_request event. No release decision and no server update happen in
+# Actions (see the issue): the agent prunes and runs `deno task release X.Y.Z`
+# after the merge.
 
 on:
   workflow_run:

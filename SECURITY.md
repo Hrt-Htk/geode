@@ -35,7 +35,8 @@ In scope:
 - **The server.** HTTP and WebSocket routes, authentication, the SQLite database, the blob store, and
   the end-to-end guarantee that the server never sees note contents or file paths.
 - **The cryptography.** Key derivation, the deterministic nonces, and the keyed path hashes.
-- **The install and deploy scripts** in `deploy/`.
+- **The install and update surface.** `Dockerfile`, `compose.yaml` and `geode-update.sh`, the host job
+  that answers an update request.
 
 Out of scope:
 

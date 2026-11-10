@@ -6,11 +6,11 @@ One line per directory; the naming convention at the bottom is the rule, not a s
 |------|---------------|
 | `unit/core/` · `unit/plugin/` · `unit/server/` | Deno unit tests, one directory per code home they test: `core/`, `plugin/`, `server/`. |
 | `unit/e2e/` · `unit/scripts/` | Unit tests for the E2E harness (`test/e2e/` guards, locks, ports) and for repo `scripts/`. |
-| `unit/fuzz-sweep.test.ts` | The one unit test outside a home directory: it checks the sweep CLI's arg parsing, shard tiling and summary, which `test:ci` would otherwise never run (`test/fuzz` is excluded). |
+| `unit/fuzz-sweep.test.ts` | The one unit test outside a home directory: it checks the sweep CLI's arg parsing, shard tiling and summary, which no test would run otherwise: `sweep.ts` is a CLI, not a test file. |
 | `integration/` (+ `server-ws/`) | A real server process, driven over HTTP/WebSocket by client-side code. |
 | `scenarios/` (+ `merge/`, `recovery/`, `sync/`) | The two-vault driver: real reconciler/commit/apply/merge on `FakeVault`. |
 | `bench/` | Non-test scripts run by hand (`bench-real`, `bench-rekey`, `soak`, `crypto-bench-entry`, `build-bundle`); `bench-real-readonly.test.ts` is the one Deno test here, guarding them in CI. |
-| `fuzz/` | Oracle fuzz engine (`engine.ts`), its committed suite (`engine.test.ts`), and the sweep CLI (`sweep.ts`). `test/fuzz` is excluded from `test:ci`. |
+| `fuzz/` | Oracle fuzz engine (`engine.ts`), its committed suite (`engine.test.ts`), and the sweep CLI (`sweep.ts`). The suite runs in `test:ci`; sweeps do not. |
 | `e2e/` | Playwright harness: `playwright.config.ts`, `global-setup.ts`, the phone lock/queue, seed and vault guards. |
 | `e2e/fixtures/` | Launching real Obsidian (desktop, phone), the throwaway server, pairs and hybrid pairs, and the demo vault the docs images are shot on. |
 | `e2e/helpers/` | Spec-level helpers: waits, shots, mobile UI, interrupt/relaunch, rekey runs. `*.deno.ts` are scripts spawned, never imported. |
@@ -33,7 +33,7 @@ One line per directory; the naming convention at the bottom is the rule, not a s
 ## Commands
 
 ```bash
-deno task test:ci                                     # the Deno suite CI runs (excludes test/fuzz)
+deno task test:ci                                     # the Deno suite CI runs
 deno task test                                        # same suite, no timeout wrapper
 deno task fuzz:sweep --runner seq --seeds 1-10        # fuzz seeds (see the geode-fuzz skill)
 node node_modules/@playwright/test/cli.js test --config=test/e2e/playwright.config.ts --project=default

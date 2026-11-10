@@ -209,11 +209,11 @@ if (import.meta.main) {
     const next = nextVersion(pkg.version, subjects);
     if (next) {
       act(
-        `release due: ${pkg.version} -> ${next}: invoke deno run -A --env-file=.env.local scripts/release.ts ${next}`,
+        `release due: ${pkg.version} -> ${next}: invoke deno run -A scripts/release.ts ${next}`,
       );
       if (!dry) {
         const release = new Deno.Command(Deno.execPath(), {
-          args: ["run", "-A", "--env-file=.env.local", "scripts/release.ts", next],
+          args: ["run", "-A", "scripts/release.ts", next],
           cwd: root,
           stdout: "inherit",
           stderr: "inherit",

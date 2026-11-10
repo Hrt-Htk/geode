@@ -17,7 +17,7 @@ ladder and repo layout. `CLAUDE.md` names the two load-bearing docs whose invari
 
 ```
 ---
-covers: [server/*.ts, db/migrations/*.sql, deploy/*]
+covers: [server/*.ts, db/migrations/*.sql]
 watches: [test/scenarios/**]
 ---
 ```

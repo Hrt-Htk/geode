@@ -119,7 +119,7 @@ straight to `main`: no branch, issue, or PR.
 - **No `console.log` outside `*/log.ts`**: use the structured logger (enforced by `no-console`).
 - **Tests are linted and name-checked**: `deno task standards` lints `test/` (test-only exemptions: `no-console`, `no-explicit-any`) and enforces `test/README.md`'s naming rule: kebab-case, no issue numbers, `gateN-` only for `docs/testing/step-gates.md` evidence.
 - **Type-check before tests**: after any `server/`/`core/` edit, `deno check server/main.ts core/*.ts`. Plugin's type gate is `tsc -p tsconfig.plugin.json` inside `deno task standards` (`build:plugin` doesn't type-check).
-- **`deno task ci` is the full local gate**: same steps as CI's `Deno checks` job (install → check server+core → build plugin → `deno task standards` → `deno task test:ci` → `docs:drift` (warn-only; the hard check is the `Gate evidence` job)); CI then fails if build/tests left the tree dirty. Run it before every push: GitHub runs no CI job on a draft PR, only once it is ready. `test:ci` runs `--no-check --ignore=test/fuzz`: fuzz is skill-driven, and the plugin's type gate is `tsc`, so `deno test` does not type-check that graph.
+- **`deno task ci` is the full local gate**: same steps as CI's `Deno checks` job (install → check server+core → build plugin → `deno task standards` → `deno task test:ci` → `docs:drift` (warn-only; the hard check is the `Gate evidence` job)); CI then fails if build/tests left the tree dirty. Run it before every push: GitHub runs no CI job on a draft PR, only once it is ready. `test:ci` runs `--no-check`, fuzz suite included (seed sweeps stay skill-driven): the plugin's type gate is `tsc`, so `deno test` does not type-check that graph.
 - **Docs attest code, not decorate it**: before editing an area, read the doc whose `covers:` frontmatter matches it (`deno task docs:drift` prints every covered file changed here without its doc; a `watches:` match prints warn-only, no opt-out needed). Update that doc in the same PR, or state `docs: unaffected - <reason>` in the PR body; the `Gate evidence` job fails otherwise.
 - **Scratch and tests in a worktree**: scratch scripts go in the worktree's `tmp/` (imports from `/tmp` don't resolve); run tests with `deno task test:ci` (bare `deno test` hits known type noise); Paseo setup installs `node_modules`, never link it; don't `deno fmt` files you didn't change.
 - **Machine-specific values live in `.env.local`** (template `.env.example`, gitignored; a worktree gets it symlinked by `paseo.json`). Skills and docs name the variable (`$ANDROID_SERIAL`, `$GEODE_SSH_HOST`, `$GEODE_BENCH_VAULT_DIR`), never the value: no IP, hostname, device serial, vault name or home path in tracked files.
@@ -234,27 +234,27 @@ intermediate ones. CI hard-fails on bad commit format, branch name, or a missing
    PR body opts out of a hard `covers:` drift (`watches:` only warns).
 5. **After a merge: archive the PR's Paseo workspace, then `deno task after-merge`**: prune gone
    branches (after `git worktree prune`), move closed board items to Done, release per skill `geode-release`. Archive first: git refuses to delete a branch still checked out
-   in a live worktree. No release or deploy in Actions: it stays local. Paseo often archives a merged
+   in a live worktree. No release decision and no server update in Actions: they stay local. Paseo often
+   archives a merged
    PR's workspace itself (its agent stops): `Workspace not found` then is normal; continue with
    after-merge.
 6. **Transient CI** (empty `runner_name`, cancelled-while-queued, "Service Unavailable") **→ re-run, not a code bug** (`gh api repos/OWNER/REPO/actions/runs/<id>/jobs`).
 
-**Release to users**: `deno task release X.Y.Z` is the manual release path, one atomic step: bumps the
-shared version line (`package.json` only), commits `chore(release): X.Y.Z`, pushes the bare `X.Y.Z` tag
-(→ `release.yml` → attested pre-release → BRAT), and deploys the server: plugin and server together
-(never one without the other; a version difference no longer blocks sync: the server gates on wire
-protocol + minimum version only, and a compatible difference shows an update hint instead). The build
-stamps `package.json`'s version into `plugin-dist/manifest.json`, so the release asset says `X.Y.Z`
-while the root `manifest.json` keeps the last promoted version. **Every release is a pre-release:**
-BRAT picks it up, the community directory does not. `deno task promote X.Y.Z` moves a tested release
-to the directory: root `manifest.json` + `versions.json`, commit `chore(release): promote X.Y.Z`, push
-`main`, clear the pre-release flag, mark it latest, notes since the last promoted version. No rebuild
-and no server deploy. No `--no-deploy` mode. `after-merge` calls `release` automatically (step 5);
-promote is always manual. `deploy/deploy.sh` alone is only a server-config redeploy primitive, not a
-release path. The release task loads `.env.local` for the deploy (`GEODE_SSH_HOST`) and refuses before
-the version bump while that value is unset. Skill `geode-release`. While `RELEASE_HOLD` exists at the
-repo root, `after-merge` skips the release and `deno task release` / `deno task promote` refuse:
-remove the file in its own PR to resume.
+**Release to users**: `deno task release X.Y.Z` is the manual release path: bumps the shared version
+line (`package.json` only), commits `chore(release): X.Y.Z`, pushes `main`, tags the bare `X.Y.Z`.
+`release.yml` then publishes two things from that tag: the plugin as an attested pre-release (BRAT) and
+the server image to GHCR. The release script deploys nothing. A version difference does not block sync:
+the server gates on wire protocol + minimum version only, and a compatible difference shows an update
+hint instead. The build stamps `package.json`'s version into `plugin-dist/manifest.json`, so the release
+asset says `X.Y.Z` while the root `manifest.json` keeps the last promoted version. **Every release is a
+pre-release:** BRAT picks it up, the community directory does not. `deno task promote X.Y.Z` moves a
+tested release to the directory: root `manifest.json` + `versions.json`, commit
+`chore(release): promote X.Y.Z`, push `main`, clear the pre-release flag, mark it latest, notes since the
+last promoted version. No rebuild and no image push. No `--no-deploy` mode. `after-merge` calls
+`release` automatically (step 5); promote is always manual. Updating your own server after a release is
+a separate step, through the host update job (skill `geode-release`). Skill `geode-release`. While
+`RELEASE_HOLD` exists at the repo root, `after-merge` skips the release and `deno task release` /
+`deno task promote` refuse: remove the file in its own PR to resume.
 
 Full process spec: `docs/dev/workflow.md`, `CONTRIBUTING.md`.
 
@@ -265,9 +265,9 @@ Full process spec: `docs/dev/workflow.md`, `CONTRIBUTING.md`.
 - **Personas** (`.agents/personas/`) are Paseo/pi agent definitions, not peer docs: Paseo frontmatter plus
   `contact_supervisor`/`intercom` tools. Without Paseo, read them as review checklists.
 - **`deno`:** on `PATH`. E2E tool overrides (`DENO_BIN`, `OBSIDIAN_BIN`, `ADB_PATH`, `GEODE_SEED_VAULT_DIR`): `docs/ops/dev-setup.md` §2.
-- **Build plugin:** `deno task build:plugin` → `plugin-dist/` (builds only; does **not** deploy).
-- **Skills:** `geode-pr-flow` (branch/PR/merge/purge) · `geode-release` (version bump + BRAT + server
-  deploy) · `geode-review-loop` (worker → reviewer → lean pass before draft→ready) ·
+- **Build plugin:** `deno task build:plugin` → `plugin-dist/` (builds only; deploys nothing).
+- **Skills:** `geode-pr-flow` (branch/PR/merge/purge) · `geode-release` (version bump + BRAT + image,
+  then the server update) · `geode-review-loop` (worker → reviewer → lean pass before draft→ready) ·
   `geode-benchmark-vault` + `geode-fuzz` (sync validation) · `geode-phone-e2e` (device/hybrid
   E2E; ADB + CDP runbook) · `geode-ui` (UI design + screenshot loop) · `impeccable` (design grading;
   optional, external, not in this repo) ·
