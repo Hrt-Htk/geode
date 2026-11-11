@@ -9,13 +9,13 @@
 
 import { VaultKeys } from "../../core/crypto.ts";
 import { commitOp, waitForInFlightCommit } from "./commit.ts";
-import { keptConflictPath } from "./conflict-list.ts";
+import { keptConflictPath, sameContentHolds } from "./conflict-list.ts";
 import { splitExt } from "./conflicts.ts";
 import type { StateDB } from "../plumbing/state.ts";
 import type { Transport } from "./transport.ts";
 import { recordedWrite } from "./vault-io.ts";
 
-export type ResolutionAction = "keep-mine" | "keep-theirs" | "keep-both";
+export type ResolutionAction = "keep-mine" | "keep-theirs" | "keep-both" | "remove-conflict";
 
 export interface ResolutionPlan {
   /** Write `source`'s whole content to `path`. */
@@ -33,6 +33,8 @@ export function planResolution(
   if (action === "keep-both") {
     return { rename: { from: row.conflictPath, to: keptConflictPath(row.path) } };
   }
+  // remove-conflict: both sides hold the same content, so the original already has it.
+  if (action === "remove-conflict") return { delete: row.conflictPath };
   // keep-mine keeps the conflict file's content only when it is this device's;
   // keep-theirs keeps it when it arrived from another device (inversion).
   const keepConflict = (action === "keep-mine") === row.conflictFileIsMine;
@@ -41,17 +43,16 @@ export function planResolution(
   return plan;
 }
 
-/** The kept-side label shared by the activity line and the notice. */
-export function resolutionLabel(
-  action: ResolutionAction,
-  ownName: string,
-  remoteName: string | null,
-): string {
-  if (action === "keep-both") return "kept both";
-  const name = action === "keep-mine"
-    ? (ownName.trim() || "This device")
-    : (remoteName ?? "Another device");
-  return `kept ${name}'s version`;
+/** #68: remove-conflict deletes the side file, so it re-checks both sides at click
+ * time: a row built while they matched must never delete bytes that changed
+ * since (the conflict file is an ordinary synced note on other devices). */
+export async function assertStillSameContent(
+  row: { path: string; conflictPath: string },
+  read: (path: string) => Promise<Uint8Array>,
+): Promise<void> {
+  if (!(await sameContentHolds(read, row.path, row.conflictPath))) {
+    throw new Error("This conflict changed. Review it again.");
+  }
 }
 
 export interface ResolveDeps {
@@ -77,7 +78,7 @@ export interface ResolveDeps {
   deviceName: string;
 }
 
-/** Returns the kept copy path for keep both, null otherwise. */
+/** Returns the kept conflict path for keep both, null otherwise. */
 export async function executeResolution(
   plan: ResolutionPlan,
   deps: ResolveDeps,
@@ -159,7 +160,7 @@ function commitDeps(deps: ResolveDeps) {
   };
 }
 
-/** A kept copy beside an existing one gets a numbered suffix. */
+/** A kept conflict beside an existing one gets a numbered suffix. */
 async function uniqueKeptPath(desired: string, deps: ResolveDeps): Promise<string> {
   let to = desired;
   let n = 2;

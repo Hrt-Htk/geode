@@ -14,6 +14,10 @@ const CONFLICT_PATH = "Notes/debug-test.conflict-2026-07-07T10-00-00.md";
 // A real two sided diff: both sides changed the shared line, and only the
 // conflict file carries the extra paragraph.
 const ORIGINAL_BODY = `# Plan\n\nFirst paragraph.\n\nShared line.\n\nLast paragraph.`;
+// #68: a side file holding the same content as the original.
+const SAME_PATH = "Notes/same-phone.md";
+const SAME_CONFLICT_PATH = "Notes/same-phone (conflict Laptop B 2026-07-07 1000).md";
+const SAME_BODY = `# Same\n\nBoth devices wrote this paragraph.`;
 const CONFLICT_BODY =
   `# Plan\n\nFirst paragraph.\n\nShared line with a different ending.\n\nAn extra paragraph only the conflict has.\n\nLast paragraph.`;
 
@@ -58,7 +62,8 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
     await obsidian.eval(
       `document.querySelector('[data-testid="geode-conflicts-done"]')?.click(); return true;`,
     );
-    await expect(obsidian.win.locator(".geode-conflicts-modal")).not.toBeVisible();
+    // Detached, not just hidden: the close animation must finish before the reopen.
+    await expect(obsidian.win.locator(".geode-conflicts-modal")).toHaveCount(0);
 
     /* 2. Seed a real conflict pair (original + conflict file), then reopen the
        modal: the row appears. */
@@ -108,7 +113,8 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
 
     /* 4. Back returns to the list; the conflict is still open. */
     await evalClick(obsidian, "[data-testid=geode-conflict-back]");
-    await expect(review).not.toBeVisible();
+    // Detached, not just hidden: the close animation must finish before the next open.
+    await expect(review).toHaveCount(0);
     await expect(row).toHaveCount(1);
 
     /* 5. Open both (phone: new tab + the conflict file is opened). */
@@ -170,7 +176,71 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
     await new Promise((r) => setTimeout(r, 400));
     await obsidian.screenshot(shotPath("435-phone-05-gone.png"));
     await evalClick(obsidian, "[data-testid=geode-conflict-back]");
-    await expect(goneReview).not.toBeVisible();
+    await expect(goneReview).toHaveCount(0);
+    // The step 7 list and its review can linger in the DOM on mobile (closing
+    // animation): close everything, then reopen the list so it is rebuilt.
+    await dismissModals(obsidian);
+    await expect(obsidian.win.locator(".geode-conflict-review-modal")).toHaveCount(0);
+
+    /* 8. #68: both sides hold the same content. The review keeps both cards,
+       says so and offers Remove conflict alone; it deletes the side file. */
+    await obsidian.eval(`
+      await app.vault.create(${JSON.stringify(SAME_PATH)}, ${JSON.stringify(SAME_BODY)});
+      await app.vault.create(${JSON.stringify(SAME_CONFLICT_PATH)}, ${JSON.stringify(SAME_BODY)});
+      return true;
+    `);
+    await obsidian.eval(`app.plugins.plugins.geode.openConflictsModal(); return true;`);
+    const sameRowSelector = `[data-testid=geode-conflict-row][data-path="${SAME_PATH}"]`;
+    await expect(obsidian.win.locator(sameRowSelector)).toHaveCount(1, { timeout: 15_000 });
+    // Click this row's Review: the document may still hold an older row's button.
+    await obsidian.eval(`
+      (() => {
+        const row = document.querySelector(${JSON.stringify(sameRowSelector)});
+        if (!row) throw new Error("no conflict row for ${SAME_PATH}");
+        row.querySelector("[data-testid=geode-conflict-review]").click();
+        return true;
+      })()
+    `);
+    const sameReview = obsidian.win.locator(".geode-conflict-review-modal");
+    await expect(sameReview.locator("[data-testid=geode-conflict-same]")).toContainText(
+      "Both versions are the same.",
+    );
+    await expect(sameReview.locator("[data-testid=geode-conflict-diff]")).toHaveCount(0);
+    await expect(sameReview.locator("[data-testid=geode-conflict-keep-original]")).toHaveCount(0);
+    await expect(sameReview.locator("[data-testid=geode-conflict-keep-conflict]")).toHaveCount(0);
+    await expect(sameReview.locator("[data-testid=geode-conflict-keep-both]")).toHaveCount(0);
+    await expect(sameReview.locator("[data-testid=geode-conflict-remove-conflict]")).toHaveCount(1);
+    await expect(sameReview.locator("[data-testid=geode-conflict-back]")).toHaveCount(1);
+    await expectFits(sameReview);
+    await obsidian.eval(
+      `document.querySelectorAll('.notice').forEach((n) => n.remove()); return true;`,
+    );
+    await new Promise((r) => setTimeout(r, 400));
+    await obsidian.screenshot(shotPath("68-phone-01-identical.png"));
+    await evalClick(obsidian, "[data-testid=geode-conflict-remove-conflict]");
+    await expect(obsidian.win.locator(".notice", { hasText: "Removed conflict." })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(sameReview).toHaveCount(0, { timeout: 15_000 });
+    await expect
+      .poll(
+        async () =>
+          await obsidian.eval<boolean>(
+            `return app.vault.getAbstractFileByPath(${
+              JSON.stringify(SAME_CONFLICT_PATH)
+            }) === null;`,
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    // Leave no conflict row behind for the next phone spec on this device.
+    await obsidian.eval(`
+      for (const p of [${JSON.stringify(SAME_PATH)}, ${JSON.stringify(SAME_CONFLICT_PATH)}]) {
+        const file = app.vault.getAbstractFileByPath(p);
+        if (file) await app.vault.delete(file);
+      }
+      return true;
+    `);
     await dismissModals(obsidian);
   } finally {
     await obsidian.close();

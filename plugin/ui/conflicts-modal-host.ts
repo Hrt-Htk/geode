@@ -13,12 +13,13 @@ import { deviceNameMap } from "../plumbing/provisioning-client.ts";
 import type { ActivityEntry, ActivityInput } from "../sync/activity-log.ts";
 import { buildConflictRows, type ConflictRow } from "../sync/conflict-list.ts";
 import {
+  assertStillSameContent,
   executeResolution,
   planResolution,
   type ResolutionAction,
-  resolutionLabel,
 } from "../sync/conflict-resolve.ts";
 import { ConflictsModal } from "./conflicts-modal.ts";
+import { resolutionWords } from "./conflict-review-view.ts";
 
 /** The slice of the plugin the conflicts wiring needs (structural). */
 export type ConflictsHost = {
@@ -68,8 +69,8 @@ export function openConflictsModal(host: ConflictsHost): void {
       buildConflictRows({
         files: () => host.app.vault.getAllLoadedFiles(),
         stat: adapter.stat,
+        read: adapter.readBinary,
         state,
-        keys,
         transport,
         deviceName: host.pluginSettings.deviceName,
         deviceId: host.pluginSettings.deviceId,
@@ -77,7 +78,6 @@ export function openConflictsModal(host: ConflictsHost): void {
         deviceNames,
       }),
     resolve: (row, action) => resolveConflict(host, row, action, state, keys, transport, adapter),
-    deviceName: () => host.pluginSettings.deviceName,
     remoteNames: () =>
       deviceNameMap(
         host.pluginSettings.serverUrl,
@@ -114,6 +114,9 @@ async function resolveConflict(
   transport: Transport,
   adapter: ReturnType<typeof statAdapter>,
 ): Promise<string | null> {
+  // Remove conflict is the one action that deletes content without writing it
+  // over: re-read both sides, since the row was built when the list opened.
+  if (action === "remove-conflict") await assertStillSameContent(row, adapter.readBinary);
   const keptPath = await executeResolution(planResolution(row, action), {
     vault: { adapter },
     state,
@@ -126,7 +129,7 @@ async function resolveConflict(
   host.activity?.record({
     path: row.path,
     kind: "resolved",
-    label: resolutionLabel(action, host.pluginSettings.deviceName, row.theirs.device),
+    label: resolutionWords(row, action),
   });
   return keptPath;
 }

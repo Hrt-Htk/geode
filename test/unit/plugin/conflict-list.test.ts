@@ -1,6 +1,8 @@
 import {
+  buildConflictRows,
   conflictFileIsMine,
   type ConflictRow,
+  type ConflictRowsDeps,
   conflictType,
   countConflictFiles,
   filterConflictRows,
@@ -9,6 +11,8 @@ import {
   typeLabel,
 } from "../../../plugin/sync/conflict-list.ts";
 import { assertEquals } from "@std/assert";
+import type { StateDB } from "../../../plugin/plumbing/state.ts";
+import type { Transport } from "../../../plugin/sync/transport.ts";
 
 // #432: the conflicts list model is obsidian-free: original-path recovery,
 // type detection, kept-copy naming, path search, and the mine/theirs split.
@@ -29,13 +33,13 @@ Deno.test("typeLabel renders the compact uppercase tag", () => {
   assertEquals(typeLabel("other"), "FILE");
 });
 
-Deno.test("keptConflictPath renames beside the original with a kept copy suffix", () => {
+Deno.test("keptConflictPath renames beside the original with a kept conflict suffix", () => {
   assertEquals(
     keptConflictPath("Notes/Meeting notes.md"),
-    "Notes/Meeting notes (kept copy).md",
+    "Notes/Meeting notes (kept conflict).md",
   );
-  assertEquals(keptConflictPath("photo.jpg"), "photo (kept copy).jpg");
-  assertEquals(keptConflictPath("data"), "data (kept copy)");
+  assertEquals(keptConflictPath("photo.jpg"), "photo (kept conflict).jpg");
+  assertEquals(keptConflictPath("data"), "data (kept conflict)");
 });
 
 Deno.test("conflictFileIsMine: the embedded device name is authoritative", () => {
@@ -107,6 +111,156 @@ Deno.test("filterConflictRows matches the path case-insensitively; empty query k
     "Attachments/photo.jpg",
   ]);
   assertEquals(filterConflictRows(rows, "zzz").length, 0);
+});
+
+const PATH = "Notes/Plan.md";
+const CONFLICT_PATH = "Notes/Plan (conflict Laptop B 2026-10-21 1405).md";
+
+/** A row builder over one conflict pair: the original's server head at version 3
+ * (device-a, written 555), the copy's own mtime 2_000. `stat` reports the real
+ * byte length of each side, so a CRLF/LF pair really does differ in size;
+ * `statFails` makes one side's stat throw, as a hard FS error does. */
+function deps(
+  over: {
+    original?: string;
+    conflict?: string;
+    deviceName?: string;
+    deviceId?: string;
+    pair?: { original: string; conflict: string };
+    reads?: string[];
+    statFails?: "original" | "conflict";
+  } = {},
+): ConflictRowsDeps {
+  const pair = over.pair ?? { original: PATH, conflict: CONFLICT_PATH };
+  const failPath = over.statFails ? pair[over.statFails] : null;
+  const bytes = (path: string) =>
+    new TextEncoder().encode(
+      path === pair.original
+        ? (over.original ?? "# Plan\nbody")
+        : (over.conflict ?? "# Plan\nbody"),
+    );
+  const localRow = (path: string) => ({
+    path,
+    path_hash: path === pair.original ? "hash-original" : "hash-conflict",
+    size: bytes(path).length,
+    mtime: 1_000,
+    plaintext_hash: "p",
+    last_seen_version: 3,
+    chunk_hashes: [],
+    deleted: false,
+  });
+  const statOf = (path: string) => ({
+    size: bytes(path).length,
+    mtime: path === pair.original ? 1_000 : 2_000,
+  });
+  return {
+    files: () => [{ path: pair.original }, { path: pair.conflict }],
+    stat: (path) =>
+      path === failPath ? Promise.reject(new Error("stat failed")) : Promise.resolve(statOf(path)),
+    read: (path) => {
+      over.reads?.push(path);
+      return Promise.resolve(bytes(path));
+    },
+    state: { getLocalFile: (path: string) => localRow(path) } as unknown as StateDB,
+    transport: {
+      getVersionChain: (pathHash: string) =>
+        Promise.resolve([
+          {
+            version: 3,
+            device_id: pathHash === "hash-original" ? "device-a" : "device-b",
+            created_at: 555,
+          },
+        ]),
+    } as unknown as Transport,
+    deviceName: over.deviceName ?? "Laptop A",
+    deviceId: over.deviceId ?? "device-a",
+    activity: new Map(),
+    deviceNames: new Map([["device-a", "Laptop A"], ["device-b", "Laptop B"]]),
+  };
+}
+
+Deno.test("buildConflictRows - a CRLF note and its LF copy are the same content despite the byte sizes", async () => {
+  // The commit path normalizes line endings before hashing, so these are equal
+  // on the server; a stat size gate would hide Remove conflict for the pair.
+  const [row] = await buildConflictRows(deps({ conflict: "# Plan\r\nbody" }));
+  assertEquals(row.type, "note");
+  assertEquals(row.sameContent, true);
+});
+
+Deno.test("buildConflictRows - a binary pair is never flagged as the same content and is never read", async () => {
+  const reads: string[] = [];
+  const [row] = await buildConflictRows(
+    deps({
+      pair: {
+        original: "Attachments/plan.png",
+        conflict: "Attachments/plan (conflict Laptop B 2026-07-07 1000).png",
+      },
+      reads,
+    }),
+  );
+  assertEquals(row.type, "image");
+  assertEquals(row.sameContent, false);
+  assertEquals(reads, [], "a binary pair is not read to compare it");
+});
+
+Deno.test("buildConflictRows - both sides holding the same content is flagged", async () => {
+  assertEquals((await buildConflictRows(deps())).map((r) => r.sameContent), [true]);
+  assertEquals(
+    (await buildConflictRows(deps({ conflict: "# Plan\nother" }))).map((r) => r.sameContent),
+    [false],
+  );
+});
+
+Deno.test("buildConflictRows - the original is labelled with its server head's device and time", async () => {
+  // The creating device: the copy holds this device's edit, the original the head.
+  const [creating] = await buildConflictRows(
+    deps({ deviceName: "Laptop B", deviceId: "device-b" }),
+  );
+  assertEquals(creating.conflictFileIsMine, true);
+  assertEquals(creating.mine.device, "Laptop B");
+  // The head version is this device's own write: our display name, not the
+  // server's registered one.
+  assertEquals(creating.theirs.device, "Laptop A");
+  assertEquals(creating.theirs.time, 555);
+  // The receiving device: the copy arrived, the original is ours.
+  const [receiving] = await buildConflictRows(deps({ deviceName: "Laptop A" }));
+  assertEquals(receiving.conflictFileIsMine, false);
+  assertEquals(receiving.mine.device, "Laptop A");
+  assertEquals(receiving.mine.time, 555);
+  assertEquals(receiving.theirs.device, "Laptop B");
+});
+
+Deno.test("buildConflictRows - a third device labels the original with the head's device", async () => {
+  // Neither side is ours here: the copy came from Laptop B, the original was
+  // written by Laptop A. The original's card must name Laptop A, not this device.
+  const [row] = await buildConflictRows(
+    deps({ deviceName: "Laptop C", deviceId: "device-c" }),
+  );
+  assertEquals(row.conflictFileIsMine, false);
+  assertEquals(row.mine.device, "Laptop A");
+  assertEquals(row.mine.time, 555);
+  assertEquals(row.theirs.device, "Laptop B");
+});
+
+Deno.test("buildConflictRows - the conflict copy is labelled with its own device and mtime", async () => {
+  for (const deviceName of ["Laptop A", "Laptop C"]) {
+    const [row] = await buildConflictRows(deps({ deviceName }));
+    const copy = row.conflictFileIsMine ? row.mine : row.theirs;
+    assertEquals(copy.device, "Laptop B");
+    // The file's mtime, never the copy's own server version time.
+    assertEquals(copy.time, 2_000);
+  }
+});
+
+Deno.test("buildConflictRows - a stat that throws keeps the row, its size unknown", async () => {
+  // A hard FS error is not fatal: the row stays, with no size, and the original
+  // still takes the server head's time.
+  const [noOriginal] = await buildConflictRows(deps({ statFails: "original" }));
+  assertEquals(noOriginal.mine.size, null);
+  assertEquals(noOriginal.mine.time, 555);
+  const [noConflict] = await buildConflictRows(deps({ statFails: "conflict" }));
+  assertEquals(noConflict.theirs.size, null);
+  assertEquals(noConflict.theirs.time, null);
 });
 
 Deno.test("formatSize renders bytes, KB and MB", () => {

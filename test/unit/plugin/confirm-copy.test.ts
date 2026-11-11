@@ -79,11 +79,16 @@ Deno.test("confirmRevokeDevice names the device", () => {
   });
 });
 
-Deno.test("confirmKeepVersion names the dropped side in one line", () => {
-  assertEquals(confirmKeepVersion("Phone", "This laptop"), {
-    title: "Keep Phone's version?",
-    message: "Deletes the This laptop version. This can't be undone.",
-    confirmText: "Keep Phone's version",
+Deno.test("confirmKeepVersion repeats the button's own words", () => {
+  assertEquals(confirmKeepVersion("original"), {
+    title: "Keep original?",
+    message: "Deletes the conflict. This can't be undone.",
+    confirmText: "Keep original",
+  });
+  assertEquals(confirmKeepVersion("conflict"), {
+    title: "Keep conflict?",
+    message: "Replaces the original with the conflict. This can't be undone.",
+    confirmText: "Keep conflict",
   });
 });
 

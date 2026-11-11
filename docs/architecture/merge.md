@@ -170,6 +170,11 @@ generateConflictPath(originalPath, deviceName, ts = new Date(), n = 0): string
 - A **re-surface of the same conflict** (a merge retry) finds identical content in the existing file and
   reuses it instead of stacking a sibling. The comparison uses the normalized markdown identity, so a
   CRLF/LF difference still counts as the same conflict.
+- `conflict-list.ts` uses that same identity to flag a row whose two sides hold the same content
+  (`ConflictRow.sameContent`): a side file made before #55's detection fix. Notes only: binaries never
+  offer Remove conflict, so they are not read on open. The review window reports it and offers Remove
+  conflict alone, the `remove-conflict` action (a committed delete of the conflict file, the original
+  untouched).
 
 Surfacing (`surfaceConflict`) orders the writes: the local copy first, then the server copy over the
 path, so a crash in between never loses local content. The row then records R's version, so the next

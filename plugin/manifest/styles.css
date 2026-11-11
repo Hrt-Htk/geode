@@ -840,6 +840,18 @@ body:not(.is-phone) .geode-folders-modal {
   color: var(--text-muted);
 }
 
+.geode-conflict-same {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) 0;
+}
+
+.geode-conflict-same-icon {
+  display: flex;
+  color: var(--geode-conflict-color);
+}
+
 .geode-conflict-review-actions {
   display: flex;
   align-items: center;
@@ -934,6 +946,12 @@ body:not(.is-phone) .geode-conflicts-modal .modal-content {
 body:not(.is-phone) .geode-conflict-review-modal {
   height: var(--dialog-max-height);
   overflow: hidden;
+}
+
+/* #68: the identical state has nothing to scroll: size the window to its cards,
+   the one line and the two actions. */
+body:not(.is-phone) .geode-conflict-review-modal.mod-identical {
+  height: auto;
 }
 
 .geode-folders-tree {
@@ -1481,12 +1499,15 @@ body:not(.is-phone) .geode-history-modal .modal-content {
   padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-4));
 }
 
-/* #10: the title wraps in the space left of ✕ instead of running under it. */
-.is-phone .geode-history-modal .modal-header {
+/* #10/#68: the title wraps in the space left of ✕ instead of running under it
+   (history and conflict review modals). */
+.is-phone .geode-history-modal .modal-header,
+.is-phone .geode-conflict-review-modal .modal-header {
   padding-inline-end: calc(var(--touch-size-m, 44px) + var(--size-4-4) * 2);
 }
 
-.is-phone .geode-history-modal .modal-title {
+.is-phone .geode-history-modal .modal-title,
+.is-phone .geode-conflict-review-modal .modal-title {
   max-width: 100%;
   text-align: start;
   white-space: normal;

@@ -205,7 +205,7 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
     await review.locator("[data-testid=geode-conflict-keep-original]").click();
     const confirmModal = B.win.locator(".modal", { has: B.win.locator(".geode-confirm-modal") });
     await expect(confirmModal).toBeVisible({ timeout: 10_000 });
-    await expect(confirmModal).toContainText("Keep device-A's version?");
+    await expect(confirmModal).toContainText("Keep original?");
     await B.win.locator("[data-testid=geode-confirm-cancel]").click();
     await expect(B.win.locator(".geode-confirm-modal")).not.toBeVisible();
     // Cancelled: the review stays open and the conflict is still listed.
@@ -215,7 +215,7 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
     await review.locator("[data-testid=geode-conflict-keep-original]").click();
     await B.win.locator("[data-testid=geode-confirm-yes]").click();
     await expect(
-      B.win.locator(".notice", { hasText: "Resolved · kept device-A's version" }),
+      B.win.locator(".notice", { hasText: "Kept original." }),
     ).toBeVisible({ timeout: 10_000 });
     // Resolved: the review closes back to the list, which is now empty.
     await expect(review).not.toBeVisible({ timeout: 15_000 });
@@ -229,7 +229,7 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
     await B.win.locator(".menu").last().locator(".menu-item", { hasText: "Sync activity" }).click();
     await expect(B.win.locator(".geode-activity-modal")).toBeVisible({ timeout: 10_000 });
     await expect(B.win.locator(".geode-activity-modal")).toContainText(
-      "Resolved · kept device-A's version",
+      "Resolved · kept original",
     );
     await B.win.keyboard.press("Escape");
     await expect(B.win.locator(".geode-activity-modal")).not.toBeVisible();
@@ -270,7 +270,7 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
       timeout: 10_000,
     });
     await expect(reviewB).not.toBeVisible({ timeout: 15_000 });
-    const kept = "gate432b (kept copy).md";
+    const kept = "gate432b (kept conflict).md";
     await waitForContent(A, B, kept, "line 1\nB second edit\nline 3");
     for (const dev of [A, B]) {
       await poll(
@@ -305,10 +305,10 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
     await expect(reviewC).toBeVisible({ timeout: 10_000 });
     await reviewC.locator("[data-testid=geode-conflict-keep-conflict]").click();
     const confirmMine = B.win.locator(".modal", { has: B.win.locator(".geode-confirm-modal") });
-    await expect(confirmMine).toContainText("Keep Laptop B's version?");
+    await expect(confirmMine).toContainText("Keep conflict?");
     await B.win.locator("[data-testid=geode-confirm-yes]").click();
     await expect(
-      B.win.locator(".notice", { hasText: "Resolved · kept Laptop B's version" }),
+      B.win.locator(".notice", { hasText: "Kept conflict." }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(reviewC).not.toBeVisible({ timeout: 15_000 });
     await assertResolved(A, B, PATH_C, conflict3, "line 1\nB third edit\nline 3");
@@ -407,10 +407,10 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
     await reviewA2.locator("[data-testid=geode-conflict-keep-conflict]").click();
     const confirmA = A.win.locator(".modal", { has: A.win.locator(".geode-confirm-modal") });
     await expect(confirmA).toBeVisible({ timeout: 10_000 });
-    await expect(confirmA).toContainText("Keep Laptop B's version?");
+    await expect(confirmA).toContainText("Keep conflict?");
     await A.win.locator("[data-testid=geode-confirm-yes]").click();
     await expect(
-      A.win.locator(".notice", { hasText: "Resolved · kept Laptop B's version" }),
+      A.win.locator(".notice", { hasText: "Kept conflict." }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(reviewA2).not.toBeVisible({ timeout: 15_000 });
     await assertResolved(A, B, PATH_D, conflict4, "line 1\nB fourth edit\nline 3");

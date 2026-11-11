@@ -154,7 +154,7 @@ Deno.test({
     const { A, B, stop } = await pair();
     try {
       const conflictPath = await makeConflict(A, B);
-      const kept = "notes (kept copy).md";
+      const kept = "notes (kept conflict).md";
       await resolve(B, PATH, conflictPath, "keep-both", true);
 
       // Original converges on A's (server) version.
@@ -250,7 +250,7 @@ Deno.test({
     const { A, B, stop } = await pair();
     try {
       const conflictPath = await makeConflictSynced(A, B);
-      const kept = "notes (kept copy).md";
+      const kept = "notes (kept conflict).md";
       await resolve(A, PATH, conflictPath, "keep-both", false);
 
       await B.waitForConvergence(A, PATH);

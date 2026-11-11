@@ -40,7 +40,7 @@ export interface ActivityInput {
   kind: ActivityKind;
   deviceId?: string | null;
   cause?: string | null;
-  /** Pre-resolved label (resolved rows: "kept Phone's version" / "kept both"). */
+  /** Pre-resolved action label (resolved rows: "kept original", "removed conflict"). */
   label?: string;
 }
 

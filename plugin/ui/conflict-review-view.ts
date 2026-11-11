@@ -17,6 +17,58 @@ export const BACK_BUTTON = "Back";
 export const KEEP_ORIGINAL_BUTTON = "Keep original";
 export const KEEP_CONFLICT_BUTTON = "Keep conflict";
 export const KEEP_BOTH_BUTTON = "Keep both";
+export const REMOVE_CONFLICT_BUTTON = "Remove conflict";
+/** Both sides hold the same content: nothing to compare, nothing to choose. */
+export const IDENTICAL_TEXT = "Both versions are the same.";
+
+/** The two files a row can keep; the confirm and the notice repeat the button's words. */
+export type ConflictFileSide = "original" | "conflict";
+
+/** What a resolution did, in the words of the button that ran it. */
+export type ResolutionOutcome = ConflictFileSide | "both" | "remove-conflict";
+
+const RESOLUTION_WORDS: Record<ResolutionOutcome, string> = {
+  original: "kept original",
+  conflict: "kept conflict",
+  both: "kept both",
+  "remove-conflict": "removed conflict",
+};
+
+/** Which file a keep action keeps, named as the button names it. */
+export function keepSide(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): ConflictFileSide {
+  return keepActions(row).original === action ? "original" : "conflict";
+}
+
+/** What the pressed action did, in the words of the button that ran it. */
+function resolutionOutcome(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): ResolutionOutcome {
+  if (action === "keep-both") return "both";
+  if (action === "remove-conflict") return "remove-conflict";
+  return keepSide(row, action);
+}
+
+/** The activity line's words, lowercase after the dot. */
+export function resolutionWords(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): string {
+  return RESOLUTION_WORDS[resolutionOutcome(row, action)];
+}
+
+/** The notice: the same words, one sentence. */
+export function resolutionNotice(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): string {
+  const words = resolutionWords(row, action);
+  return `${words[0].toUpperCase()}${words.slice(1)}.`;
+}
+
 const ORIGINAL_LABEL = "Original";
 const CONFLICT_LABEL = "Conflict";
 export const NO_DATE = "No date";
