@@ -182,14 +182,56 @@ Deno.test({
     assertEquals(new TextDecoder().decode(await vault.readBinary("a.md")), "v3");
     // Cursor advanced through the whole buffered window.
     assertEquals(db.getSyncCursor(), 3);
-    // Progress surfaced then cleared.
-    assertEquals(
-      status.find(([s]) => s === "applying"),
+    // Progress surfaced then cleared: the backlog is announced before the first
+    // apply, then each applied file, then the drain-complete marker (#59).
+    assertEquals(status.filter(([s]) => s === "applying"), [
+      ["applying", { current: 0, total: 1 }],
       ["applying", { current: 1, total: 1 }],
-    );
+    ]);
     // #523: the drain marks its own completion: the session clears the
     // applying progress only here, never on a commit pass ending mid-drain.
     assertEquals(status[status.length - 1], ["sync", { drain: true }], "flush marks drain done");
+    db.close();
+  },
+});
+
+/**
+ * #59: the transport goes live the moment the last version is RECEIVED, while the
+ * replay buffer still holds the whole backlog. The drain must publish that backlog
+ * before it downloads or writes anything, or the status bar shows the synced
+ * checkmark ("Geode: synced") for the whole first apply and a cold sync looks done
+ * with nothing on disk. `current: 0` is the honest number at that point and the
+ * icon already renders it as the syncing spinner (#319).
+ */
+Deno.test({
+  name: "sync-manager-replay - the drain announces its backlog before the first apply",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const { transport, sm, db, keys, status } = await makeSyncManager("syncing");
+    const v1 = await makeVersion("a.md", "a", 1, 1, keys);
+    const v2 = await makeVersion("b.md", "b", 2, 1, keys);
+    const blobs = new Map([[v1.msg.chunk_hashes[0], v1.blob], [v2.msg.chunk_hashes[0], v2.blob]]);
+    let statusAtFirstFetch: Array<[string, unknown]> | null = null;
+    transport.getBlob = (h) => {
+      statusAtFirstFetch ??= [...status];
+      return Promise.resolve(blobs.get(h)!);
+    };
+
+    await sm.handleVersion(v1.msg);
+    await sm.handleVersion(v2.msg);
+    transport.state = "live";
+    await sm.flushReplayBuffer();
+
+    assertEquals(
+      statusAtFirstFetch,
+      [["applying", { current: 0, total: 2 }]],
+      "the backlog is announced before the first blob is fetched",
+    );
+    assertEquals(
+      status.filter(([s]) => s === "applying").at(-1),
+      ["applying", { current: 2, total: 2 }],
+    );
     db.close();
   },
 });

@@ -135,19 +135,7 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      // #59: resolve what a killed session left, once per connection, before this
-      // connection's versions are applied. Bounded: see START_PASS_MS.
-      const pass = this.resolveStartRecord(state, keys);
-      try {
-        this.reapplyParked(await withTimeout(pass, START_PASS_MS, "interrupted-write pass"));
-      } catch (error) {
-        log.warn("interrupted-write pass did not finish, retrying at the next connection", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // The abandoned pass keeps running: what it resolves must not strand the versions
-        // parked for those paths.
-        void pass.then((resolved) => this.reapplyParked(resolved)).catch(() => {});
-      }
+      await this.runStartPass(state, keys);
       const entries = coalesceReplay(this.replayBuffer);
       this.replayBuffer = [];
       const deps = this.buildApplyDeps(state, keys);
@@ -161,6 +149,11 @@ export class ReplayPipeline {
       const total = entries.length;
       let applied = 0;
       const drainStart = performance.now();
+      // Announce the backlog before the first apply: the transport goes live as soon
+      // as all versions are RECEIVED, so without this the icon shows the synced
+      // checkmark for the whole first download-and-write (#59, #319). `current: 0`
+      // is the honest count and the icon renders it as the syncing spinner.
+      if (total > 0) this.deps.onStatusUpdate("applying", { current: 0, total });
       try {
         for (const entry of entries) {
           const row = state.getLocalFileByHash(entry.winner.path_hash);
@@ -183,8 +176,8 @@ export class ReplayPipeline {
             }
             continue;
           }
-          // Surface the apply backlog so the status icon shows "applying N/M"
-          // instead of a false synced checkmark while the drain is in flight (#319).
+          // Surface the apply backlog as it drains, so the status icon shows
+          // "applying N/M" instead of a false synced checkmark (#319).
           applied++;
           this.deps.onStatusUpdate("applying", { current: applied, total });
           await this.maybeSurfaceConflict(entry, row, before, deps);
@@ -257,6 +250,22 @@ export class ReplayPipeline {
     const run = this.versionQueue.then(fn);
     this.versionQueue = run.catch(() => {});
     return run;
+  }
+
+  /** #59: resolve what a killed session left, once per connection, before this
+   * connection's versions are applied. Bounded: see START_PASS_MS. */
+  private async runStartPass(state: StateDB, keys: VaultKeys): Promise<void> {
+    const pass = this.resolveStartRecord(state, keys);
+    try {
+      this.reapplyParked(await withTimeout(pass, START_PASS_MS, "interrupted-write pass"));
+    } catch (error) {
+      log.warn("interrupted-write pass did not finish, retrying at the next connection", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // The abandoned pass keeps running: what it resolves must not strand the versions
+      // parked for those paths.
+      void pass.then((resolved) => this.reapplyParked(resolved)).catch(() => {});
+    }
   }
 
   /** #59: the record a killed session left is resolved once per connection, before its

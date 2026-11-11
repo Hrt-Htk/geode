@@ -151,7 +151,9 @@ Rules:
 
 `syncing` means replaying server history; `live` means caught up. Commits are queued while not live and
 drained on `live`. `blocked` means a hard version refusal, where the update prompt is the only way out
-(#625).
+(#625). `live` is a transport fact (every version received), so it comes before the replay buffer
+drains: the drain publishes its whole backlog as `applying 0/N` before it downloads anything, and the
+status bar shows the syncing spinner from that first event until the drain-complete marker (#59, #319).
 
 ### Commit channel (`plugin/sync/commit-channel.ts`)
 
@@ -291,8 +293,8 @@ one delete + one create with identical content → rename marker + note (1:1 onl
 
 # Pass 4: mass-delete guard (#601) on the UNPAIRED deletes
 if count >= massDeleteMinFiles (default 20) AND count*100 > tracked*minPercent
-  (default 25): hold everything (creates included), persist the hold; nothing syncs
-  until the decision
+  (default 25), where tracked counts live (not closed) rows: hold everything (creates
+  included), persist the hold; nothing syncs until the decision
 ```
 
 A paired delete becomes a rename marker and the paired create a forwarding note, the same op shape the
@@ -311,7 +313,8 @@ of re-uploading every file.
 ## 7. Apply (remote → local) (`plugin/sync/apply.ts`)
 
 Inbound `server_version` messages go to disk. `replay.ts` serializes this through the version queue,
-buffers until `live`, and coalesces superseded versions per path.
+buffers until `live`, and coalesces superseded versions per path. On the flush it reports the whole
+backlog (`applying 0/N`) before the first apply, then the applied count per file.
 
 ```
 applyVersion(v):

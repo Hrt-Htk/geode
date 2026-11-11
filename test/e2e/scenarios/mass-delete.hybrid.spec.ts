@@ -24,7 +24,7 @@ import path from "node:path";
 const PASSPHRASE = "mass-delete-phone-pass";
 const HOLD = "app.plugins.plugins.geode.pluginSettings.massDeleteHold";
 
-test.describe.configure({ timeout: 45 * 60_000 });
+test.describe.configure({ timeout: 70 * 60_000 });
 
 /** Delete the held files while the plugin is disabled, then re-enable it and unlock: the fresh
  * session's first pass sees the unpaired deletes (a restart in the product's terms). */
@@ -86,7 +86,8 @@ test("601 phone shots: the review at real scale on the 1,850 of 2,400 set", asyn
   try {
     await waitForUnlocked(pair.A);
     await waitForUnlocked(pair.B);
-    await waitForStatusBar(pair.A, "Geode: synced", 40 * 60_000);
+    // The status now waits for the whole 2,400-file drain, not the go-live flash (#59).
+    await waitForStatusBar(pair.A, "Geode: synced", 60 * 60_000);
     await waitForStatusBar(pair.B, "Geode: synced", 5 * 60_000);
     expect(await pair.A.fileExists(set.held[0].path)).toBe(true);
     await tripHold(pair.A, set.held.map((f) => f.path));

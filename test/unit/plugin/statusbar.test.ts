@@ -208,9 +208,10 @@ Deno.test("statusbar - applying backlog beats orange and green hold", () => {
 });
 
 // #523: no green check between the applying events of a catch-up batch: the
-// icon only turns green once current === total (the drain is done).
+// icon only turns green once current === total (the drain is done). #59: the drain
+// announces `applying 0/N`, which must already spin.
 Deno.test("statusbar - no green between applying events of a catch-up batch", () => {
-  for (let i = 1; i < 5; i++) {
+  for (let i = 0; i < 5; i++) {
     const s = resolveIcon(
       input({ state: "live", syncingProgress: { current: i, total: 5 }, now: T0 }),
     );

@@ -177,7 +177,10 @@ export class Reconciler {
   ): Promise<boolean> {
     const guard = this.guard;
     if (!guard) return false;
-    const totalTracked = localFiles.size;
+    // Rows this device closed (a rename or a delete) stay in state and have no file:
+    // counting them inflates "of N tracked" past the files that actually exist (#59).
+    let totalTracked = 0;
+    for (const row of localFiles.values()) if (!row.deleted) totalTracked++;
     const { minFiles, minPercent } = guard.thresholds();
     if (!shouldHoldMassDelete(unpairedDeletes.length, totalTracked, minFiles, minPercent)) {
       return false;
