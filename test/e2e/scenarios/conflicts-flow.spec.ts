@@ -270,7 +270,7 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
       timeout: 10_000,
     });
     await expect(reviewB).not.toBeVisible({ timeout: 15_000 });
-    const kept = "gate432b (kept copy).md";
+    const kept = "gate432b (kept conflict).md";
     await waitForContent(A, B, kept, "line 1\nB second edit\nline 3");
     for (const dev of [A, B]) {
       await poll(

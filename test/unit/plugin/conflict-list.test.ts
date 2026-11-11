@@ -33,13 +33,13 @@ Deno.test("typeLabel renders the compact uppercase tag", () => {
   assertEquals(typeLabel("other"), "FILE");
 });
 
-Deno.test("keptConflictPath renames beside the original with a kept copy suffix", () => {
+Deno.test("keptConflictPath renames beside the original with a kept conflict suffix", () => {
   assertEquals(
     keptConflictPath("Notes/Meeting notes.md"),
-    "Notes/Meeting notes (kept copy).md",
+    "Notes/Meeting notes (kept conflict).md",
   );
-  assertEquals(keptConflictPath("photo.jpg"), "photo (kept copy).jpg");
-  assertEquals(keptConflictPath("data"), "data (kept copy)");
+  assertEquals(keptConflictPath("photo.jpg"), "photo (kept conflict).jpg");
+  assertEquals(keptConflictPath("data"), "data (kept conflict)");
 });
 
 Deno.test("conflictFileIsMine: the embedded device name is authoritative", () => {

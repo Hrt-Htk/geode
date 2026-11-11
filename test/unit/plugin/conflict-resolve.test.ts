@@ -40,10 +40,10 @@ Deno.test("receiving device: keep theirs writes the conflict file over the origi
 
 Deno.test("keep both renames the conflict file beside the original on either device", () => {
   assertEquals(planResolution(MINE, "keep-both"), {
-    rename: { from: MINE.conflictPath, to: "Notes/Meeting notes (kept copy).md" },
+    rename: { from: MINE.conflictPath, to: "Notes/Meeting notes (kept conflict).md" },
   });
   assertEquals(planResolution(THEIRS, "keep-both"), {
-    rename: { from: THEIRS.conflictPath, to: "Notes/Meeting notes (kept copy).md" },
+    rename: { from: THEIRS.conflictPath, to: "Notes/Meeting notes (kept conflict).md" },
   });
 });
 

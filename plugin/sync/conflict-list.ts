@@ -68,10 +68,10 @@ export function typeLabel(type: ConflictType): string {
   }
 }
 
-/** Keep both renames the conflict file beside the original: "a.md" → "a (kept copy).md". */
+/** Keep both renames the conflict file beside the original: "a.md" → "a (kept conflict).md". */
 export function keptConflictPath(originalPath: string): string {
   const { stem, ext } = splitExt(originalPath);
-  return `${stem} (kept copy)${ext}`;
+  return `${stem} (kept conflict)${ext}`;
 }
 
 /** How many open conflict files are in the vault (the same list the modal
