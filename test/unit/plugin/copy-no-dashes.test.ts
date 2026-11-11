@@ -239,7 +239,8 @@ Deno.test("copy-no-dashes - confirm dialogs and vault-name errors", () => {
     confirmPurgeExpired(3),
     confirmPurgeSelected(2),
     confirmNewVaultFromNotes(),
-    confirmKeepVersion("Phone", "This laptop"),
+    confirmKeepVersion("original"),
+    confirmKeepVersion("conflict"),
     confirmRevokeDevice("Phone"),
     // #465: the restore confirm and its outcome notices.
     confirmRestoreVersion(),

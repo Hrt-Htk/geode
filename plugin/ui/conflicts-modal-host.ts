@@ -16,7 +16,6 @@ import {
   executeResolution,
   planResolution,
   type ResolutionAction,
-  resolutionLabel,
 } from "../sync/conflict-resolve.ts";
 import { ConflictsModal } from "./conflicts-modal.ts";
 
@@ -68,8 +67,8 @@ export function openConflictsModal(host: ConflictsHost): void {
       buildConflictRows({
         files: () => host.app.vault.getAllLoadedFiles(),
         stat: adapter.stat,
+        read: async (path) => toUint8Array(await host.app.vault.adapter.readBinary(path)),
         state,
-        keys,
         transport,
         deviceName: host.pluginSettings.deviceName,
         deviceId: host.pluginSettings.deviceId,
@@ -77,7 +76,6 @@ export function openConflictsModal(host: ConflictsHost): void {
         deviceNames,
       }),
     resolve: (row, action) => resolveConflict(host, row, action, state, keys, transport, adapter),
-    deviceName: () => host.pluginSettings.deviceName,
     remoteNames: () =>
       deviceNameMap(
         host.pluginSettings.serverUrl,
@@ -126,7 +124,6 @@ async function resolveConflict(
   host.activity?.record({
     path: row.path,
     kind: "resolved",
-    label: resolutionLabel(action, host.pluginSettings.deviceName, row.theirs.device),
   });
   return keptPath;
 }

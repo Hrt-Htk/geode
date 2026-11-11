@@ -1,6 +1,8 @@
 import {
+  buildConflictRows,
   conflictFileIsMine,
   type ConflictRow,
+  type ConflictRowsDeps,
   conflictType,
   countConflictFiles,
   filterConflictRows,
@@ -9,6 +11,8 @@ import {
   typeLabel,
 } from "../../../plugin/sync/conflict-list.ts";
 import { assertEquals } from "@std/assert";
+import type { StateDB } from "../../../plugin/plumbing/state.ts";
+import type { Transport } from "../../../plugin/sync/transport.ts";
 
 // #432: the conflicts list model is obsidian-free: original-path recovery,
 // type detection, kept-copy naming, path search, and the mine/theirs split.
@@ -107,6 +111,89 @@ Deno.test("filterConflictRows matches the path case-insensitively; empty query k
     "Attachments/photo.jpg",
   ]);
   assertEquals(filterConflictRows(rows, "zzz").length, 0);
+});
+
+const PATH = "Notes/Plan.md";
+const CONFLICT_PATH = "Notes/Plan (conflict Laptop B 2026-10-21 1405).md";
+
+/** A row builder over one conflict pair: the original's server head at version 3
+ * (device-a, written 555), the copy's own mtime 2_000. */
+function deps(
+  over: { original?: string; conflict?: string; deviceName?: string } = {},
+): ConflictRowsDeps {
+  const files = [{ path: PATH }, { path: CONFLICT_PATH }];
+  const body = (path: string) =>
+    new TextEncoder().encode(
+      path === PATH ? (over.original ?? "# Plan\nbody") : (over.conflict ?? "# Plan\nbody"),
+    );
+  const localRow = (path: string) => ({
+    path,
+    path_hash: path === PATH ? "hash-original" : "hash-conflict",
+    size: 10,
+    mtime: 1_000,
+    plaintext_hash: "p",
+    last_seen_version: 3,
+    chunk_hashes: [],
+    deleted: false,
+  });
+  return {
+    files: () => files,
+    stat: (path) => Promise.resolve({ size: 10, mtime: path === PATH ? 1_000 : 2_000 }),
+    read: (path) => Promise.resolve(body(path)),
+    state: { getLocalFile: (path: string) => localRow(path) } as unknown as StateDB,
+    transport: {
+      getVersionChain: (pathHash: string) =>
+        Promise.resolve([
+          {
+            version: 3,
+            device_id: pathHash === "hash-original" ? "device-a" : "device-b",
+            created_at: 555,
+          },
+        ]),
+    } as unknown as Transport,
+    deviceName: over.deviceName ?? "Laptop A",
+    deviceId: "device-a",
+    activity: new Map(),
+    deviceNames: new Map([["device-a", "Laptop A"], ["device-b", "Laptop B"]]),
+  };
+}
+
+Deno.test("buildConflictRows - both sides holding the same content is flagged", async () => {
+  assertEquals((await buildConflictRows(deps())).map((r) => r.sameContent), [true]);
+  assertEquals(
+    (await buildConflictRows(deps({ conflict: "# Plan\nother" }))).map((r) => r.sameContent),
+    [false],
+  );
+  // Line endings are normalized before the hash, exactly as the commit path hashes.
+  assertEquals(
+    (await buildConflictRows(deps({ conflict: "# Plan\r\nbody" }))).map((r) => r.sameContent),
+    [true],
+  );
+});
+
+Deno.test("buildConflictRows - the original is labelled with its server head's device and time", async () => {
+  // The creating device: the copy holds this device's edit, the original the head.
+  const [creating] = await buildConflictRows(deps({ deviceName: "Laptop B" }));
+  assertEquals(creating.conflictFileIsMine, true);
+  assertEquals(creating.mine.device, "Laptop B");
+  assertEquals(creating.theirs.device, "Laptop A");
+  assertEquals(creating.theirs.time, 555);
+  // The receiving device: the copy arrived, the original is ours.
+  const [receiving] = await buildConflictRows(deps({ deviceName: "Laptop A" }));
+  assertEquals(receiving.conflictFileIsMine, false);
+  assertEquals(receiving.mine.device, "Laptop A");
+  assertEquals(receiving.mine.time, 555);
+  assertEquals(receiving.theirs.device, "Laptop B");
+});
+
+Deno.test("buildConflictRows - the conflict copy is labelled with its own device and mtime", async () => {
+  for (const deviceName of ["Laptop A", "Laptop C"]) {
+    const [row] = await buildConflictRows(deps({ deviceName }));
+    const copy = row.conflictFileIsMine ? row.mine : row.theirs;
+    assertEquals(copy.device, "Laptop B");
+    // The file's mtime, never the copy's own server version time.
+    assertEquals(copy.time, 2_000);
+  }
 });
 
 Deno.test("formatSize renders bytes, KB and MB", () => {

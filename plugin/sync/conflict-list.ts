@@ -2,12 +2,12 @@
 // the generated conflict name, type detection, kept-copy naming, path search,
 // row labels. The conflict file is attributed to its creator (the device that
 // made the losing edit: from the name when present, else the server head's
-// device, else "Another device"); the original path to this device's copy.
-// Keep mine / Keep theirs then map to the right side on BOTH the creating and
-// the receiving device (on the receiver they invert).
+// device, else "Another device"); the original to the device and time of the
+// version the server holds. Keep mine / Keep theirs then map to the right side
+// on BOTH the creating and the receiving device (on the receiver they invert).
 
-import { b64decode } from "../../core/protocol.ts";
-import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
+import { blake3Hex } from "../../core/hash.ts";
+import { normalizeForHash } from "../../core/normalize.ts";
 import {
   conflictDeviceLabel,
   conflictDeviceName,
@@ -38,6 +38,8 @@ export interface ConflictRow {
   type: ConflictType;
   /** The conflict file holds this device's own version (else it arrived from another device). */
   conflictFileIsMine: boolean;
+  /** Both sides hold the same content, so there is nothing to choose between them. */
+  sameContent: boolean;
   mine: ConflictSide;
   theirs: ConflictSide;
 }
@@ -101,8 +103,9 @@ export interface ConflictRowsDeps {
   /** All user files (notes + attachments), as the debug pane's scan uses. */
   files: () => Array<{ path: string }>;
   stat: (path: string) => Promise<{ size: number; mtime: number }>;
+  /** The file's bytes, for the same-content check. */
+  read: (path: string) => Promise<Uint8Array>;
   state: StateDB;
-  keys: VaultKeys;
   transport: Transport;
   /** This device's display name. */
   deviceName: string;
@@ -142,20 +145,16 @@ export async function buildConflictRows(deps: ConflictRowsDeps): Promise<Conflic
     const isMine = conflictFileIsMine(file.path, deps.deviceName, creatorId, deps.deviceId);
     const creator = fromName ?? (creatorId ? deps.deviceNames?.get(creatorId) : undefined) ??
       REMOTE_FALLBACK;
-    const conflictCard = await pathSide(deps, file.path, creator);
-    // The original path card names this device when it holds our copy (mine),
-    // or the other device when the conflict file is ours (theirs, on the
-    // creating device).
-    const originalCard = await pathSide(
-      deps,
-      path,
-      isMine ? await otherDeviceName(deps, path) : mineName,
-    );
+    const conflictCard = await copySide(deps, file.path, creator);
+    // The original card names the device that wrote the server head version, or
+    // this device when the original holds our copy.
+    const originalCard = await originalSide(deps, path, isMine, mineName);
     rows.push({
       path,
       conflictPath: file.path,
       type: conflictType(path),
       conflictFileIsMine: isMine,
+      sameContent: await sameContent(deps, path, file.path),
       mine: isMine ? conflictCard : originalCard,
       theirs: isMine ? originalCard : conflictCard,
     });
@@ -164,16 +163,24 @@ export async function buildConflictRows(deps: ConflictRowsDeps): Promise<Conflic
   return rows;
 }
 
-/** The name of the device that authored the version at a path, for the "theirs" card. */
-async function otherDeviceName(deps: ConflictRowsDeps, path: string): Promise<string> {
-  const id = await serverHeadDeviceId(deps, path);
-  if (id) return deps.deviceNames?.get(id) ?? REMOTE_FALLBACK;
-  const entry = deps.activity.get(path);
-  const deviceId = entry?.kind === "conflict" ? entry.deviceId : null;
-  return (deviceId ? deps.deviceNames?.get(deviceId) : undefined) ?? REMOTE_FALLBACK;
+/** Whether both files hold the same bytes, hashed as the commit path hashes
+ * them (markdown line endings normalized). An unreadable side is never assumed
+ * equal. */
+async function sameContent(
+  deps: ConflictRowsDeps,
+  path: string,
+  conflictPath: string,
+): Promise<boolean> {
+  try {
+    const [original, conflict] = await Promise.all([deps.read(path), deps.read(conflictPath)]);
+    return blake3Hex(normalizeForHash(path, original)) ===
+      blake3Hex(normalizeForHash(conflictPath, conflict));
+  } catch {
+    return false;
+  }
 }
 
-/** The device that committed the path's latest version this device has seen. */
+/** The device that wrote the server head version at `path`; null when there is none. */
 async function serverHeadDeviceId(deps: ConflictRowsDeps, path: string): Promise<string | null> {
   const row = deps.state.getLocalFile(path);
   if (!row || row.deleted) return null;
@@ -185,35 +192,65 @@ async function serverHeadDeviceId(deps: ConflictRowsDeps, path: string): Promise
   }
 }
 
-async function pathSide(
+/** The original's card: the device that wrote the server head version and that
+ * version's time, else this device and the file we have. */
+async function originalSide(
   deps: ConflictRowsDeps,
   path: string,
-  device: string,
+  conflictFileIsMine: boolean,
+  mineName: string,
 ): Promise<ConflictSide> {
-  const row = deps.state.getLocalFile(path);
-  const stat = await deps.stat(path).catch(() => null);
-  const serverTime = row
-    ? await serverVersionTime(deps, row.path_hash, row.last_seen_version)
-    : null;
+  const [head, stat] = await Promise.all([
+    serverHead(deps, path),
+    deps.stat(path).catch(() => null),
+  ]);
+  const device = conflictFileIsMine
+    ? otherDeviceName(deps, path, head?.deviceId ?? null)
+    : mineName;
   return {
     device,
-    time: serverTime ?? stat?.mtime ?? null,
-    size: row?.size ?? stat?.size ?? null,
+    time: head?.time ?? stat?.mtime ?? null,
+    size: stat?.size ?? deps.state.getLocalFile(path)?.size ?? null,
   };
 }
 
-/** The mtime the remote side recorded for the version this device last saw. */
-async function serverVersionTime(
+/** The conflict copy's card: its creator and the copy's own mtime. */
+async function copySide(
   deps: ConflictRowsDeps,
-  pathHash: string,
-  version: number,
-): Promise<number | null> {
+  conflictPath: string,
+  device: string,
+): Promise<ConflictSide> {
+  const stat = await deps.stat(conflictPath).catch(() => null);
+  return {
+    device,
+    time: stat?.mtime ?? null,
+    size: stat?.size ?? deps.state.getLocalFile(conflictPath)?.size ?? null,
+  };
+}
+
+/** The name of the device that authored the version at a path, for the "theirs" card. */
+function otherDeviceName(
+  deps: ConflictRowsDeps,
+  path: string,
+  headDeviceId: string | null,
+): string {
+  if (headDeviceId) return deps.deviceNames?.get(headDeviceId) ?? REMOTE_FALLBACK;
+  const entry = deps.activity.get(path);
+  const deviceId = entry?.kind === "conflict" ? entry.deviceId : null;
+  return (deviceId ? deps.deviceNames?.get(deviceId) : undefined) ?? REMOTE_FALLBACK;
+}
+
+/** The device and write time of the version at `path` this device last saw. */
+async function serverHead(
+  deps: ConflictRowsDeps,
+  path: string,
+): Promise<{ deviceId: string; time: number } | null> {
+  const row = deps.state.getLocalFile(path);
+  if (!row || row.deleted) return null;
   try {
-    const chain = await deps.transport.getVersionChain(pathHash, version);
-    const record = chain.find((v) => v.version === version);
-    if (!record) return null;
-    const meta = await decryptMetadata(b64decode(record.enc_metadata), deps.keys, pathHash);
-    return meta.mtime;
+    const chain = await deps.transport.getVersionChain(row.path_hash, row.last_seen_version);
+    const head = chain[0];
+    return head ? { deviceId: head.device_id, time: head.created_at } : null;
   } catch {
     return null;
   }

@@ -840,6 +840,18 @@ body:not(.is-phone) .geode-folders-modal {
   color: var(--text-muted);
 }
 
+.geode-conflict-same {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) 0;
+}
+
+.geode-conflict-same-icon {
+  display: flex;
+  color: var(--geode-conflict-color);
+}
+
 .geode-conflict-review-actions {
   display: flex;
   align-items: center;

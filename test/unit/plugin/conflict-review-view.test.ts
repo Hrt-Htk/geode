@@ -8,13 +8,17 @@ import {
   dateStamp,
   fileName,
   folderLine,
+  IDENTICAL_TEXT,
   KEEP_BOTH_BUTTON,
   KEEP_CONFLICT_BUTTON,
   KEEP_ORIGINAL_BUTTON,
   keepActions,
+  keptNotice,
   NO_DATE,
   OPEN_BOTH_LINK,
   READ_FAILED,
+  REMOVE_COPY_BUTTON,
+  REMOVED_COPY_NOTICE,
   REVIEW_BUTTON,
   reviewKeys,
   reviewTitle,
@@ -33,6 +37,7 @@ const CREATING: ConflictRow = {
   conflictPath: CONFLICT_PATH,
   type: "note",
   conflictFileIsMine: true,
+  sameContent: false,
   mine: { device: "Laptop B", time: new Date(2026, 9, 21, 14, 7).getTime(), size: 40 },
   theirs: { device: "Laptop A", time: new Date(2026, 9, 21, 14, 5).getTime(), size: 38 },
 };
@@ -147,6 +152,14 @@ Deno.test("conflict-review-view - comparedLines adds no + or minus prefixes and 
   }
 });
 
+Deno.test("conflict-review-view - a keep notice repeats the button's own words", () => {
+  assertEquals(keptNotice("original"), "Kept original.");
+  assertEquals(keptNotice("conflict"), "Kept conflict.");
+  assertEquals(IDENTICAL_TEXT, "Both versions are the same.");
+  assertEquals(REMOVE_COPY_BUTTON, "Remove the copy");
+  assertEquals(REMOVED_COPY_NOTICE, "Removed the copy.");
+});
+
 Deno.test("conflict-review-view - user copy carries no hyphens or dashes", () => {
   const copy = [
     REVIEW_BUTTON,
@@ -155,6 +168,11 @@ Deno.test("conflict-review-view - user copy carries no hyphens or dashes", () =>
     KEEP_ORIGINAL_BUTTON,
     KEEP_CONFLICT_BUTTON,
     KEEP_BOTH_BUTTON,
+    REMOVE_COPY_BUTTON,
+    IDENTICAL_TEXT,
+    REMOVED_COPY_NOTICE,
+    keptNotice("original"),
+    keptNotice("conflict"),
     CONFLICT_GONE,
     NO_DATE,
     READ_FAILED,

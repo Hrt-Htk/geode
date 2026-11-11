@@ -15,7 +15,7 @@ import type { StateDB } from "../plumbing/state.ts";
 import type { Transport } from "./transport.ts";
 import { recordedWrite } from "./vault-io.ts";
 
-export type ResolutionAction = "keep-mine" | "keep-theirs" | "keep-both";
+export type ResolutionAction = "keep-mine" | "keep-theirs" | "keep-both" | "remove-copy";
 
 export interface ResolutionPlan {
   /** Write `source`'s whole content to `path`. */
@@ -33,25 +33,14 @@ export function planResolution(
   if (action === "keep-both") {
     return { rename: { from: row.conflictPath, to: keptConflictPath(row.path) } };
   }
+  // remove-copy: both sides hold the same content, so the original already has it.
+  if (action === "remove-copy") return { delete: row.conflictPath };
   // keep-mine keeps the conflict file's content only when it is this device's;
   // keep-theirs keeps it when it arrived from another device (inversion).
   const keepConflict = (action === "keep-mine") === row.conflictFileIsMine;
   const plan: ResolutionPlan = { delete: row.conflictPath };
   if (keepConflict) plan.write = { path: row.path, source: row.conflictPath };
   return plan;
-}
-
-/** The kept-side label shared by the activity line and the notice. */
-export function resolutionLabel(
-  action: ResolutionAction,
-  ownName: string,
-  remoteName: string | null,
-): string {
-  if (action === "keep-both") return "kept both";
-  const name = action === "keep-mine"
-    ? (ownName.trim() || "This device")
-    : (remoteName ?? "Another device");
-  return `kept ${name}'s version`;
 }
 
 export interface ResolveDeps {

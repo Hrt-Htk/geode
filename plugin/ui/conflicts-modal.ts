@@ -12,12 +12,13 @@ import {
   formatSize,
   typeLabel,
 } from "../sync/conflict-list.ts";
-import { type ResolutionAction, resolutionLabel } from "../sync/conflict-resolve.ts";
+import { type ResolutionAction } from "../sync/conflict-resolve.ts";
 import { formatUserError } from "../plumbing/errors.ts";
 import { confirmKeepVersion } from "./confirm-copy.ts";
 import { ConfirmModal } from "./confirm-modal.ts";
 import { ConflictReviewModal } from "./conflict-review-modal.ts";
 import {
+  type ConflictFileSide,
   dateStamp,
   fileName,
   folderLine,
@@ -25,8 +26,10 @@ import {
   KEEP_CONFLICT_BUTTON,
   KEEP_ORIGINAL_BUTTON,
   keepActions,
+  keptNotice,
   NO_DATE,
   OPEN_BOTH_LINK,
+  REMOVED_COPY_NOTICE,
   REVIEW_BUTTON,
   versionSides,
 } from "./conflict-review-view.ts";
@@ -35,7 +38,6 @@ export interface ConflictsModalDeps {
   loadRows: (deviceNames: Map<string, string> | null) => Promise<ConflictRow[]>;
   /** Executes the resolution; returns the kept copy path for keep both. */
   resolve: (row: ConflictRow, action: ResolutionAction) => Promise<string | null>;
-  deviceName: () => string;
   /** One-shot deviceId→name fetch; null on failure keeps the neutral labels. */
   remoteNames?: () => Promise<Map<string, string> | null>;
 }
@@ -187,35 +189,53 @@ export class ConflictsModal extends Modal {
   }
 
   private resolveAction(row: ConflictRow, action: ResolutionAction): Promise<boolean> {
-    return action === "keep-both" ? this.keepBoth(row) : this.keepOne(row, action);
+    if (action === "keep-both") return this.keepBoth(row);
+    if (action === "remove-copy") return this.removeCopy(row);
+    const side = keepActions(row).original === action ? "original" : "conflict";
+    return this.keepOne(row, action, side);
   }
 
   // Keep original / Keep conflict delete the other version: destructive, so a
-  // one line confirm first (Keep both does not).
-  private keepOne(row: ConflictRow, action: "keep-mine" | "keep-theirs"): Promise<boolean> {
-    const keep = action === "keep-mine" ? row.mine : row.theirs;
-    const drop = action === "keep-mine" ? row.theirs : row.mine;
+  // one line confirm first, in the same words as the button (Keep both does not).
+  private keepOne(
+    row: ConflictRow,
+    action: "keep-mine" | "keep-theirs",
+    side: ConflictFileSide,
+  ): Promise<boolean> {
     return new Promise((done) => {
       let resolved = false;
       new ConfirmModal(this.app, {
-        ...confirmKeepVersion(keep.device, drop.device),
+        ...confirmKeepVersion(side),
         onClosed: () => done(resolved),
         onConfirm: async () => {
-          try {
-            await this.deps.resolve(row, action);
-          } catch (e) {
-            new Notice(formatUserError(e));
-            await this.reload();
-            return;
-          }
-          resolved = true;
-          new Notice(
-            `Resolved · ${resolutionLabel(action, this.deps.deviceName(), row.theirs.device)}`,
-          );
-          await this.reload();
+          resolved = await this.resolveWithNotice(row, action, keptNotice(side));
         },
       }).open();
     });
+  }
+
+  // Remove the copy drops an identical duplicate: nothing is written over, so it
+  // needs no confirm of its own.
+  private removeCopy(row: ConflictRow): Promise<boolean> {
+    return this.resolveWithNotice(row, "remove-copy", REMOVED_COPY_NOTICE);
+  }
+
+  /** Resolve, then say what happened; a failure shows its error and reloads. */
+  private async resolveWithNotice(
+    row: ConflictRow,
+    action: ResolutionAction,
+    notice: string,
+  ): Promise<boolean> {
+    try {
+      await this.deps.resolve(row, action);
+    } catch (e) {
+      new Notice(formatUserError(e));
+      await this.reload();
+      return false;
+    }
+    new Notice(notice);
+    await this.reload();
+    return true;
   }
 
   // Keep both is non-destructive: the conflict file stays, renamed so it is no

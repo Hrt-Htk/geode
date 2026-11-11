@@ -2,6 +2,11 @@
 // Owner copy rule: one line, plain, no hyphens or dashes of any kind, no
 // reassurance fluff.
 import { plural, retention } from "./trash-format.ts";
+import {
+  type ConflictFileSide,
+  KEEP_CONFLICT_BUTTON,
+  KEEP_ORIGINAL_BUTTON,
+} from "./conflict-review-view.ts";
 
 export function validateVaultName(raw: string):
   | { ok: true; name: string }
@@ -75,11 +80,23 @@ export function confirmNewVaultFromNotes(): ConfirmDialogSpec {
 }
 
 // #432: Keep mine / Keep theirs delete the other version, so they confirm.
-export function confirmKeepVersion(keepDevice: string, dropDevice: string): ConfirmDialogSpec {
+// #68: the confirm repeats the button's own words, so a keep never switches
+// vocabulary between the button, the question and the notice.
+const KEEP_COPY: Record<ConflictFileSide, { title: string; message: string }> = {
+  original: {
+    title: "Keep original?",
+    message: "Deletes the conflict copy. This can't be undone.",
+  },
+  conflict: {
+    title: "Keep conflict?",
+    message: "Replaces the original with the conflict. This can't be undone.",
+  },
+};
+
+export function confirmKeepVersion(side: ConflictFileSide): ConfirmDialogSpec {
   return {
-    title: `Keep ${keepDevice}'s version?`,
-    message: `Deletes the ${dropDevice} version. This can't be undone.`,
-    confirmText: `Keep ${keepDevice}'s version`,
+    ...KEEP_COPY[side],
+    confirmText: side === "original" ? KEEP_ORIGINAL_BUTTON : KEEP_CONFLICT_BUTTON,
   };
 }
 

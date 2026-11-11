@@ -162,3 +162,102 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
     await server.stop().catch(() => {});
   }
 });
+
+// #68: two sides holding the same content. The review keeps both cards, says
+// they are the same, and offers one action: remove the identical copy.
+const SAME_PATH = "Notes/same.md";
+const SAME_CONFLICT_PATH = "Notes/same (conflict Laptop B 2026-07-07 1000).md";
+const SAME_BODY = `# Same
+
+Both devices wrote this paragraph.
+
+And this one.`;
+
+test("gate9 identical sides: says so and offers remove the copy", async () => {
+  test.slow();
+
+  const server = await startServer();
+  const device = await server.mintToken("gate9-identical");
+
+  const obsidian = await launchObsidian({
+    geodeSettings: {
+      serverUrl: server.url,
+      vaultId: server.vaultId,
+      deviceId: device.deviceId,
+      deviceToken: device.token,
+      salt: server.salt,
+    },
+    unlockPassphrase: PASSPHRASE,
+  });
+
+  try {
+    await waitForUnlocked(obsidian);
+    await waitForStatusBar(obsidian.win, "Geode: synced", 60_000);
+    // A named device, so each card's device label is asserted, not inferred.
+    await obsidian.eval(
+      `app.plugins.plugins.geode.pluginSettings.deviceName = "Laptop A"; await app.plugins.plugins.geode.saveSettings(); return true;`,
+    );
+
+    await obsidian.eval(`
+      await app.vault.createFolder("Notes").catch(() => {});
+      await app.vault.create(${JSON.stringify(SAME_PATH)}, ${JSON.stringify(SAME_BODY)});
+      await app.vault.create(${JSON.stringify(SAME_CONFLICT_PATH)}, ${JSON.stringify(SAME_BODY)});
+      return true;
+    `);
+    await obsidian.eval(`app.plugins.plugins.geode.openConflictsModal(); return true;`);
+    const row = obsidian.win.locator("[data-testid=geode-conflict-row]");
+    await expect(row).toHaveCount(1, { timeout: 15_000 });
+    await row.locator("[data-testid=geode-conflict-review]").click();
+    const review = obsidian.win.locator(".geode-conflict-review-modal");
+    await expect(review).toBeVisible({ timeout: 10_000 });
+
+    /* Both cards stay, each labelled with its own device. */
+    await expect(review.locator("[data-testid=geode-conflict-key-original]")).toContainText(
+      "Laptop A",
+    );
+    await expect(review.locator("[data-testid=geode-conflict-key-conflict]")).toContainText(
+      "Laptop B",
+    );
+
+    /* The comparison is replaced by the fact, and the three choices are gone. */
+    const same = review.locator("[data-testid=geode-conflict-same]");
+    await expect(same).toBeVisible({ timeout: 15_000 });
+    await expect(same).toContainText("Both versions are the same.");
+    await expect(review.locator("[data-testid=geode-conflict-diff]")).toHaveCount(0);
+    await expect(review.locator("[data-testid=geode-conflict-keep-original]")).toHaveCount(0);
+    await expect(review.locator("[data-testid=geode-conflict-keep-conflict]")).toHaveCount(0);
+    await expect(review.locator("[data-testid=geode-conflict-keep-both]")).toHaveCount(0);
+    await expect(review.locator("button")).toHaveCount(2);
+    await review.screenshot({ path: shotPath("68-01-identical-desktop.png") });
+
+    /* Remove the copy: no confirm, the duplicate goes, the notice says so. */
+    await review.locator("[data-testid=geode-conflict-remove-copy]").click();
+    await expect(obsidian.win.locator(".notice", { hasText: "Removed the copy." })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(review).not.toBeVisible({ timeout: 15_000 });
+    await expect(obsidian.win.locator("[data-testid=geode-conflicts-empty]")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect
+      .poll(
+        async () =>
+          await obsidian.eval<boolean>(
+            `return app.vault.getAbstractFileByPath(${
+              JSON.stringify(SAME_CONFLICT_PATH)
+            }) === null;`,
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    // The original keeps its content, untouched.
+    expect(
+      await obsidian.eval<string>(
+        `return await app.vault.adapter.read(${JSON.stringify(SAME_PATH)});`,
+      ),
+    ).toBe(SAME_BODY);
+  } finally {
+    await obsidian.close();
+    await server.stop().catch(() => {});
+  }
+});

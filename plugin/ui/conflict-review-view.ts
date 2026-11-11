@@ -17,6 +17,18 @@ export const BACK_BUTTON = "Back";
 export const KEEP_ORIGINAL_BUTTON = "Keep original";
 export const KEEP_CONFLICT_BUTTON = "Keep conflict";
 export const KEEP_BOTH_BUTTON = "Keep both";
+export const REMOVE_COPY_BUTTON = "Remove the copy";
+/** Both sides hold the same content: nothing to compare, nothing to choose. */
+export const IDENTICAL_TEXT = "Both versions are the same.";
+export const REMOVED_COPY_NOTICE = "Removed the copy.";
+
+/** The two files a row can keep; the confirm and the notice repeat the button's words. */
+export type ConflictFileSide = "original" | "conflict";
+
+export function keptNotice(side: ConflictFileSide): string {
+  return `Kept ${side}.`;
+}
+
 const ORIGINAL_LABEL = "Original";
 const CONFLICT_LABEL = "Conflict";
 export const NO_DATE = "No date";

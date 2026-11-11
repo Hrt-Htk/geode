@@ -5,7 +5,7 @@
 // their thumbnails. A conflict file deleted on another device leaves nothing to
 // compare or keep, so the window says so and offers only Back.
 
-import { App, Modal } from "obsidian";
+import { App, Modal, setIcon } from "obsidian";
 import type { ConflictRow } from "../sync/conflict-list.ts";
 import type { ResolutionAction } from "../sync/conflict-resolve.ts";
 import {
@@ -13,12 +13,14 @@ import {
   type ComparedLine,
   comparedLines,
   CONFLICT_GONE,
+  IDENTICAL_TEXT,
   KEEP_BOTH_BUTTON,
   KEEP_CONFLICT_BUTTON,
   KEEP_ORIGINAL_BUTTON,
   keepActions,
   LOADING_TEXT,
   READ_FAILED,
+  REMOVE_COPY_BUTTON,
   reviewKeys,
   reviewTitle,
 } from "./conflict-review-view.ts";
@@ -52,7 +54,8 @@ export class ConflictReviewModal extends Modal {
   }
 
   /** The two files are read apart: a missing conflict file means the conflict
-   * resolved itself elsewhere, an unreadable original only costs the comparison. */
+   * resolved itself elsewhere, an unreadable original only costs the comparison.
+   * Identical sides need neither: there is nothing to compare. */
   private async load(): Promise<void> {
     const { path, conflictPath } = this.deps.row;
     const [original, conflict] = await Promise.allSettled([
@@ -61,7 +64,9 @@ export class ConflictReviewModal extends Modal {
     ]);
     if (conflict.status === "rejected") this.gone = true;
     else if (original.status === "rejected") this.failed = true;
-    else this.lines = comparedLines(original.value, conflict.value);
+    else if (!this.deps.row.sameContent) {
+      this.lines = comparedLines(original.value, conflict.value);
+    }
     this.render();
   }
 
@@ -90,12 +95,23 @@ export class ConflictReviewModal extends Modal {
   }
 
   private renderBody(body: HTMLElement): void {
-    if (this.gone || !this.lines) {
-      const note = body.createDiv({
+    if (this.gone) {
+      const note = body.createDiv({ cls: "geode-conflict-note", text: CONFLICT_GONE });
+      note.dataset.testid = "geode-conflict-gone";
+      return;
+    }
+    if (this.deps.row.sameContent) {
+      const same = body.createDiv({ cls: "geode-conflict-same" });
+      same.dataset.testid = "geode-conflict-same";
+      setIcon(same.createDiv({ cls: "geode-conflict-same-icon" }), "check");
+      same.createDiv({ text: IDENTICAL_TEXT });
+      return;
+    }
+    if (!this.lines) {
+      body.createDiv({
         cls: "geode-conflict-note",
-        text: this.gone ? CONFLICT_GONE : this.failed ? READ_FAILED : LOADING_TEXT,
+        text: this.failed ? READ_FAILED : LOADING_TEXT,
       });
-      if (this.gone) note.dataset.testid = "geode-conflict-gone";
       return;
     }
     const diff = body.createDiv({ cls: "geode-conflict-diff" });
@@ -113,14 +129,24 @@ export class ConflictReviewModal extends Modal {
   private renderActions(parent: HTMLElement): void {
     const actions = parent.createDiv({ cls: "geode-conflict-review-actions" });
     if (!this.gone) {
-      const keep = keepActions(this.deps.row);
-      const buttons: Array<[string, string, ResolutionAction]> = [
-        [KEEP_ORIGINAL_BUTTON, "geode-conflict-keep-original", keep.original],
-        [KEEP_CONFLICT_BUTTON, "geode-conflict-keep-conflict", keep.conflict],
-        [KEEP_BOTH_BUTTON, "geode-conflict-keep-both", "keep-both"],
-      ];
-      for (const [text, testid, action] of buttons) {
-        this.button(actions, text, testid, () => this.keep(action));
+      if (this.deps.row.sameContent) {
+        this.button(
+          actions,
+          REMOVE_COPY_BUTTON,
+          "geode-conflict-remove-copy",
+          () => this.keep("remove-copy"),
+          "mod-cta",
+        );
+      } else {
+        const keep = keepActions(this.deps.row);
+        const buttons: Array<[string, string, ResolutionAction]> = [
+          [KEEP_ORIGINAL_BUTTON, "geode-conflict-keep-original", keep.original],
+          [KEEP_CONFLICT_BUTTON, "geode-conflict-keep-conflict", keep.conflict],
+          [KEEP_BOTH_BUTTON, "geode-conflict-keep-both", "keep-both"],
+        ];
+        for (const [text, testid, action] of buttons) {
+          this.button(actions, text, testid, () => this.keep(action));
+        }
       }
     }
     this.button(

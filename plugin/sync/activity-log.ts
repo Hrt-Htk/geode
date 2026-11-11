@@ -40,8 +40,6 @@ export interface ActivityInput {
   kind: ActivityKind;
   deviceId?: string | null;
   cause?: string | null;
-  /** Pre-resolved label (resolved rows: "kept Phone's version" / "kept both"). */
-  label?: string;
 }
 
 /** Callback handed down the sync path; the recorder resolves labels internally. */
@@ -136,7 +134,7 @@ export function recordActivity(
     path: input.path,
     kind: input.kind,
     deviceId: input.deviceId ?? null,
-    deviceLabel: input.label ?? deviceLabel(input, ctx),
+    deviceLabel: deviceLabel(input, ctx),
     cause: input.cause ?? null,
     at,
     saves: 0,

@@ -1,8 +1,4 @@
-import {
-  planResolution,
-  type ResolutionAction,
-  resolutionLabel,
-} from "../../../plugin/sync/conflict-resolve.ts";
+import { planResolution, type ResolutionAction } from "../../../plugin/sync/conflict-resolve.ts";
 import { assertEquals } from "@std/assert";
 
 // #432: the resolution planner is obsidian-free and pure: it decides what to
@@ -51,9 +47,17 @@ Deno.test("keep both renames the conflict file beside the original on either dev
   });
 });
 
+Deno.test("remove copy deletes the identical duplicate on either device", () => {
+  // Nothing is written: the original already holds this content.
+  assertEquals(planResolution(MINE, "remove-copy"), { delete: MINE.conflictPath });
+  assertEquals(planResolution(THEIRS, "remove-copy"), { delete: THEIRS.conflictPath });
+});
+
 Deno.test("every plan deletes or renames the conflict file away", () => {
   for (const row of [MINE, THEIRS]) {
-    for (const action of ["keep-mine", "keep-theirs", "keep-both"] as ResolutionAction[]) {
+    for (
+      const action of ["keep-mine", "keep-theirs", "keep-both", "remove-copy"] as ResolutionAction[]
+    ) {
       const plan = planResolution(row, action);
       const gone = plan.delete === row.conflictPath || plan.rename?.from === row.conflictPath;
       assertEquals(
@@ -63,14 +67,4 @@ Deno.test("every plan deletes or renames the conflict file away", () => {
       );
     }
   }
-});
-
-Deno.test("resolutionLabel names the kept side for the activity line and notice", () => {
-  assertEquals(resolutionLabel("keep-mine", "This laptop", null), "kept This laptop's version");
-  assertEquals(resolutionLabel("keep-theirs", "This laptop", "Phone"), "kept Phone's version");
-  assertEquals(
-    resolutionLabel("keep-theirs", "This laptop", null),
-    "kept Another device's version",
-  );
-  assertEquals(resolutionLabel("keep-both", "This laptop", "Phone"), "kept both");
 });
