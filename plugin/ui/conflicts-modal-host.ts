@@ -19,7 +19,7 @@ import {
   type ResolutionAction,
 } from "../sync/conflict-resolve.ts";
 import { ConflictsModal } from "./conflicts-modal.ts";
-import { resolutionOutcome, resolutionWords } from "./conflict-review-view.ts";
+import { resolutionWords } from "./conflict-review-view.ts";
 
 /** The slice of the plugin the conflicts wiring needs (structural). */
 export type ConflictsHost = {
@@ -69,7 +69,7 @@ export function openConflictsModal(host: ConflictsHost): void {
       buildConflictRows({
         files: () => host.app.vault.getAllLoadedFiles(),
         stat: adapter.stat,
-        read: async (path) => toUint8Array(await host.app.vault.adapter.readBinary(path)),
+        read: adapter.readBinary,
         state,
         transport,
         deviceName: host.pluginSettings.deviceName,
@@ -129,7 +129,7 @@ async function resolveConflict(
   host.activity?.record({
     path: row.path,
     kind: "resolved",
-    label: resolutionWords(resolutionOutcome(row, action)),
+    label: resolutionWords(row, action),
   });
   return keptPath;
 }

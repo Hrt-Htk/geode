@@ -57,7 +57,8 @@ export async function dismissModals(ui: MobileUI): Promise<void> {
         else last.querySelector(".modal-bg")?.click();
         for (let i = 0; i < 30 && open() > 0; i++) await wait(50);
       }
-      // Nothing left to animate: drop any straggler and let the app settle.
+      // Drop any straggler the close never detached: its teardown still runs a
+      // tick later, so give it one before the next modal opens.
       document.querySelectorAll(".modal-container").forEach((c) => c.remove());
       await wait(150);
       return true;

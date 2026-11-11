@@ -34,17 +34,6 @@ const RESOLUTION_WORDS: Record<ResolutionOutcome, string> = {
   "remove-conflict": "removed conflict",
 };
 
-/** The activity line's words, lowercase after the dot. */
-export function resolutionWords(outcome: ResolutionOutcome): string {
-  return RESOLUTION_WORDS[outcome];
-}
-
-/** The notice: the same words, one sentence. */
-export function resolutionNotice(outcome: ResolutionOutcome): string {
-  const words = RESOLUTION_WORDS[outcome];
-  return `${words[0].toUpperCase()}${words.slice(1)}.`;
-}
-
 /** Which file a keep action keeps, named as the button names it. */
 export function keepSide(
   row: Pick<ConflictRow, "conflictFileIsMine">,
@@ -54,13 +43,30 @@ export function keepSide(
 }
 
 /** What the pressed action did, in the words of the button that ran it. */
-export function resolutionOutcome(
+function resolutionOutcome(
   row: Pick<ConflictRow, "conflictFileIsMine">,
   action: ResolutionAction,
 ): ResolutionOutcome {
   if (action === "keep-both") return "both";
   if (action === "remove-conflict") return "remove-conflict";
   return keepSide(row, action);
+}
+
+/** The activity line's words, lowercase after the dot. */
+export function resolutionWords(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): string {
+  return RESOLUTION_WORDS[resolutionOutcome(row, action)];
+}
+
+/** The notice: the same words, one sentence. */
+export function resolutionNotice(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): string {
+  const words = resolutionWords(row, action);
+  return `${words[0].toUpperCase()}${words.slice(1)}.`;
 }
 
 const ORIGINAL_LABEL = "Original";

@@ -142,20 +142,24 @@ export async function buildConflictRows(deps: ConflictRowsDeps): Promise<Conflic
     const path = originalPathOf(file.path);
     if (!path) continue;
     const fromName = conflictDeviceName(file.path);
-    const [originalHead, originalStat, conflictStat] = await Promise.all([
+    const [originalHead, originalStat, conflictStat, creator] = await Promise.all([
       serverHead(deps, path),
-      statOrNull(deps, path),
-      statOrNull(deps, file.path),
+      deps.stat(path),
+      deps.stat(file.path),
+      conflictCreator(deps, file.path, fromName),
     ]);
-    const creatorId = fromName === null
-      ? (await serverHead(deps, file.path))?.deviceId ?? null
-      : null;
-    const isMine = conflictFileIsMine(file.path, deps.deviceName, creatorId, deps.deviceId);
-    const creator = fromName ?? (creatorId ? deps.deviceNames?.get(creatorId) : undefined) ??
-      REMOTE_FALLBACK;
+    const isMine = conflictFileIsMine(file.path, deps.deviceName, creator.id, deps.deviceId);
     const type = conflictType(path);
-    const conflictCard = copySide(deps, file.path, creator, conflictStat);
-    const originalCard = originalSide(deps, path, originalHead, originalStat, isMine);
+    const conflictCard: ConflictSide = {
+      device: creator.name,
+      time: conflictStat.mtime,
+      size: conflictStat.size,
+    };
+    const originalCard: ConflictSide = {
+      device: originalDeviceName(deps, path, originalHead, isMine),
+      time: originalHead?.time ?? originalStat.mtime,
+      size: originalStat.size,
+    };
     rows.push({
       path,
       conflictPath: file.path,
@@ -190,37 +194,18 @@ export async function sameContentHolds(
   }
 }
 
-function statOrNull(deps: ConflictRowsDeps, path: string): Promise<FileStat | null> {
-  return deps.stat(path).catch(() => null);
-}
-
-/** The original's card: the device that wrote the server head version and that
- * version's time, else the file we have. */
-function originalSide(
-  deps: ConflictRowsDeps,
-  path: string,
-  head: { deviceId: string; time: number } | null,
-  stat: FileStat | null,
-  conflictFileIsMine: boolean,
-): ConflictSide {
-  return {
-    device: originalDeviceName(deps, path, head, conflictFileIsMine),
-    time: head?.time ?? stat?.mtime ?? null,
-    size: stat?.size ?? deps.state.getLocalFile(path)?.size ?? null,
-  };
-}
-
-/** The conflict file's card: its creator and its own mtime. */
-function copySide(
+/** The device that made the conflict file: the name embedded in it, else the
+ * device the server head names, else the neutral label. The id stays for the
+ * mine check. */
+async function conflictCreator(
   deps: ConflictRowsDeps,
   conflictPath: string,
-  device: string,
-  stat: FileStat | null,
-): ConflictSide {
+  fromName: string | null,
+): Promise<{ id: string | null; name: string }> {
+  const id = fromName === null ? (await serverHead(deps, conflictPath))?.deviceId ?? null : null;
   return {
-    device,
-    time: stat?.mtime ?? null,
-    size: stat?.size ?? deps.state.getLocalFile(conflictPath)?.size ?? null,
+    id,
+    name: fromName ?? (id ? deps.deviceNames?.get(id) : undefined) ?? REMOTE_FALLBACK,
   };
 }
 

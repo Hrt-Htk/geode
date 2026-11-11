@@ -82,22 +82,20 @@ export function confirmNewVaultFromNotes(): ConfirmDialogSpec {
 // #432: Keep mine / Keep theirs delete the other version, so they confirm.
 // #68: the confirm repeats the button's own words, so a keep never switches
 // vocabulary between the button, the question and the notice.
-const KEEP_COPY: Record<ConflictFileSide, { title: string; message: string }> = {
+const KEEP_COPY: Record<ConflictFileSide, { button: string; message: string }> = {
   original: {
-    title: "Keep original?",
+    button: KEEP_ORIGINAL_BUTTON,
     message: "Deletes the conflict. This can't be undone.",
   },
   conflict: {
-    title: "Keep conflict?",
+    button: KEEP_CONFLICT_BUTTON,
     message: "Replaces the original with the conflict. This can't be undone.",
   },
 };
 
 export function confirmKeepVersion(side: ConflictFileSide): ConfirmDialogSpec {
-  return {
-    ...KEEP_COPY[side],
-    confirmText: side === "original" ? KEEP_ORIGINAL_BUTTON : KEEP_CONFLICT_BUTTON,
-  };
+  const { button, message } = KEEP_COPY[side];
+  return { title: `${button}?`, message, confirmText: button };
 }
 
 export function confirmRevokeDevice(deviceName: string): ConfirmDialogSpec {

@@ -18,7 +18,6 @@ import {
   READ_FAILED,
   REMOVE_CONFLICT_BUTTON,
   resolutionNotice,
-  resolutionOutcome,
   resolutionWords,
   REVIEW_BUTTON,
   reviewKeys,
@@ -156,29 +155,30 @@ Deno.test("conflict-review-view - comparedLines adds no + or minus prefixes and 
 Deno.test("conflict-review-view - a resolution says what it did in the button's own words", () => {
   assertEquals(IDENTICAL_TEXT, "Both versions are the same.");
   assertEquals(REMOVE_CONFLICT_BUTTON, "Remove conflict");
-  // The notice: one sentence.
-  assertEquals(resolutionNotice("original"), "Kept original.");
-  assertEquals(resolutionNotice("conflict"), "Kept conflict.");
-  assertEquals(resolutionNotice("both"), "Kept both.");
-  assertEquals(resolutionNotice("remove-conflict"), "Removed conflict.");
-  // The activity line: the same words, lowercase after the dot.
-  assertEquals(resolutionWords("original"), "kept original");
-  assertEquals(resolutionWords("conflict"), "kept conflict");
-  assertEquals(resolutionWords("both"), "kept both");
-  assertEquals(resolutionWords("remove-conflict"), "removed conflict");
-});
-
-Deno.test("conflict-review-view - the outcome names the side the pressed action keeps", () => {
+  // The notice (one sentence) and the activity line (lowercase after the dot)
+  // name the file each keep action keeps.
   for (const row of [CREATING, RECEIVING]) {
     const keep = keepActions(row);
-    assertEquals(resolutionOutcome(row, keep.original), "original");
-    assertEquals(resolutionOutcome(row, keep.conflict), "conflict");
+    assertEquals([resolutionNotice(row, keep.original), resolutionNotice(row, keep.conflict)], [
+      "Kept original.",
+      "Kept conflict.",
+    ]);
+    assertEquals([resolutionWords(row, keep.original), resolutionWords(row, keep.conflict)], [
+      "kept original",
+      "kept conflict",
+    ]);
   }
-  assertEquals(resolutionOutcome(CREATING, "keep-both"), "both");
-  assertEquals(resolutionOutcome(RECEIVING, "remove-conflict"), "remove-conflict");
+  assertEquals(resolutionNotice(CREATING, "keep-both"), "Kept both.");
+  assertEquals(resolutionWords(CREATING, "keep-both"), "kept both");
+  assertEquals(resolutionNotice(RECEIVING, "remove-conflict"), "Removed conflict.");
+  assertEquals(resolutionWords(RECEIVING, "remove-conflict"), "removed conflict");
 });
 
 Deno.test("conflict-review-view - user copy carries no hyphens or dashes", () => {
+  const outcomes = ["keep-mine", "keep-theirs", "keep-both", "remove-conflict"] as const;
+  const resolutions = [CREATING, RECEIVING].flatMap((row) =>
+    outcomes.flatMap((action) => [resolutionNotice(row, action), resolutionWords(row, action)])
+  );
   const copy = [
     REVIEW_BUTTON,
     OPEN_BOTH_LINK,
@@ -188,13 +188,7 @@ Deno.test("conflict-review-view - user copy carries no hyphens or dashes", () =>
     KEEP_BOTH_BUTTON,
     REMOVE_CONFLICT_BUTTON,
     IDENTICAL_TEXT,
-    resolutionNotice("original"),
-    resolutionNotice("conflict"),
-    resolutionNotice("remove-conflict"),
-    resolutionWords("original"),
-    resolutionWords("conflict"),
-    resolutionWords("both"),
-    resolutionWords("remove-conflict"),
+    ...resolutions,
     CONFLICT_GONE,
     NO_DATE,
     READ_FAILED,

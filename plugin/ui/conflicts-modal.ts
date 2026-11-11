@@ -212,7 +212,7 @@ export class ConflictsModal extends Modal {
         ...confirmKeepVersion(side),
         onClosed: () => done(resolved),
         onConfirm: async () => {
-          resolved = await this.resolveWithNotice(row, action, resolutionNotice(side));
+          resolved = await this.resolveWithNotice(row, action, resolutionNotice(row, action));
         },
       }).open();
     });
@@ -221,7 +221,7 @@ export class ConflictsModal extends Modal {
   // Remove conflict drops the identical side file: nothing is written over, so
   // it needs no confirm of its own.
   private removeConflict(row: ConflictRow): Promise<boolean> {
-    return this.resolveWithNotice(row, "remove-conflict", resolutionNotice("remove-conflict"));
+    return this.resolveWithNotice(row, "remove-conflict", resolutionNotice(row, "remove-conflict"));
   }
 
   /** Resolve, then say what happened; a failure shows its error and reloads. */
