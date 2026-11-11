@@ -18,7 +18,6 @@ import { confirmKeepVersion } from "./confirm-copy.ts";
 import { ConfirmModal } from "./confirm-modal.ts";
 import { ConflictReviewModal } from "./conflict-review-modal.ts";
 import {
-  type ConflictFileSide,
   dateStamp,
   fileName,
   folderLine,
@@ -26,10 +25,10 @@ import {
   KEEP_CONFLICT_BUTTON,
   KEEP_ORIGINAL_BUTTON,
   keepActions,
+  keepSide,
   NO_DATE,
   OPEN_BOTH_LINK,
   resolutionNotice,
-  resolutionOutcome,
   REVIEW_BUTTON,
   versionSides,
 } from "./conflict-review-view.ts";
@@ -189,16 +188,24 @@ export class ConflictsModal extends Modal {
   }
 
   private resolveAction(row: ConflictRow, action: ResolutionAction): Promise<boolean> {
-    const outcome = resolutionOutcome(row, action);
-    if (outcome === "both") return this.keepBoth(row);
-    if (outcome === "remove-conflict") return this.removeConflict(row);
-    return this.keepOne(row, outcome);
+    switch (action) {
+      case "keep-both":
+        return this.keepBoth(row);
+      case "remove-conflict":
+        return this.removeConflict(row);
+      case "keep-mine":
+      case "keep-theirs":
+        return this.keepOne(row, action);
+    }
   }
 
   // Keep original / Keep conflict delete the other version: destructive, so a
   // one line confirm first, in the same words as the button (Keep both does not).
-  private keepOne(row: ConflictRow, side: ConflictFileSide): Promise<boolean> {
-    const action = keepActions(row)[side];
+  private keepOne(
+    row: ConflictRow,
+    action: "keep-mine" | "keep-theirs",
+  ): Promise<boolean> {
+    const side = keepSide(row, action);
     return new Promise((done) => {
       let resolved = false;
       new ConfirmModal(this.app, {

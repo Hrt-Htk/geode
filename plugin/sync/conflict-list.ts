@@ -22,6 +22,8 @@ import type { Transport } from "./transport.ts";
 
 export type ConflictType = "note" | "image" | "pdf" | "other";
 
+type FileStat = { size: number; mtime: number };
+
 export interface ConflictSide {
   device: string;
   /** ms epoch; null when unknown. */
@@ -102,7 +104,7 @@ export function formatSize(bytes: number): string {
 export interface ConflictRowsDeps {
   /** All user files (notes + attachments), as the debug pane's scan uses. */
   files: () => Array<{ path: string }>;
-  stat: (path: string) => Promise<{ size: number; mtime: number }>;
+  stat: (path: string) => Promise<FileStat>;
   /** The file's bytes, for the same-content check. */
   read: (path: string) => Promise<Uint8Array>;
   state: StateDB;
@@ -134,27 +136,31 @@ export function conflictFileIsMine(
 /** One row per open conflict file found on disk. */
 export async function buildConflictRows(deps: ConflictRowsDeps): Promise<ConflictRow[]> {
   const rows: ConflictRow[] = [];
-  const mineName = deps.deviceName.trim() || "This device";
   for (const file of deps.files()) {
     if (isRejoinBackupPath(file.path)) continue; // #701: set aside, never an open conflict
     if (!isConflictPath(file.path)) continue;
     const path = originalPathOf(file.path);
     if (!path) continue;
     const fromName = conflictDeviceName(file.path);
-    const creatorId = fromName === null ? await serverHeadDeviceId(deps, file.path) : null;
+    const [originalHead, originalStat, conflictStat] = await Promise.all([
+      serverHead(deps, path),
+      statOrNull(deps, path),
+      statOrNull(deps, file.path),
+    ]);
+    const creatorId = fromName === null
+      ? (await serverHead(deps, file.path))?.deviceId ?? null
+      : null;
     const isMine = conflictFileIsMine(file.path, deps.deviceName, creatorId, deps.deviceId);
     const creator = fromName ?? (creatorId ? deps.deviceNames?.get(creatorId) : undefined) ??
       REMOTE_FALLBACK;
-    const conflictCard = await copySide(deps, file.path, creator);
-    // The original card names the device that wrote the server head version, or
-    // this device when the original holds our copy.
-    const originalCard = await originalSide(deps, path, isMine, mineName);
+    const conflictCard = copySide(deps, file.path, creator, conflictStat);
+    const originalCard = originalSide(deps, path, originalHead, originalStat, isMine);
     rows.push({
       path,
       conflictPath: file.path,
       type: conflictType(path),
       conflictFileIsMine: isMine,
-      sameContent: await sameContent(deps, path, file.path),
+      sameContent: await sidesMatch(deps, path, file.path, originalStat, conflictStat),
       mine: isMine ? conflictCard : originalCard,
       theirs: isMine ? originalCard : conflictCard,
     });
@@ -163,64 +169,63 @@ export async function buildConflictRows(deps: ConflictRowsDeps): Promise<Conflic
   return rows;
 }
 
-/** Whether both files hold the same bytes, hashed as the commit path hashes
- * them (markdown line endings normalized). An unreadable side is never assumed
- * equal. */
-async function sameContent(
-  deps: ConflictRowsDeps,
+/** Whether both files hold the same bytes, hashed as the commit path hashes them
+ * (markdown line endings normalized). An unreadable side is never assumed equal.
+ * The original's path normalizes both: an old-format conflict name may lack the
+ * extension. */
+export async function sameContentHolds(
+  read: (path: string) => Promise<Uint8Array>,
   path: string,
   conflictPath: string,
 ): Promise<boolean> {
   try {
-    const [original, conflict] = await Promise.all([deps.read(path), deps.read(conflictPath)]);
+    const [original, conflict] = await Promise.all([read(path), read(conflictPath)]);
     return blake3Hex(normalizeForHash(path, original)) ===
-      blake3Hex(normalizeForHash(conflictPath, conflict));
+      blake3Hex(normalizeForHash(path, conflict));
   } catch {
     return false;
   }
 }
 
-/** The device that wrote the server head version at `path`; null when there is none. */
-async function serverHeadDeviceId(deps: ConflictRowsDeps, path: string): Promise<string | null> {
-  const row = deps.state.getLocalFile(path);
-  if (!row || row.deleted) return null;
-  try {
-    const chain = await deps.transport.getVersionChain(row.path_hash, row.last_seen_version);
-    return chain[0]?.device_id ?? null;
-  } catch {
-    return null;
-  }
+/** A size difference rules out equal content without reading either file. */
+function sidesMatch(
+  deps: ConflictRowsDeps,
+  path: string,
+  conflictPath: string,
+  original: FileStat | null,
+  conflict: FileStat | null,
+): Promise<boolean> {
+  if (!original || !conflict || original.size !== conflict.size) return Promise.resolve(false);
+  return sameContentHolds(deps.read, path, conflictPath);
+}
+
+function statOrNull(deps: ConflictRowsDeps, path: string): Promise<FileStat | null> {
+  return deps.stat(path).catch(() => null);
 }
 
 /** The original's card: the device that wrote the server head version and that
- * version's time, else this device and the file we have. */
-async function originalSide(
+ * version's time, else the file we have. */
+function originalSide(
   deps: ConflictRowsDeps,
   path: string,
+  head: { deviceId: string; time: number } | null,
+  stat: FileStat | null,
   conflictFileIsMine: boolean,
-  mineName: string,
-): Promise<ConflictSide> {
-  const [head, stat] = await Promise.all([
-    serverHead(deps, path),
-    deps.stat(path).catch(() => null),
-  ]);
-  const device = conflictFileIsMine
-    ? otherDeviceName(deps, path, head?.deviceId ?? null)
-    : mineName;
+): ConflictSide {
   return {
-    device,
+    device: originalDeviceName(deps, path, head, conflictFileIsMine),
     time: head?.time ?? stat?.mtime ?? null,
     size: stat?.size ?? deps.state.getLocalFile(path)?.size ?? null,
   };
 }
 
-/** The conflict copy's card: its creator and the copy's own mtime. */
-async function copySide(
+/** The conflict file's card: its creator and its own mtime. */
+function copySide(
   deps: ConflictRowsDeps,
   conflictPath: string,
   device: string,
-): Promise<ConflictSide> {
-  const stat = await deps.stat(conflictPath).catch(() => null);
+  stat: FileStat | null,
+): ConflictSide {
   return {
     device,
     time: stat?.mtime ?? null,
@@ -228,13 +233,26 @@ async function copySide(
   };
 }
 
-/** The name of the device that authored the version at a path, for the "theirs" card. */
-function otherDeviceName(
+/** The device that wrote the version the original holds: the head version's
+ * device (our own display name for our own write), or, without a head, this
+ * device's copy or the conflict's other side. */
+function originalDeviceName(
   deps: ConflictRowsDeps,
   path: string,
-  headDeviceId: string | null,
+  head: { deviceId: string } | null,
+  conflictFileIsMine: boolean,
 ): string {
-  if (headDeviceId) return deps.deviceNames?.get(headDeviceId) ?? REMOTE_FALLBACK;
+  if (!head) return conflictFileIsMine ? otherDeviceName(deps, path) : ownName(deps);
+  if (head.deviceId === deps.deviceId) return ownName(deps);
+  return deps.deviceNames?.get(head.deviceId) ?? REMOTE_FALLBACK;
+}
+
+function ownName(deps: ConflictRowsDeps): string {
+  return deps.deviceName.trim() || "This device";
+}
+
+/** The last named remote side of a path, from the activity log. */
+function otherDeviceName(deps: ConflictRowsDeps, path: string): string {
   const entry = deps.activity.get(path);
   const deviceId = entry?.kind === "conflict" ? entry.deviceId : null;
   return (deviceId ? deps.deviceNames?.get(deviceId) : undefined) ?? REMOTE_FALLBACK;

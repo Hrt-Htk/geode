@@ -45,14 +45,22 @@ export function resolutionNotice(outcome: ResolutionOutcome): string {
   return `${words[0].toUpperCase()}${words.slice(1)}.`;
 }
 
-/** Which side the pressed action keeps, named as the button names it. */
+/** Which file a keep action keeps, named as the button names it. */
+export function keepSide(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): ConflictFileSide {
+  return keepActions(row).original === action ? "original" : "conflict";
+}
+
+/** What the pressed action did, in the words of the button that ran it. */
 export function resolutionOutcome(
   row: Pick<ConflictRow, "conflictFileIsMine">,
   action: ResolutionAction,
 ): ResolutionOutcome {
   if (action === "keep-both") return "both";
   if (action === "remove-conflict") return "remove-conflict";
-  return keepActions(row).original === action ? "original" : "conflict";
+  return keepSide(row, action);
 }
 
 const ORIGINAL_LABEL = "Original";

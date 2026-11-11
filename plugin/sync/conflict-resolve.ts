@@ -9,7 +9,7 @@
 
 import { VaultKeys } from "../../core/crypto.ts";
 import { commitOp, waitForInFlightCommit } from "./commit.ts";
-import { keptConflictPath } from "./conflict-list.ts";
+import { keptConflictPath, sameContentHolds } from "./conflict-list.ts";
 import { splitExt } from "./conflicts.ts";
 import type { StateDB } from "../plumbing/state.ts";
 import type { Transport } from "./transport.ts";
@@ -41,6 +41,18 @@ export function planResolution(
   const plan: ResolutionPlan = { delete: row.conflictPath };
   if (keepConflict) plan.write = { path: row.path, source: row.conflictPath };
   return plan;
+}
+
+/** #68: remove-conflict deletes the side file, so it re-checks both sides at click
+ * time: a row built while they matched must never delete bytes that changed
+ * since (the conflict file is an ordinary synced note on other devices). */
+export async function assertStillSameContent(
+  row: { path: string; conflictPath: string },
+  read: (path: string) => Promise<Uint8Array>,
+): Promise<void> {
+  if (!(await sameContentHolds(read, row.path, row.conflictPath))) {
+    throw new Error("This conflict changed. Review it again.");
+  }
 }
 
 export interface ResolveDeps {

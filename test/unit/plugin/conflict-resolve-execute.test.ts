@@ -1,6 +1,10 @@
 import { hashPathHex } from "../../../core/hash.ts";
 import { assertEquals, assertRejects } from "@std/assert";
-import { executeResolution, planResolution } from "../../../plugin/sync/conflict-resolve.ts";
+import {
+  assertStillSameContent,
+  executeResolution,
+  planResolution,
+} from "../../../plugin/sync/conflict-resolve.ts";
 import { commitOp, waitForInFlightCommit } from "../../../plugin/sync/commit.ts";
 import { deriveKeys } from "../../../core/crypto.ts";
 import { FakeVault } from "../../two-vault-driver.ts";
@@ -72,6 +76,54 @@ function commitDeps(deps: Awaited<ReturnType<typeof makeDeps>>, transport: FakeT
     pendingRenameTarget: () => undefined,
   };
 }
+
+// #68: remove conflict deletes the side file, so the modal re-checks both sides
+// at click time (host order: assertStillSameContent, then planResolution and
+// executeResolution). A row built while they matched must not delete new bytes.
+async function removeConflictRow(
+  row: { path: string; conflictPath: string },
+  deps: Awaited<ReturnType<typeof makeDeps>>,
+  transport: FakeTransport,
+  deleted: string[],
+): Promise<string | null> {
+  const read = (path: string) => deps.vault.readBinary(path);
+  await assertStillSameContent(row, read);
+  return executeResolution(
+    planResolution({ ...row, conflictFileIsMine: false }, "remove-conflict"),
+    resolveDeps(deps, transport, deleted),
+  );
+}
+
+Deno.test("remove conflict refuses a side file whose content changed after the row was built", async () => {
+  const transport: FakeTransport = {
+    headBlob: () => Promise.resolve(true),
+    putBlob: async () => {},
+    commit: () => Promise.resolve({ kind: "ack", seq: 1, version: 1 }),
+  };
+  const deps = await makeDeps(transport);
+  const deleted: string[] = [];
+  await assertRejects(
+    () => removeConflictRow(MINE, deps, transport, deleted),
+    Error,
+    "changed",
+  );
+  assertEquals(deleted, [], "nothing is deleted or committed while the sides differ");
+  assertEquals(deps.vault.files.has(CONFLICT), true, "the conflict file stays on disk");
+});
+
+Deno.test("remove conflict deletes the side file while both sides still match", async () => {
+  const transport: FakeTransport = {
+    headBlob: () => Promise.resolve(true),
+    putBlob: async () => {},
+    commit: () => Promise.resolve({ kind: "ack", seq: 1, version: 1 }),
+  };
+  const deps = await makeDeps(transport);
+  deps.vault.write(CONFLICT, "server copy");
+  const deleted: string[] = [];
+  await removeConflictRow(MINE, deps, transport, deleted);
+  assertEquals(deleted, [CONFLICT]);
+  assertEquals(deps.vault.files.has(CONFLICT), false);
+});
 
 Deno.test("a failed commit throws on the delete path (the modal catch shows an error Notice)", async () => {
   const transport: FakeTransport = {

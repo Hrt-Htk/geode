@@ -119,7 +119,7 @@ const CONFLICT_PATH = "Notes/Plan (conflict Laptop B 2026-10-21 1405).md";
 /** A row builder over one conflict pair: the original's server head at version 3
  * (device-a, written 555), the copy's own mtime 2_000. */
 function deps(
-  over: { original?: string; conflict?: string; deviceName?: string } = {},
+  over: { original?: string; conflict?: string; deviceName?: string; deviceId?: string } = {},
 ): ConflictRowsDeps {
   const files = [{ path: PATH }, { path: CONFLICT_PATH }];
   const body = (path: string) =>
@@ -152,7 +152,7 @@ function deps(
         ]),
     } as unknown as Transport,
     deviceName: over.deviceName ?? "Laptop A",
-    deviceId: "device-a",
+    deviceId: over.deviceId ?? "device-a",
     activity: new Map(),
     deviceNames: new Map([["device-a", "Laptop A"], ["device-b", "Laptop B"]]),
   };
@@ -173,9 +173,13 @@ Deno.test("buildConflictRows - both sides holding the same content is flagged", 
 
 Deno.test("buildConflictRows - the original is labelled with its server head's device and time", async () => {
   // The creating device: the copy holds this device's edit, the original the head.
-  const [creating] = await buildConflictRows(deps({ deviceName: "Laptop B" }));
+  const [creating] = await buildConflictRows(
+    deps({ deviceName: "Laptop B", deviceId: "device-b" }),
+  );
   assertEquals(creating.conflictFileIsMine, true);
   assertEquals(creating.mine.device, "Laptop B");
+  // The head version is this device's own write: our display name, not the
+  // server's registered one.
   assertEquals(creating.theirs.device, "Laptop A");
   assertEquals(creating.theirs.time, 555);
   // The receiving device: the copy arrived, the original is ours.
@@ -184,6 +188,18 @@ Deno.test("buildConflictRows - the original is labelled with its server head's d
   assertEquals(receiving.mine.device, "Laptop A");
   assertEquals(receiving.mine.time, 555);
   assertEquals(receiving.theirs.device, "Laptop B");
+});
+
+Deno.test("buildConflictRows - a third device labels the original with the head's device", async () => {
+  // Neither side is ours here: the copy came from Laptop B, the original was
+  // written by Laptop A. The original's card must name Laptop A, not this device.
+  const [row] = await buildConflictRows(
+    deps({ deviceName: "Laptop C", deviceId: "device-c" }),
+  );
+  assertEquals(row.conflictFileIsMine, false);
+  assertEquals(row.mine.device, "Laptop A");
+  assertEquals(row.mine.time, 555);
+  assertEquals(row.theirs.device, "Laptop B");
 });
 
 Deno.test("buildConflictRows - the conflict copy is labelled with its own device and mtime", async () => {

@@ -13,6 +13,7 @@ import { deviceNameMap } from "../plumbing/provisioning-client.ts";
 import type { ActivityEntry, ActivityInput } from "../sync/activity-log.ts";
 import { buildConflictRows, type ConflictRow } from "../sync/conflict-list.ts";
 import {
+  assertStillSameContent,
   executeResolution,
   planResolution,
   type ResolutionAction,
@@ -113,6 +114,9 @@ async function resolveConflict(
   transport: Transport,
   adapter: ReturnType<typeof statAdapter>,
 ): Promise<string | null> {
+  // Remove conflict is the one action that deletes content without writing it
+  // over: re-read both sides, since the row was built when the list opened.
+  if (action === "remove-conflict") await assertStillSameContent(row, adapter.readBinary);
   const keptPath = await executeResolution(planResolution(row, action), {
     vault: { adapter },
     state,
