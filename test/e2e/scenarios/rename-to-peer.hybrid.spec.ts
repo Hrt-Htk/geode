@@ -99,7 +99,15 @@ test("rename + a concurrent offline edit on the other device keeps both edits", 
       .poll(async () => {
         const contents = await phone.eval<string[]>(`
           const out = [];
-          for (const f of app.vault.getFiles()) out.push(f.path + "\\u0000" + await app.vault.cachedRead(f));
+          // A file can be renamed away between the listing and its read: skip it, the next
+          // poll sees the new name.
+          for (const f of app.vault.getFiles()) {
+            try {
+              out.push(f.path + "\\u0000" + await app.vault.cachedRead(f));
+            } catch {
+              // renamed or removed mid poll
+            }
+          }
           return out;
         `);
         return contents.join("|").includes("one PHONE");
