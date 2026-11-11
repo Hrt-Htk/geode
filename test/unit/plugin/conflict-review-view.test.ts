@@ -13,12 +13,13 @@ import {
   KEEP_CONFLICT_BUTTON,
   KEEP_ORIGINAL_BUTTON,
   keepActions,
-  keptNotice,
   NO_DATE,
   OPEN_BOTH_LINK,
   READ_FAILED,
-  REMOVE_COPY_BUTTON,
-  REMOVED_COPY_NOTICE,
+  REMOVE_CONFLICT_BUTTON,
+  resolutionNotice,
+  resolutionOutcome,
+  resolutionWords,
   REVIEW_BUTTON,
   reviewKeys,
   reviewTitle,
@@ -152,12 +153,29 @@ Deno.test("conflict-review-view - comparedLines adds no + or minus prefixes and 
   }
 });
 
-Deno.test("conflict-review-view - a keep notice repeats the button's own words", () => {
-  assertEquals(keptNotice("original"), "Kept original.");
-  assertEquals(keptNotice("conflict"), "Kept conflict.");
+Deno.test("conflict-review-view - a resolution says what it did in the button's own words", () => {
   assertEquals(IDENTICAL_TEXT, "Both versions are the same.");
-  assertEquals(REMOVE_COPY_BUTTON, "Remove the copy");
-  assertEquals(REMOVED_COPY_NOTICE, "Removed the copy.");
+  assertEquals(REMOVE_CONFLICT_BUTTON, "Remove conflict");
+  // The notice: one sentence.
+  assertEquals(resolutionNotice("original"), "Kept original.");
+  assertEquals(resolutionNotice("conflict"), "Kept conflict.");
+  assertEquals(resolutionNotice("both"), "Kept both.");
+  assertEquals(resolutionNotice("remove-conflict"), "Removed conflict.");
+  // The activity line: the same words, lowercase after the dot.
+  assertEquals(resolutionWords("original"), "kept original");
+  assertEquals(resolutionWords("conflict"), "kept conflict");
+  assertEquals(resolutionWords("both"), "kept both");
+  assertEquals(resolutionWords("remove-conflict"), "removed conflict");
+});
+
+Deno.test("conflict-review-view - the outcome names the side the pressed action keeps", () => {
+  for (const row of [CREATING, RECEIVING]) {
+    const keep = keepActions(row);
+    assertEquals(resolutionOutcome(row, keep.original), "original");
+    assertEquals(resolutionOutcome(row, keep.conflict), "conflict");
+  }
+  assertEquals(resolutionOutcome(CREATING, "keep-both"), "both");
+  assertEquals(resolutionOutcome(RECEIVING, "remove-conflict"), "remove-conflict");
 });
 
 Deno.test("conflict-review-view - user copy carries no hyphens or dashes", () => {
@@ -168,11 +186,15 @@ Deno.test("conflict-review-view - user copy carries no hyphens or dashes", () =>
     KEEP_ORIGINAL_BUTTON,
     KEEP_CONFLICT_BUTTON,
     KEEP_BOTH_BUTTON,
-    REMOVE_COPY_BUTTON,
+    REMOVE_CONFLICT_BUTTON,
     IDENTICAL_TEXT,
-    REMOVED_COPY_NOTICE,
-    keptNotice("original"),
-    keptNotice("conflict"),
+    resolutionNotice("original"),
+    resolutionNotice("conflict"),
+    resolutionNotice("remove-conflict"),
+    resolutionWords("original"),
+    resolutionWords("conflict"),
+    resolutionWords("both"),
+    resolutionWords("remove-conflict"),
     CONFLICT_GONE,
     NO_DATE,
     READ_FAILED,

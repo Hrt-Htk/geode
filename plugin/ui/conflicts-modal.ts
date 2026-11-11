@@ -26,10 +26,10 @@ import {
   KEEP_CONFLICT_BUTTON,
   KEEP_ORIGINAL_BUTTON,
   keepActions,
-  keptNotice,
   NO_DATE,
   OPEN_BOTH_LINK,
-  REMOVED_COPY_NOTICE,
+  resolutionNotice,
+  resolutionOutcome,
   REVIEW_BUTTON,
   versionSides,
 } from "./conflict-review-view.ts";
@@ -189,35 +189,32 @@ export class ConflictsModal extends Modal {
   }
 
   private resolveAction(row: ConflictRow, action: ResolutionAction): Promise<boolean> {
-    if (action === "keep-both") return this.keepBoth(row);
-    if (action === "remove-copy") return this.removeCopy(row);
-    const side = keepActions(row).original === action ? "original" : "conflict";
-    return this.keepOne(row, action, side);
+    const outcome = resolutionOutcome(row, action);
+    if (outcome === "both") return this.keepBoth(row);
+    if (outcome === "remove-conflict") return this.removeConflict(row);
+    return this.keepOne(row, outcome);
   }
 
   // Keep original / Keep conflict delete the other version: destructive, so a
   // one line confirm first, in the same words as the button (Keep both does not).
-  private keepOne(
-    row: ConflictRow,
-    action: "keep-mine" | "keep-theirs",
-    side: ConflictFileSide,
-  ): Promise<boolean> {
+  private keepOne(row: ConflictRow, side: ConflictFileSide): Promise<boolean> {
+    const action = keepActions(row)[side];
     return new Promise((done) => {
       let resolved = false;
       new ConfirmModal(this.app, {
         ...confirmKeepVersion(side),
         onClosed: () => done(resolved),
         onConfirm: async () => {
-          resolved = await this.resolveWithNotice(row, action, keptNotice(side));
+          resolved = await this.resolveWithNotice(row, action, resolutionNotice(side));
         },
       }).open();
     });
   }
 
-  // Remove the copy drops an identical duplicate: nothing is written over, so it
-  // needs no confirm of its own.
-  private removeCopy(row: ConflictRow): Promise<boolean> {
-    return this.resolveWithNotice(row, "remove-copy", REMOVED_COPY_NOTICE);
+  // Remove conflict drops the identical side file: nothing is written over, so
+  // it needs no confirm of its own.
+  private removeConflict(row: ConflictRow): Promise<boolean> {
+    return this.resolveWithNotice(row, "remove-conflict", resolutionNotice("remove-conflict"));
   }
 
   /** Resolve, then say what happened; a failure shows its error and reloads. */

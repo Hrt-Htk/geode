@@ -15,7 +15,7 @@ import type { StateDB } from "../plumbing/state.ts";
 import type { Transport } from "./transport.ts";
 import { recordedWrite } from "./vault-io.ts";
 
-export type ResolutionAction = "keep-mine" | "keep-theirs" | "keep-both" | "remove-copy";
+export type ResolutionAction = "keep-mine" | "keep-theirs" | "keep-both" | "remove-conflict";
 
 export interface ResolutionPlan {
   /** Write `source`'s whole content to `path`. */
@@ -33,8 +33,8 @@ export function planResolution(
   if (action === "keep-both") {
     return { rename: { from: row.conflictPath, to: keptConflictPath(row.path) } };
   }
-  // remove-copy: both sides hold the same content, so the original already has it.
-  if (action === "remove-copy") return { delete: row.conflictPath };
+  // remove-conflict: both sides hold the same content, so the original already has it.
+  if (action === "remove-conflict") return { delete: row.conflictPath };
   // keep-mine keeps the conflict file's content only when it is this device's;
   // keep-theirs keeps it when it arrived from another device (inversion).
   const keepConflict = (action === "keep-mine") === row.conflictFileIsMine;

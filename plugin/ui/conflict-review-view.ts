@@ -17,16 +17,42 @@ export const BACK_BUTTON = "Back";
 export const KEEP_ORIGINAL_BUTTON = "Keep original";
 export const KEEP_CONFLICT_BUTTON = "Keep conflict";
 export const KEEP_BOTH_BUTTON = "Keep both";
-export const REMOVE_COPY_BUTTON = "Remove the copy";
+export const REMOVE_CONFLICT_BUTTON = "Remove conflict";
 /** Both sides hold the same content: nothing to compare, nothing to choose. */
 export const IDENTICAL_TEXT = "Both versions are the same.";
-export const REMOVED_COPY_NOTICE = "Removed the copy.";
 
 /** The two files a row can keep; the confirm and the notice repeat the button's words. */
 export type ConflictFileSide = "original" | "conflict";
 
-export function keptNotice(side: ConflictFileSide): string {
-  return `Kept ${side}.`;
+/** What a resolution did, in the words of the button that ran it. */
+export type ResolutionOutcome = ConflictFileSide | "both" | "remove-conflict";
+
+const RESOLUTION_WORDS: Record<ResolutionOutcome, string> = {
+  original: "kept original",
+  conflict: "kept conflict",
+  both: "kept both",
+  "remove-conflict": "removed conflict",
+};
+
+/** The activity line's words, lowercase after the dot. */
+export function resolutionWords(outcome: ResolutionOutcome): string {
+  return RESOLUTION_WORDS[outcome];
+}
+
+/** The notice: the same words, one sentence. */
+export function resolutionNotice(outcome: ResolutionOutcome): string {
+  const words = RESOLUTION_WORDS[outcome];
+  return `${words[0].toUpperCase()}${words.slice(1)}.`;
+}
+
+/** Which side the pressed action keeps, named as the button names it. */
+export function resolutionOutcome(
+  row: Pick<ConflictRow, "conflictFileIsMine">,
+  action: ResolutionAction,
+): ResolutionOutcome {
+  if (action === "keep-both") return "both";
+  if (action === "remove-conflict") return "remove-conflict";
+  return keepActions(row).original === action ? "original" : "conflict";
 }
 
 const ORIGINAL_LABEL = "Original";

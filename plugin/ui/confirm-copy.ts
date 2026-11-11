@@ -85,7 +85,7 @@ export function confirmNewVaultFromNotes(): ConfirmDialogSpec {
 const KEEP_COPY: Record<ConflictFileSide, { title: string; message: string }> = {
   original: {
     title: "Keep original?",
-    message: "Deletes the conflict copy. This can't be undone.",
+    message: "Deletes the conflict. This can't be undone.",
   },
   conflict: {
     title: "Keep conflict?",

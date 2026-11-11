@@ -82,7 +82,7 @@ Deno.test("confirmRevokeDevice names the device", () => {
 Deno.test("confirmKeepVersion repeats the button's own words", () => {
   assertEquals(confirmKeepVersion("original"), {
     title: "Keep original?",
-    message: "Deletes the conflict copy. This can't be undone.",
+    message: "Deletes the conflict. This can't be undone.",
     confirmText: "Keep original",
   });
   assertEquals(confirmKeepVersion("conflict"), {

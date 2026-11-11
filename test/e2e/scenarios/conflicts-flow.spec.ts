@@ -228,7 +228,9 @@ test("conflicts: real conflict, calmer icon, menu badge, review row, modal resol
     await B.win.locator(STATUSBAR).click();
     await B.win.locator(".menu").last().locator(".menu-item", { hasText: "Sync activity" }).click();
     await expect(B.win.locator(".geode-activity-modal")).toBeVisible({ timeout: 10_000 });
-    await expect(B.win.locator(".geode-activity-modal")).toContainText("Resolved · Laptop B");
+    await expect(B.win.locator(".geode-activity-modal")).toContainText(
+      "Resolved · kept original",
+    );
     await B.win.keyboard.press("Escape");
     await expect(B.win.locator(".geode-activity-modal")).not.toBeVisible();
 

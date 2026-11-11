@@ -47,16 +47,21 @@ Deno.test("keep both renames the conflict file beside the original on either dev
   });
 });
 
-Deno.test("remove copy deletes the identical duplicate on either device", () => {
+Deno.test("remove conflict deletes the identical side file on either device", () => {
   // Nothing is written: the original already holds this content.
-  assertEquals(planResolution(MINE, "remove-copy"), { delete: MINE.conflictPath });
-  assertEquals(planResolution(THEIRS, "remove-copy"), { delete: THEIRS.conflictPath });
+  assertEquals(planResolution(MINE, "remove-conflict"), { delete: MINE.conflictPath });
+  assertEquals(planResolution(THEIRS, "remove-conflict"), { delete: THEIRS.conflictPath });
 });
 
 Deno.test("every plan deletes or renames the conflict file away", () => {
   for (const row of [MINE, THEIRS]) {
     for (
-      const action of ["keep-mine", "keep-theirs", "keep-both", "remove-copy"] as ResolutionAction[]
+      const action of [
+        "keep-mine",
+        "keep-theirs",
+        "keep-both",
+        "remove-conflict",
+      ] as ResolutionAction[]
     ) {
       const plan = planResolution(row, action);
       const gone = plan.delete === row.conflictPath || plan.rename?.from === row.conflictPath;

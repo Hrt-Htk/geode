@@ -196,19 +196,19 @@ Deno.test("a later restore of the same path does not clobber a conflict entry", 
   assertEquals(e.deviceId, OTHER, "its remote side is still known");
 });
 
-Deno.test("a resolved row names this device and shows an absolute clock time", () => {
+Deno.test("a resolved row keeps the action it took and shows an absolute clock time", () => {
   const entries = new Map<string, ActivityEntry>();
   recordActivity(
     entries,
-    { path: "c.md", kind: "resolved" },
+    { path: "c.md", kind: "resolved", label: "kept original" },
     { ...ctx(), now: AT(new Date(2026, 9, 14, 13, 8, 0)) },
   );
   const e = entries.get("c.md")!;
   assertEquals(e.deviceId, null);
-  assertEquals(e.deviceLabel, DEVICE);
+  assertEquals(e.deviceLabel, "kept original");
   const [group] = rows(entries);
   const row = group.rows[0];
-  assertEquals(row.detail, "Resolved · Laptop");
+  assertEquals(row.detail, "Resolved · kept original");
   assertEquals(row.icon, "git-merge");
   assertEquals(row.absolute, true);
   assertEquals(row.time, "13:08");

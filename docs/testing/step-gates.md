@@ -450,8 +450,8 @@ There is no rigid gate here. The bar is the release acceptance checklist in `str
   names as the colour key and Back returns to the list, "Open both" opens it, and deleting the pair
   empties the list. Its identical-sides test (#68) seeds a copy holding the same content: both cards
   stay, each labelled with its own device, the comparison is replaced by "Both versions are the
-  same.", the three keep buttons are gone, and Remove the copy deletes the duplicate with the
-  "Removed the copy." notice while the original keeps its content.
+  same.", the three keep buttons are gone, the window fits its content, and Remove conflict deletes
+  the side file with the "Removed conflict." notice while the original keeps its content.
 
 ### Soft criteria (use judgment)
 

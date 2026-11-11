@@ -707,11 +707,12 @@ notice.
 Review compares the original (server copy) with the set aside conflict file line by line: shared
 lines plain, a version's own lines in that version's colour with a margin bar, the two names as the
 key. Each key carries the device and the time that side wrote: the original the server head
-version's device and time, the copy its own mtime (`conflict-list.ts`). `ui/line-diff.ts` is the one
+version's device and time, the conflict file its own mtime (`conflict-list.ts`). `ui/line-diff.ts` is the one
 line alignment, shared with the history diff. When both sides hold the
-same content the window says so (`ConflictRow.sameContent`) and offers Remove the copy and Back
-only. Keep original and Keep conflict name the files; which `keep-mine`/`keep-theirs` they run
-inverts with `conflictFileIsMine`. The button, its confirm and its notice use the same words.
+same content the window says so (`ConflictRow.sameContent`), sizes itself to its content, and offers
+Remove conflict and Back only. Keep original and Keep conflict name the files; which `keep-mine`/`keep-theirs` they run
+inverts with `conflictFileIsMine`. The button, its confirm, its notice and the activity line use the
+same words.
 Binaries keep their thumbnails and in row keep actions.
 
 **History window** (`ui/history-modal.ts` + `history-pane.ts`): a click redraws only what it

@@ -20,7 +20,7 @@ import {
   keepActions,
   LOADING_TEXT,
   READ_FAILED,
-  REMOVE_COPY_BUTTON,
+  REMOVE_CONFLICT_BUTTON,
   reviewKeys,
   reviewTitle,
 } from "./conflict-review-view.ts";
@@ -41,6 +41,9 @@ export class ConflictReviewModal extends Modal {
   constructor(app: App, private deps: ConflictReviewDeps) {
     super(app);
     this.modalEl.addClass("geode-conflict-review-modal");
+    // Identical sides are a statement plus one action: the window fits its
+    // content instead of filling the screen with empty space (#68).
+    if (deps.row.sameContent) this.modalEl.addClass("mod-identical");
   }
 
   onOpen(): void {
@@ -132,9 +135,9 @@ export class ConflictReviewModal extends Modal {
       if (this.deps.row.sameContent) {
         this.button(
           actions,
-          REMOVE_COPY_BUTTON,
-          "geode-conflict-remove-copy",
-          () => this.keep("remove-copy"),
+          REMOVE_CONFLICT_BUTTON,
+          "geode-conflict-remove-conflict",
+          () => this.keep("remove-conflict"),
           "mod-cta",
         );
       } else {

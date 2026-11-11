@@ -164,7 +164,7 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
 });
 
 // #68: two sides holding the same content. The review keeps both cards, says
-// they are the same, and offers one action: remove the identical copy.
+// they are the same, and offers one action: remove conflict.
 const SAME_PATH = "Notes/same.md";
 const SAME_CONFLICT_PATH = "Notes/same (conflict Laptop B 2026-07-07 1000).md";
 const SAME_BODY = `# Same
@@ -173,7 +173,7 @@ Both devices wrote this paragraph.
 
 And this one.`;
 
-test("gate9 identical sides: says so and offers remove the copy", async () => {
+test("gate9 identical sides: says so and offers remove conflict", async () => {
   test.slow();
 
   const server = await startServer();
@@ -228,11 +228,15 @@ test("gate9 identical sides: says so and offers remove the copy", async () => {
     await expect(review.locator("[data-testid=geode-conflict-keep-conflict]")).toHaveCount(0);
     await expect(review.locator("[data-testid=geode-conflict-keep-both]")).toHaveCount(0);
     await expect(review.locator("button")).toHaveCount(2);
+    // Nothing to scroll: the window fits its cards, the line and the actions.
+    await expect(review).toHaveClass(/mod-identical/);
+    const box = await review.boundingBox();
+    expect(box!.height).toBeLessThan(500);
     await review.screenshot({ path: shotPath("68-01-identical-desktop.png") });
 
     /* Remove the copy: no confirm, the duplicate goes, the notice says so. */
-    await review.locator("[data-testid=geode-conflict-remove-copy]").click();
-    await expect(obsidian.win.locator(".notice", { hasText: "Removed the copy." })).toBeVisible({
+    await review.locator("[data-testid=geode-conflict-remove-conflict]").click();
+    await expect(obsidian.win.locator(".notice", { hasText: "Removed conflict." })).toBeVisible({
       timeout: 15_000,
     });
     await expect(review).not.toBeVisible({ timeout: 15_000 });

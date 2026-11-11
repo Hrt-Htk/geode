@@ -40,6 +40,8 @@ export interface ActivityInput {
   kind: ActivityKind;
   deviceId?: string | null;
   cause?: string | null;
+  /** Pre-resolved action label (resolved rows: "kept original", "removed conflict"). */
+  label?: string;
 }
 
 /** Callback handed down the sync path; the recorder resolves labels internally. */
@@ -134,7 +136,7 @@ export function recordActivity(
     path: input.path,
     kind: input.kind,
     deviceId: input.deviceId ?? null,
-    deviceLabel: deviceLabel(input, ctx),
+    deviceLabel: input.label ?? deviceLabel(input, ctx),
     cause: input.cause ?? null,
     at,
     saves: 0,

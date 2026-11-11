@@ -948,6 +948,12 @@ body:not(.is-phone) .geode-conflict-review-modal {
   overflow: hidden;
 }
 
+/* #68: the identical state has nothing to scroll: size the window to its cards,
+   the one line and the two actions. */
+body:not(.is-phone) .geode-conflict-review-modal.mod-identical {
+  height: auto;
+}
+
 .geode-folders-tree {
   flex: 1 1 auto;
   min-height: 0;

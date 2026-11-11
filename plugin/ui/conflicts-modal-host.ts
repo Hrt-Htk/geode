@@ -18,6 +18,7 @@ import {
   type ResolutionAction,
 } from "../sync/conflict-resolve.ts";
 import { ConflictsModal } from "./conflicts-modal.ts";
+import { resolutionOutcome, resolutionWords } from "./conflict-review-view.ts";
 
 /** The slice of the plugin the conflicts wiring needs (structural). */
 export type ConflictsHost = {
@@ -124,6 +125,7 @@ async function resolveConflict(
   host.activity?.record({
     path: row.path,
     kind: "resolved",
+    label: resolutionWords(resolutionOutcome(row, action)),
   });
   return keptPath;
 }
