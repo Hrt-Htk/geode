@@ -118,6 +118,12 @@ export function selectedRow(items: HistoryItem[], key: string): SelectedRow | nu
   return null;
 }
 
+/** #24: the window's layout follows the phone, like the styles, which keep the two-pane
+ * sizing behind `body:not(.is-phone)`: a tablet is mobile but wide, so it gets two panes. */
+export function singlePane(platform: { isPhone: boolean }): boolean {
+  return platform.isPhone;
+}
+
 /** Selecting a save leaves the diff, as the mockup does, and opens the preview
  * on the phone. */
 export function selectSave(view: HistoryView, key: string): HistoryView {

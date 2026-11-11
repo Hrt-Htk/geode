@@ -257,6 +257,8 @@ Same suites, same env; `ANDROID_SERIAL` is the tablet's own wireless serial. A b
   the local network; classify it as environment, not a regression.
 - **`svc power stayon` holds the screen only while charging**, so keep a device on power for a long
   run or it dozes and drops the transport.
+- **Tablet-only specs** gate on `GEODE_TABLET=1` (the layout specs skip without it), so a phone run
+  stays at its baseline count: `test/e2e/scenarios/file-history-tablet.phone.spec.ts` (#24).
 
 ## On-device plugin-state probe (CDP)
 

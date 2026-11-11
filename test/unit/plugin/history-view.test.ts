@@ -19,6 +19,7 @@ import {
   selectedRow,
   selectSave,
   showOlder,
+  singlePane,
   toggleDiff,
   toggleExpanded,
   visibleRows,
@@ -148,6 +149,11 @@ Deno.test("history-view - a marker row waits until the periods above it are in",
   assertEquals(visibleRows(items, 2).rows, [period(5), period(4)], "marker not yet");
   assertEquals(visibleRows(items, 3).rows, items.slice(0, 4));
   assertEquals(visibleRows(items, 6).rows, items);
+});
+
+Deno.test("history-view - singlePane follows the phone, so a tablet gets the two-pane window", () => {
+  assertEquals(singlePane({ isPhone: true }), true, "a phone: one pane, with Back");
+  assertEquals(singlePane({ isPhone: false }), false, "a tablet, like a desktop: two panes (#24)");
 });
 
 Deno.test("history-view - selectSave moves the selection, drops the diff, opens the phone preview", () => {

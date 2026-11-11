@@ -52,6 +52,7 @@ import {
   selectedRow,
   selectSave,
   showOlder,
+  singlePane,
   toggleDiff,
   toggleExpanded,
   visibleRows,
@@ -247,7 +248,7 @@ export class FileHistoryModal extends Modal {
       this.renderEmpty(body);
     } else {
       // Phone: the list, then one version with Back: stacked, never side by side.
-      const phone = Platform.isMobile;
+      const phone = singlePane(Platform);
       if (!phone || view.pane === "list") {
         const listEl = (this.listEl = body.createDiv({ cls: "geode-history-list" }));
         listEl.addEventListener("scroll", () => {
@@ -281,7 +282,7 @@ export class FileHistoryModal extends Modal {
     const view = this.view;
     if (this.disposed || !preview || !view) return;
     preview.empty();
-    if (Platform.isMobile) this.renderBack(preview);
+    if (singlePane(Platform)) this.renderBack(preview);
     this.pane.render(preview, view, this.meta());
   }
 
@@ -435,7 +436,7 @@ export class FileHistoryModal extends Modal {
     if (!view) return;
     this.view = selectSave(view, key);
     this.showSelected();
-    if (Platform.isMobile) {
+    if (singlePane(Platform)) {
       this.render();
       return;
     }
