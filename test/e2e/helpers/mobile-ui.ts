@@ -35,20 +35,31 @@ export async function evalSetValue(ui: MobileUI, selector: string, value: string
   `);
 }
 
-/** Close any open modals in-page (close buttons first, backdrop fallback, then remove). */
+/**
+ * Close any open modals in-page and wait until they are gone from the DOM.
+ *
+ * On the phone a modal closes with an animation: the container detaches only
+ * when it ends, and Obsidian finishes its own bookkeeping then. Opening the next
+ * modal before that runs into the previous modal's teardown, which closes the
+ * new sheet by itself (any Geode modal, no user input: #68). Poll the containers
+ * out, never sleep a fixed time.
+ */
 export async function dismissModals(ui: MobileUI): Promise<void> {
   await ui.eval(`
     (async () => {
-      for (let i = 0; i < 8 && document.querySelectorAll(".modal-container").length > 0; i++) {
-        const close = document.querySelectorAll(".modal-close-button");
-        if (close.length > 0) close[close.length - 1].click();
-        else {
-          const backdrop = document.querySelectorAll(".modal-bg");
-          if (backdrop.length > 0) backdrop[backdrop.length - 1].click();
-          else document.querySelector(".modal-container")?.remove();
-        }
-        await new Promise((r) => setTimeout(r, 150));
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const open = () => document.querySelectorAll(".modal-container").length;
+      for (let round = 0; round < 10 && open() > 0; round++) {
+        const containers = document.querySelectorAll(".modal-container");
+        const last = containers[containers.length - 1];
+        const close = last.querySelector(".modal-close-button");
+        if (close) close.click();
+        else last.querySelector(".modal-bg")?.click();
+        for (let i = 0; i < 30 && open() > 0; i++) await wait(50);
       }
+      // Nothing left to animate: drop any straggler and let the app settle.
+      document.querySelectorAll(".modal-container").forEach((c) => c.remove());
+      await wait(150);
       return true;
     })()
   `);

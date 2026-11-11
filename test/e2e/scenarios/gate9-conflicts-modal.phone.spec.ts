@@ -62,7 +62,8 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
     await obsidian.eval(
       `document.querySelector('[data-testid="geode-conflicts-done"]')?.click(); return true;`,
     );
-    await expect(obsidian.win.locator(".geode-conflicts-modal")).not.toBeVisible();
+    // Detached, not just hidden: the close animation must finish before the reopen.
+    await expect(obsidian.win.locator(".geode-conflicts-modal")).toHaveCount(0);
 
     /* 2. Seed a real conflict pair (original + conflict file), then reopen the
        modal: the row appears. */
@@ -112,7 +113,8 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
 
     /* 4. Back returns to the list; the conflict is still open. */
     await evalClick(obsidian, "[data-testid=geode-conflict-back]");
-    await expect(review).not.toBeVisible();
+    // Detached, not just hidden: the close animation must finish before the next open.
+    await expect(review).toHaveCount(0);
     await expect(row).toHaveCount(1);
 
     /* 5. Open both (phone: new tab + the conflict file is opened). */
@@ -174,7 +176,7 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
     await new Promise((r) => setTimeout(r, 400));
     await obsidian.screenshot(shotPath("435-phone-05-gone.png"));
     await evalClick(obsidian, "[data-testid=geode-conflict-back]");
-    await expect(goneReview).not.toBeVisible();
+    await expect(goneReview).toHaveCount(0);
     // The step 7 list and its review can linger in the DOM on mobile (closing
     // animation): close everything, then reopen the list so it is rebuilt.
     await dismissModals(obsidian);
@@ -219,7 +221,7 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
     await expect(obsidian.win.locator(".notice", { hasText: "Removed conflict." })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(sameReview).not.toBeVisible({ timeout: 15_000 });
+    await expect(sameReview).toHaveCount(0, { timeout: 15_000 });
     await expect
       .poll(
         async () =>

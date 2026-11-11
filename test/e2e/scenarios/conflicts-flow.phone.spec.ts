@@ -140,7 +140,8 @@ test("conflicts modal (phone): one compact row per conflict, reviewed and left o
 
     /* ---- Back: the review closes and the row stays listed ---- */
     await evalClick(obsidian, "[data-testid=geode-conflict-back]");
-    await expect(review).not.toBeVisible({ timeout: 10_000 });
+    // Detached, not just hidden: the close animation runs to its end.
+    await expect(review).toHaveCount(0, { timeout: 10_000 });
     await expect(row).toHaveCount(1);
     // The device keeps its DOM between specs: never leave a modal open for the next one.
     await dismissModals(obsidian);
