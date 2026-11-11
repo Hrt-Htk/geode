@@ -78,7 +78,7 @@ export interface ResolveDeps {
   deviceName: string;
 }
 
-/** Returns the kept copy path for keep both, null otherwise. */
+/** Returns the kept conflict path for keep both, null otherwise. */
 export async function executeResolution(
   plan: ResolutionPlan,
   deps: ResolveDeps,
@@ -160,7 +160,7 @@ function commitDeps(deps: ResolveDeps) {
   };
 }
 
-/** A kept copy beside an existing one gets a numbered suffix. */
+/** A kept conflict beside an existing one gets a numbered suffix. */
 async function uniqueKeptPath(desired: string, deps: ResolveDeps): Promise<string> {
   let to = desired;
   let n = 2;

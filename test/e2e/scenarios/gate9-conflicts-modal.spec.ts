@@ -234,7 +234,54 @@ test("gate9 identical sides: says so and offers remove conflict", async () => {
     expect(box!.height).toBeLessThan(500);
     await review.screenshot({ path: shotPath("68-01-identical-desktop.png") });
 
-    /* Remove the copy: no confirm, the duplicate goes, the notice says so. */
+    /* Remove conflict re-checks both sides at click time: a side file rewritten
+       while the list was open must not be deleted. */
+    const REWRITTEN = "# Same\n\nRewritten after the review opened.\n";
+    await obsidian.eval(`
+      await app.vault.adapter.write(${JSON.stringify(SAME_CONFLICT_PATH)}, ${
+      JSON.stringify(REWRITTEN)
+    });
+      return true;
+    `);
+    await review.locator("[data-testid=geode-conflict-remove-conflict]").click();
+    await expect(
+      obsidian.win.locator(".notice", { hasText: "This conflict changed. Review it again." }),
+    ).toBeVisible({ timeout: 15_000 });
+    // Nothing was deleted and nothing rewritten.
+    expect(
+      await obsidian.eval<string>(
+        `return await app.vault.adapter.read(${JSON.stringify(SAME_CONFLICT_PATH)});`,
+      ),
+    ).toBe(REWRITTEN);
+    expect(
+      await obsidian.eval<string>(
+        `return await app.vault.adapter.read(${JSON.stringify(SAME_PATH)});`,
+      ),
+    ).toBe(SAME_BODY);
+
+    /* Back to identical, then the remove path really deletes the side file. */
+    await obsidian.eval(`
+      await app.vault.adapter.write(${JSON.stringify(SAME_CONFLICT_PATH)}, ${
+      JSON.stringify(SAME_BODY)
+    });
+      return true;
+    `);
+    await review.locator("[data-testid=geode-conflict-back]").click();
+    await expect(review).not.toBeVisible({ timeout: 15_000 });
+    // A fresh list, so the row is rebuilt as identical before Remove conflict.
+    await obsidian.win.locator("[data-testid=geode-conflicts-done]").click();
+    await expect(obsidian.win.locator(".geode-conflicts-modal")).not.toBeVisible();
+    await obsidian.eval(`app.plugins.plugins.geode.openConflictsModal(); return true;`);
+    const sameRowAgain = obsidian.win.locator(
+      `[data-testid=geode-conflict-row][data-path="${SAME_PATH}"]`,
+    );
+    await expect(sameRowAgain).toHaveCount(1, { timeout: 15_000 });
+    await sameRowAgain.locator("[data-testid=geode-conflict-review]").click();
+    await expect(review.locator("[data-testid=geode-conflict-same]")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    /* Remove conflict: no confirm, the re-checked side file goes, the notice says so. */
     await review.locator("[data-testid=geode-conflict-remove-conflict]").click();
     await expect(obsidian.win.locator(".notice", { hasText: "Removed conflict." })).toBeVisible({
       timeout: 15_000,

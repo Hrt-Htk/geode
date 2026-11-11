@@ -117,19 +117,29 @@ const PATH = "Notes/Plan.md";
 const CONFLICT_PATH = "Notes/Plan (conflict Laptop B 2026-10-21 1405).md";
 
 /** A row builder over one conflict pair: the original's server head at version 3
- * (device-a, written 555), the copy's own mtime 2_000. */
+ * (device-a, written 555), the copy's own mtime 2_000. `stat` reports the real
+ * byte length of each side, so a CRLF/LF pair really does differ in size. */
 function deps(
-  over: { original?: string; conflict?: string; deviceName?: string; deviceId?: string } = {},
+  over: {
+    original?: string;
+    conflict?: string;
+    deviceName?: string;
+    deviceId?: string;
+    pair?: { original: string; conflict: string };
+    reads?: string[];
+  } = {},
 ): ConflictRowsDeps {
-  const files = [{ path: PATH }, { path: CONFLICT_PATH }];
-  const body = (path: string) =>
+  const pair = over.pair ?? { original: PATH, conflict: CONFLICT_PATH };
+  const bytes = (path: string) =>
     new TextEncoder().encode(
-      path === PATH ? (over.original ?? "# Plan\nbody") : (over.conflict ?? "# Plan\nbody"),
+      path === pair.original
+        ? (over.original ?? "# Plan\nbody")
+        : (over.conflict ?? "# Plan\nbody"),
     );
   const localRow = (path: string) => ({
     path,
-    path_hash: path === PATH ? "hash-original" : "hash-conflict",
-    size: 10,
+    path_hash: path === pair.original ? "hash-original" : "hash-conflict",
+    size: bytes(path).length,
     mtime: 1_000,
     plaintext_hash: "p",
     last_seen_version: 3,
@@ -137,9 +147,16 @@ function deps(
     deleted: false,
   });
   return {
-    files: () => files,
-    stat: (path) => Promise.resolve({ size: 10, mtime: path === PATH ? 1_000 : 2_000 }),
-    read: (path) => Promise.resolve(body(path)),
+    files: () => [{ path: pair.original }, { path: pair.conflict }],
+    stat: (path) =>
+      Promise.resolve({
+        size: bytes(path).length,
+        mtime: path === pair.original ? 1_000 : 2_000,
+      }),
+    read: (path) => {
+      over.reads?.push(path);
+      return Promise.resolve(bytes(path));
+    },
     state: { getLocalFile: (path: string) => localRow(path) } as unknown as StateDB,
     transport: {
       getVersionChain: (pathHash: string) =>
@@ -158,16 +175,35 @@ function deps(
   };
 }
 
+Deno.test("buildConflictRows - a CRLF note and its LF copy are the same content despite the byte sizes", async () => {
+  // The commit path normalizes line endings before hashing, so these are equal
+  // on the server; a stat size gate would hide Remove conflict for the pair.
+  const [row] = await buildConflictRows(deps({ conflict: "# Plan\r\nbody" }));
+  assertEquals(row.type, "note");
+  assertEquals(row.sameContent, true);
+});
+
+Deno.test("buildConflictRows - a binary pair is never flagged as the same content and is never read", async () => {
+  const reads: string[] = [];
+  const [row] = await buildConflictRows(
+    deps({
+      pair: {
+        original: "Attachments/plan.png",
+        conflict: "Attachments/plan (conflict Laptop B 2026-07-07 1000).png",
+      },
+      reads,
+    }),
+  );
+  assertEquals(row.type, "image");
+  assertEquals(row.sameContent, false);
+  assertEquals(reads, [], "a binary pair is not read to compare it");
+});
+
 Deno.test("buildConflictRows - both sides holding the same content is flagged", async () => {
   assertEquals((await buildConflictRows(deps())).map((r) => r.sameContent), [true]);
   assertEquals(
     (await buildConflictRows(deps({ conflict: "# Plan\nother" }))).map((r) => r.sameContent),
     [false],
-  );
-  // Line endings are normalized before the hash, exactly as the commit path hashes.
-  assertEquals(
-    (await buildConflictRows(deps({ conflict: "# Plan\r\nbody" }))).map((r) => r.sameContent),
-    [true],
   );
 });
 

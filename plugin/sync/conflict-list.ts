@@ -153,14 +153,17 @@ export async function buildConflictRows(deps: ConflictRowsDeps): Promise<Conflic
     const isMine = conflictFileIsMine(file.path, deps.deviceName, creatorId, deps.deviceId);
     const creator = fromName ?? (creatorId ? deps.deviceNames?.get(creatorId) : undefined) ??
       REMOTE_FALLBACK;
+    const type = conflictType(path);
     const conflictCard = copySide(deps, file.path, creator, conflictStat);
     const originalCard = originalSide(deps, path, originalHead, originalStat, isMine);
     rows.push({
       path,
       conflictPath: file.path,
-      type: conflictType(path),
+      type,
       conflictFileIsMine: isMine,
-      sameContent: await sidesMatch(deps, path, file.path, originalStat, conflictStat),
+      // Only a note is compared: binaries never offer Remove conflict, and
+      // reading them whole on every open would cost the most.
+      sameContent: type === "note" && await sameContentHolds(deps.read, path, file.path),
       mine: isMine ? conflictCard : originalCard,
       theirs: isMine ? originalCard : conflictCard,
     });
@@ -185,18 +188,6 @@ export async function sameContentHolds(
   } catch {
     return false;
   }
-}
-
-/** A size difference rules out equal content without reading either file. */
-function sidesMatch(
-  deps: ConflictRowsDeps,
-  path: string,
-  conflictPath: string,
-  original: FileStat | null,
-  conflict: FileStat | null,
-): Promise<boolean> {
-  if (!original || !conflict || original.size !== conflict.size) return Promise.resolve(false);
-  return sameContentHolds(deps.read, path, conflictPath);
 }
 
 function statOrNull(deps: ConflictRowsDeps, path: string): Promise<FileStat | null> {

@@ -35,7 +35,7 @@ import {
 
 export interface ConflictsModalDeps {
   loadRows: (deviceNames: Map<string, string> | null) => Promise<ConflictRow[]>;
-  /** Executes the resolution; returns the kept copy path for keep both. */
+  /** Executes the resolution; returns the kept conflict path for keep both. */
   resolve: (row: ConflictRow, action: ResolutionAction) => Promise<string | null>;
   /** One-shot deviceId→name fetch; null on failure keeps the neutral labels. */
   remoteNames?: () => Promise<Map<string, string> | null>;
