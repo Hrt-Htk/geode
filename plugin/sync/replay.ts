@@ -135,19 +135,7 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      // #59: resolve what a killed session left, once per connection, before this
-      // connection's versions are applied. Bounded: see START_PASS_MS.
-      const pass = this.resolveStartRecord(state, keys);
-      try {
-        this.reapplyParked(await withTimeout(pass, START_PASS_MS, "interrupted-write pass"));
-      } catch (error) {
-        log.warn("interrupted-write pass did not finish, retrying at the next connection", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // The abandoned pass keeps running: what it resolves must not strand the versions
-        // parked for those paths.
-        void pass.then((resolved) => this.reapplyParked(resolved)).catch(() => {});
-      }
+      await this.runStartPass(state, keys);
       const entries = coalesceReplay(this.replayBuffer);
       this.replayBuffer = [];
       const deps = this.buildApplyDeps(state, keys);
@@ -262,6 +250,22 @@ export class ReplayPipeline {
     const run = this.versionQueue.then(fn);
     this.versionQueue = run.catch(() => {});
     return run;
+  }
+
+  /** #59: resolve what a killed session left, once per connection, before this
+   * connection's versions are applied. Bounded: see START_PASS_MS. */
+  private async runStartPass(state: StateDB, keys: VaultKeys): Promise<void> {
+    const pass = this.resolveStartRecord(state, keys);
+    try {
+      this.reapplyParked(await withTimeout(pass, START_PASS_MS, "interrupted-write pass"));
+    } catch (error) {
+      log.warn("interrupted-write pass did not finish, retrying at the next connection", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // The abandoned pass keeps running: what it resolves must not strand the versions
+      // parked for those paths.
+      void pass.then((resolved) => this.reapplyParked(resolved)).catch(() => {});
+    }
   }
 
   /** #59: the record a killed session left is resolved once per connection, before its
