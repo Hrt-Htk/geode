@@ -175,6 +175,10 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
     await obsidian.screenshot(shotPath("435-phone-05-gone.png"));
     await evalClick(obsidian, "[data-testid=geode-conflict-back]");
     await expect(goneReview).not.toBeVisible();
+    // The step 7 list and its review can linger in the DOM on mobile (closing
+    // animation): close everything, then reopen the list so it is rebuilt.
+    await dismissModals(obsidian);
+    await expect(obsidian.win.locator(".geode-conflict-review-modal")).toHaveCount(0);
 
     /* 8. #68: both sides hold the same content. The review keeps both cards,
        says so and offers Remove conflict alone; it deletes the side file. */
@@ -183,8 +187,18 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
       await app.vault.create(${JSON.stringify(SAME_CONFLICT_PATH)}, ${JSON.stringify(SAME_BODY)});
       return true;
     `);
-    await expect(row).toHaveCount(1, { timeout: 15_000 });
-    await evalClick(obsidian, "[data-testid=geode-conflict-review]");
+    await obsidian.eval(`app.plugins.plugins.geode.openConflictsModal(); return true;`);
+    const sameRowSelector = `[data-testid=geode-conflict-row][data-path="${SAME_PATH}"]`;
+    await expect(obsidian.win.locator(sameRowSelector)).toHaveCount(1, { timeout: 15_000 });
+    // Click this row's Review: the document may still hold an older row's button.
+    await obsidian.eval(`
+      (() => {
+        const row = document.querySelector(${JSON.stringify(sameRowSelector)});
+        if (!row) throw new Error("no conflict row for ${SAME_PATH}");
+        row.querySelector("[data-testid=geode-conflict-review]").click();
+        return true;
+      })()
+    `);
     const sameReview = obsidian.win.locator(".geode-conflict-review-modal");
     await expect(sameReview.locator("[data-testid=geode-conflict-same]")).toContainText(
       "Both versions are the same.",
@@ -217,6 +231,14 @@ test("gate9 conflicts modal lists conflict files, reviews and opens them", async
         { timeout: 15_000 },
       )
       .toBe(true);
+    // Leave no conflict row behind for the next phone spec on this device.
+    await obsidian.eval(`
+      for (const p of [${JSON.stringify(SAME_PATH)}, ${JSON.stringify(SAME_CONFLICT_PATH)}]) {
+        const file = app.vault.getAbstractFileByPath(p);
+        if (file) await app.vault.delete(file);
+      }
+      return true;
+    `);
     await dismissModals(obsidian);
   } finally {
     await obsidian.close();
