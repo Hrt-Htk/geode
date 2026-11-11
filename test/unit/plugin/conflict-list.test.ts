@@ -118,7 +118,8 @@ const CONFLICT_PATH = "Notes/Plan (conflict Laptop B 2026-10-21 1405).md";
 
 /** A row builder over one conflict pair: the original's server head at version 3
  * (device-a, written 555), the copy's own mtime 2_000. `stat` reports the real
- * byte length of each side, so a CRLF/LF pair really does differ in size. */
+ * byte length of each side, so a CRLF/LF pair really does differ in size;
+ * `statFails` makes one side's stat throw, as a hard FS error does. */
 function deps(
   over: {
     original?: string;
@@ -127,9 +128,11 @@ function deps(
     deviceId?: string;
     pair?: { original: string; conflict: string };
     reads?: string[];
+    statFails?: "original" | "conflict";
   } = {},
 ): ConflictRowsDeps {
   const pair = over.pair ?? { original: PATH, conflict: CONFLICT_PATH };
+  const failPath = over.statFails ? pair[over.statFails] : null;
   const bytes = (path: string) =>
     new TextEncoder().encode(
       path === pair.original
@@ -146,13 +149,14 @@ function deps(
     chunk_hashes: [],
     deleted: false,
   });
+  const statOf = (path: string) => ({
+    size: bytes(path).length,
+    mtime: path === pair.original ? 1_000 : 2_000,
+  });
   return {
     files: () => [{ path: pair.original }, { path: pair.conflict }],
     stat: (path) =>
-      Promise.resolve({
-        size: bytes(path).length,
-        mtime: path === pair.original ? 1_000 : 2_000,
-      }),
+      path === failPath ? Promise.reject(new Error("stat failed")) : Promise.resolve(statOf(path)),
     read: (path) => {
       over.reads?.push(path);
       return Promise.resolve(bytes(path));
@@ -246,6 +250,17 @@ Deno.test("buildConflictRows - the conflict copy is labelled with its own device
     // The file's mtime, never the copy's own server version time.
     assertEquals(copy.time, 2_000);
   }
+});
+
+Deno.test("buildConflictRows - a stat that throws keeps the row, its size unknown", async () => {
+  // A hard FS error is not fatal: the row stays, with no size, and the original
+  // still takes the server head's time.
+  const [noOriginal] = await buildConflictRows(deps({ statFails: "original" }));
+  assertEquals(noOriginal.mine.size, null);
+  assertEquals(noOriginal.mine.time, 555);
+  const [noConflict] = await buildConflictRows(deps({ statFails: "conflict" }));
+  assertEquals(noConflict.theirs.size, null);
+  assertEquals(noConflict.theirs.time, null);
 });
 
 Deno.test("formatSize renders bytes, KB and MB", () => {

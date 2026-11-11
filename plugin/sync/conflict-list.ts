@@ -144,22 +144,18 @@ export async function buildConflictRows(deps: ConflictRowsDeps): Promise<Conflic
     const fromName = conflictDeviceName(file.path);
     const [originalHead, originalStat, conflictStat, creator] = await Promise.all([
       serverHead(deps, path),
-      deps.stat(path),
-      deps.stat(file.path),
+      statOrNull(deps, path),
+      statOrNull(deps, file.path),
       conflictCreator(deps, file.path, fromName),
     ]);
     const isMine = conflictFileIsMine(file.path, deps.deviceName, creator.id, deps.deviceId);
     const type = conflictType(path);
-    const conflictCard: ConflictSide = {
-      device: creator.name,
-      time: conflictStat.mtime,
-      size: conflictStat.size,
-    };
-    const originalCard: ConflictSide = {
-      device: originalDeviceName(deps, path, originalHead, isMine),
-      time: originalHead?.time ?? originalStat.mtime,
-      size: originalStat.size,
-    };
+    const conflictCard = side(creator.name, conflictStat);
+    const originalCard = side(
+      originalDeviceName(deps, path, originalHead, isMine),
+      originalStat,
+      originalHead?.time,
+    );
     rows.push({
       path,
       conflictPath: file.path,
@@ -207,6 +203,17 @@ async function conflictCreator(
     id,
     name: fromName ?? (id ? deps.deviceNames?.get(id) : undefined) ?? REMOTE_FALLBACK,
   };
+}
+
+/** A failed stat is not fatal: the row keeps its label, with an unknown size. */
+function statOrNull(deps: ConflictRowsDeps, path: string): Promise<FileStat | null> {
+  return deps.stat(path).catch(() => null);
+}
+
+/** One side's card: the device that wrote it, the head version's time when there
+ * is one and the file's own mtime otherwise, and its size. */
+function side(device: string, stat: FileStat | null, headTime?: number): ConflictSide {
+  return { device, time: headTime ?? stat?.mtime ?? null, size: stat?.size ?? null };
 }
 
 /** The device that wrote the version the original holds: the head version's
