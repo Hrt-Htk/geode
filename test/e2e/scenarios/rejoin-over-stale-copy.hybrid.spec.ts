@@ -150,10 +150,13 @@ test("rejoin over a stale copy: the server wins, nothing is resurrected (phone)"
     // one): the user opens it from Settings, which is the same call.
     await B.eval("app.plugins.plugins.geode.startSetupWizard(); return true;");
     await focusSetupWizard(B);
-    await B.eval(
-      `document.querySelector('[data-testid="geode-wizard-join"]').click(); return true;`,
-    );
-    await B.win.locator('[data-testid="geode-join-server"]').waitFor();
+    // Drive the wizard with a real Playwright click scoped to the modal: a raw DOM click fires on
+    // whatever node comes first in the document and reports nothing when the step does not render,
+    // which surfaced as a bare 45 s actionTimeout on the next locator (#59).
+    const wizard = B.win.locator('.modal:has([data-testid="geode-wizard-join"])');
+    await wizard.locator('[data-testid="geode-wizard-join"]').click();
+    // The join step replaces the join button, so the field is not inside `wizard` any more.
+    await B.win.locator('[data-testid="geode-join-server"]').waitFor({ timeout: 60_000 });
     await B.eval(`
       document.querySelector('[data-testid="geode-join-server"]').value = ${
       JSON.stringify(server.url)
