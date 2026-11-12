@@ -10,7 +10,7 @@ const ROOT_MANIFEST = JSON.stringify({
   name: "Geode",
   version: "0.41.8",
   minAppVersion: "1.8.7",
-  main: "main.js",
+  isDesktopOnly: false,
 });
 
 Deno.test("stampManifest: the released version overrides the promoted one", () => {
@@ -25,7 +25,7 @@ Deno.test("stampManifest: every other field comes from the root manifest", () =>
     name: "Geode",
     version: "0.42.0",
     minAppVersion: "1.8.7",
-    main: "main.js",
+    isDesktopOnly: false,
   });
 });
 

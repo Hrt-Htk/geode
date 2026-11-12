@@ -208,9 +208,17 @@ one works.
 
 ## Install the plugin
 
+### From the community directory
+
+1. In Obsidian, open **Settings → Community plugins → Browse** and search for Geode.
+2. Click **Install**, then **Enable**.
+
+Obsidian then updates Geode with your other community plugins.
+
 ### With BRAT
 
-BRAT is a community plugin that installs other plugins from a GitHub repository.
+BRAT installs plugins straight from a GitHub repository, so it gets every release here, including
+the betas, before they are promoted.
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for BRAT, then install and
    enable it.
@@ -225,7 +233,8 @@ BRAT is a community plugin that installs other plugins from a GitHub repository.
 2. Create the folder `<vault>/.obsidian/plugins/geode/`.
 3. Put the three files in it, then enable Geode under **Settings → Community plugins**.
 
-Desktop only: phone file apps hide the `.obsidian` folder, so on a phone, use BRAT.
+Phone file apps hide the `.obsidian` folder, so on a phone install from the community directory
+instead.
 
 ## Set up the first device
 
@@ -300,11 +309,10 @@ release is cut, and `/version` reports the one that is running. The tag in `comp
 which releases you get: `latest` moves only when a release is promoted to the community directory,
 `beta` moves on every release.
 
-**Plugin:** in BRAT's settings, click **Update** next to Geode, or replace the three files with the
-ones from the latest release. BRAT installs every release, including pre-releases: a new build
-reaches you as soon as it is cut. Only a release that has been out for a while without trouble is
-promoted, and that promoted build is the one the Obsidian community directory offers once Geode is
-listed there.
+**Plugin:** from the community directory, click **Check for updates** under **Settings → Community
+plugins**; there you get the versions that were promoted. BRAT installs every release, including
+pre-releases, so a new build reaches you as soon as it is cut: click **Update** next to Geode in
+BRAT's settings, or replace the three files with the ones from the latest release.
 
 ## Backup and restore
 
@@ -415,8 +423,8 @@ address, and every request the plugin makes goes to that address and nowhere els
 - **The rest of the plugin.** Creating and listing vaults, joining one, file history, restore, the
   deleted-files list and the space figure in settings are calls to the same address.
 - **Update notices.** Your own server reports a version mismatch when the plugin connects. The plugin
-  reads no update feed of its own; updating is BRAT's job, or the download in
-  [Install the plugin](#install-the-plugin).
+  reads no update feed of its own; updating is Obsidian's job through the community directory or
+  BRAT, or the download in [Install the plugin](#install-the-plugin).
 
 The server receives:
 
