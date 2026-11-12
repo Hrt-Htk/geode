@@ -42,7 +42,7 @@ only one of them is a bug.
 2. Node.js 22: `nvm` or nodesource. 20.12 or newer is required for `process.loadEnvFile`, which
    `test/e2e/playwright.config.ts` uses to load `.env.local`.
 3. Obsidian: the `.deb` from https://obsidian.md/download, or the AppImage. Only the Playwright E2E
-   layer needs it. `isDesktopOnly` is not set, so the plugin targets desktop and mobile.
+   layer needs it. `isDesktopOnly` is false, so the plugin targets desktop and mobile.
 4. adb: `sudo apt install adb`. Only the `phone` and `hybrid` Playwright projects need it; the
    connect procedure is the `geode-phone-e2e` skill.
 5. xvfb: only for a headless desktop E2E run. `sudo apt install xvfb`, then prefix the Playwright
@@ -128,8 +128,9 @@ Playwright run.
 
 ### 3.3 `manifest.json` and `versions.json` (repo root)
 
-`manifest.json` is the plugin manifest (`id: geode`, `main: main.js`); `versions.json` maps each plugin
-version to its `minAppVersion`. Both live at the repo root, which is where the community directory
+`manifest.json` is the plugin manifest (`id: geode`, `main: main.js`, `isDesktopOnly: false`: the
+plugin runs on mobile, and its one Node user loads behind a desktop guard, #15); `versions.json` maps
+each plugin version to its `minAppVersion`. Both live at the repo root, which is where the community directory
 reads them; they are the single source for the directory. `styles.css` stays in
 `plugin/manifest/`.
 

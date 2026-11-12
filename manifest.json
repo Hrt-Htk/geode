@@ -6,10 +6,5 @@
   "description": "Self-hosted, end-to-end encrypted sync for your vaults.",
   "author": "Hrt-Htk",
   "main": "main.js",
-  "views": {
-    "geode-debug": {
-      "id": "geode-debug",
-      "type": "right"
-    }
-  }
+  "isDesktopOnly": false
 }
