@@ -1,7 +1,6 @@
 // #20: the community directory reads the root manifest.json at the HEAD of main, and the
 // submission review rejects a manifest that misses a required property or adds one the schema
-// does not define (a stray `views` key did). `main` is not in the docs table but Obsidian reads
-// it and published plugins ship it.
+// does not define (a stray `views` key did).
 
 import { assertEquals } from "@std/assert";
 
@@ -19,7 +18,7 @@ const REQUIRED = [
   "name",
   "version",
 ];
-const OPTIONAL = ["authorUrl", "fundingUrl", "helpUrl", "main"];
+const OPTIONAL = ["authorUrl", "fundingUrl", "helpUrl"];
 
 Deno.test("manifest: carries every required directory property", () => {
   const missing = REQUIRED.filter((key) => !(key in manifest));
