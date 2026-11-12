@@ -37,6 +37,7 @@ export class PreviewModal extends Modal {
 
   constructor(app: App, private deps: PreviewDeps) {
     super(app);
+    this.modalEl.addClass("geode-trash-preview-modal");
   }
 
   onOpen(): void {

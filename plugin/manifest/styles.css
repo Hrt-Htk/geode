@@ -1499,15 +1499,17 @@ body:not(.is-phone) .geode-history-modal .modal-content {
   padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-4));
 }
 
-/* #10/#68: the title wraps in the space left of ✕ instead of running under it
-   (history and conflict review modals). */
+/* #10/#68/#77: the title wraps in the space left of ✕ instead of running under it
+   (history, conflict review and trash preview modals). */
 .is-phone .geode-history-modal .modal-header,
-.is-phone .geode-conflict-review-modal .modal-header {
+.is-phone .geode-conflict-review-modal .modal-header,
+.is-phone .geode-trash-preview-modal .modal-header {
   padding-inline-end: calc(var(--touch-size-m, 44px) + var(--size-4-4) * 2);
 }
 
 .is-phone .geode-history-modal .modal-title,
-.is-phone .geode-conflict-review-modal .modal-title {
+.is-phone .geode-conflict-review-modal .modal-title,
+.is-phone .geode-trash-preview-modal .modal-title {
   max-width: 100%;
   text-align: start;
   white-space: normal;
