@@ -732,8 +732,11 @@ leaves its row bare: `Deleted`, `Restored from trash`.
 
 **History on the phone** (`manifest/styles.css`, `.is-phone .geode-history-*`): a full-height sheet
 as wide as the phone (the desktop sizing no longer overrides it); the rows are `--touch-size-s` tap
-targets. The title wraps in the space left of ✕, the list or the preview takes the rest of the height
-(the list scrolls; Back opens the preview), and the two-pane sizing stays behind `body:not(.is-phone)`.
+targets. One title rule (`#10/#68/#77`) serves every phone modal with a dynamic title: the header
+reserves the ✕'s width and `.modal-title` drops Obsidian's nowrap cap and wraps in what is left, so
+history, conflict review and the trash preview show the whole file name. The list or the preview
+takes the rest of the height (the list scrolls; Back opens the preview), and the two-pane sizing
+stays behind `body:not(.is-phone)`.
 The code splits the window the way the styles do: `history-view.ts` `singlePane(Platform)` asks
 `Platform.isPhone`, not `isMobile`, so a tablet keeps the desktop two-pane window (#24).
 
