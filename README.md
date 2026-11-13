@@ -464,6 +464,8 @@ Found a security problem? Report it privately, not in a public issue: [`SECURITY
 - No live collaborative editing. When two devices change the same note, Geode merges the changes,
   or keeps both versions in a conflict file when it can't.
 - One sync tool per vault (see [Requirements](#requirements)).
+- A file or folder whose name contains `: * ? " < > |` does not sync. Windows and Android cannot store
+  such a name, so it stays on the device that has it. Rename it to sync it.
 - One vault stores at most **20 GiB** on the server by default: its chunks plus the metadata of every
   change it keeps. Past that, uploads and trash restores are refused (blob POST answers `507`, a commit
   or restore `storage_full`). Deleting frees space only once compaction and blob garbage collection

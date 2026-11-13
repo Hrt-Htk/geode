@@ -88,6 +88,12 @@ Scope helpers (`isSyncable`, the category to path mapping) live in the same modu
 dir is never hard-coded; it comes from `vault.configDir`. The rejoin backup folder (`Geode backup/`) is
 the one other path `isSyncable` rejects on every device, before the folder scope (#701, §7a).
 
+A path holding a character Windows or Android cannot store (`: * ? " < > |` or a control character)
+never syncs on any device (#82). The same rule serves both directions: the device that holds such a
+file does not upload it, and a device that receives one from an older plugin passes over it instead of
+failing the write on every replay, which held its sync position behind that version. The file stays
+on the device that has it; rename it to sync it.
+
 ---
 
 ## 3. Local state
