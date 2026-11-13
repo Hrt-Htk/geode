@@ -104,3 +104,22 @@ Deno.test("isSyncable - configDir without trailing slash and with trailing slash
   assertEquals(isSyncable(".config/obsidian/app.json", ".config/obsidian", settings), true);
   assertEquals(isSyncable(".config/obsidian/app.json", ".config/obsidian/", settings), true);
 });
+
+Deno.test("isSyncable - a name another platform cannot store never syncs", () => {
+  // A path Obsidian on Windows indexed for a file opened from outside the vault.
+  assertEquals(syncable("file:C:/elsewhere/note.md", syncObsidianTrue), false);
+  for (const name of ["a:b.md", "a*b.md", "a?b.md", 'a"b.md', "a<b.md", "a>b.md", "a|b.md"]) {
+    assertEquals(syncable(`notes/${name}`, syncObsidianTrue), false, name);
+  }
+  assertEquals(syncable("bad:folder/x.md", syncObsidianTrue), false);
+  assertEquals(syncable("notes/tab\there.md", syncObsidianTrue), false);
+  assertEquals(syncable(".obsidian/snippets/a:b.css", syncObsidianTrue), false);
+});
+
+Deno.test("isSyncable - ordinary punctuation in a name still syncs", () => {
+  for (
+    const name of ["Q&A (draft) #1.md", "it's 50% [done].md", "été, à l'école!.md", "a+b=c;d~e.md"]
+  ) {
+    assertEquals(syncable(`notes/${name}`, syncObsidianTrue), true, name);
+  }
+});

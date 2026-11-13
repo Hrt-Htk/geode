@@ -5,6 +5,7 @@ import { type ServerVersion } from "../../../core/protocol.ts";
 import { deriveKeys, encryptMetadata, type VaultKeys } from "../../../core/crypto.ts";
 import { b64encode } from "../../../core/protocol.ts";
 import { assert, assertEquals } from "@std/assert";
+import { DEFAULT_SETTINGS, isSyncable } from "../../../plugin/plumbing/settings-types.ts";
 
 // applyVersion must skip (and advance the cursor past) versions for out-of-scope
 // paths, and apply in-scope ones. #342
@@ -101,4 +102,21 @@ Deno.test("apply - scope is re-read live: a path that becomes in-scope applies",
   deps.state.noteReceived(2);
   await applyVersion(msg, deps);
   assertEquals(deps.state.getLocalFile("excluded/x.md")?.last_seen_version, 2);
+});
+
+// #82: a peer uploaded a name this platform cannot store. The write can never succeed, so
+// the version must be passed over instead of holding the sync position behind it forever.
+Deno.test("apply - a name the platform cannot store is passed over, not written", async () => {
+  const { deps, state } = makeDeps((p) => isSyncable(p, ".obsidian", DEFAULT_SETTINGS));
+  let writes = 0;
+  deps.vault.adapter.writeBinary = () => {
+    writes++;
+    return Promise.reject(new Error("EINVAL: invalid name"));
+  };
+  const path = "file:C:/elsewhere/note.md";
+  state.noteReceived(1);
+  await applyVersion(await makeMsg(path, 1, 1), deps);
+  assertEquals(writes, 0, "nothing is written for the unstorable name");
+  assertEquals(state.getLocalFile(path), null, "no local row for the unstorable name");
+  assertEquals(state.getSyncCursor(), 1, "the position moves past the unstorable version");
 });

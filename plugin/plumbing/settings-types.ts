@@ -286,10 +286,16 @@ export function isRejoinBackupPath(path: string): boolean {
   return norm === REJOIN_BACKUP_FOLDER || norm.startsWith(`${REJOIN_BACKUP_FOLDER}/`);
 }
 
-// Precedence: the rejoin backup folder and folder scope win over everything, then the
-// config rules apply inside the config dir, then everything else syncs.
+/** #82: characters Windows and Android cannot store in a name. A path holding one never
+ * syncs on any device: uploaded, it could not be written by the others, and a version
+ * that cannot be written holds their sync position forever. */
+const UNPORTABLE_NAME = /[:*?"<>|\p{Cc}]/u;
+
+// Precedence: an unportable name, the rejoin backup folder and folder scope win over
+// everything, then the config rules apply inside the config dir, then everything else syncs.
 export function isSyncable(path: string, configDir: string, settings: PluginSettings): boolean {
   const norm = normalizePath(path);
+  if (UNPORTABLE_NAME.test(norm)) return false;
   // #701: the backup folder is out of scope on every device, whatever the folder scope
   // says, so it can never become a create.
   if (isRejoinBackupPath(norm)) return false;
