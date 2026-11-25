@@ -49,7 +49,9 @@ If `local.md` exists in this skill folder, read it first: it holds the maintaine
 - **Runner is `node node_modules/@playwright/test/cli.js`, NOT `npx playwright`** (npx double-loads →
   "did not expect test()").
 - **Agents and E2E runs can run in parallel**, each in its own Paseo worktree (never `git worktree add`);
-  phone and hybrid runs queue for the phone themselves. A Paseo worktree gets its own `node_modules`
+  phone and hybrid runs queue for the phone themselves. Desktop Obsidian runs do not queue: run one at
+  a time. Two at once, or one beside a leftover mockup Obsidian + Xvfb, fail with "Obsidian exited
+  before CDP was ready". After a run or a mockup, kill your own leftover Obsidian and Xvfb by PID. A Paseo worktree gets its own `node_modules`
   from setup: never link the main checkout's. Build the plugin in the worktree first so
   `GEODE_PHONE_PUSH=1` pushes that branch's bundle.
 - **A "device unauthorized" / "no devices" error at `connectPhone` is an environment drop, not a test
@@ -61,7 +63,7 @@ Several agents gate their changes on this one phone in parallel. Every phone/hyb
 takes an **exclusive flock for the whole run** in `test/e2e/global-setup.ts` (real
 `flock(2)` on `/tmp/geode-phone.lock`, the same lock shell users have used by convention), and
 releases on teardown, and on `kill -9`, because the flock child's stdin pipe closes with the
-runner. Desktop `--project=default` runs take no lock.
+runner. Desktop `--project=default` runs take no lock: keep them one at a time (above).
 
 **FIFO order (#508):** a run registers a ticket under `/tmp/geode-phone.queue/` and only takes the
 flock when its ticket is at the head (dead-pid tickets are pruned), so concurrent runs are served in
