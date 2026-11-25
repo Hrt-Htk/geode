@@ -211,7 +211,8 @@ only: without Claude Code they never run, and CI is the enforcement.
 
 ## Docs drift
 
-Every doc under `docs/` declares the code it attests in its frontmatter, under one of two keys:
+Every doc under `docs/` (except curated release notes under `docs/releases/`) declares the code it
+attests in its frontmatter, under one of two keys:
 
 ```
 ---

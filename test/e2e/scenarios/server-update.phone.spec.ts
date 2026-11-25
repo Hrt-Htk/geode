@@ -70,6 +70,7 @@ test("server update (phone): notice, row, confirm, progress, and both command re
 
     /* The plugin reports a version the server is behind, then the real handler runs. The
        notice is once per plugin version, and that setting outlives a previous run. */
+    await clearNotices(obsidian);
     await obsidian.eval(`
       const p = app.plugins.plugins.geode;
       window.__geodeOrigManifestVersion = p.manifest.version;

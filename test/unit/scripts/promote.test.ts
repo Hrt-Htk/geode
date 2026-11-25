@@ -6,7 +6,6 @@
 // stubbed via PATH, so nothing here touches GitHub.
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import { prevReleaseTag } from "../../../scripts/promote.ts";
 
 const REPO_ROOT = new URL("../../../", import.meta.url);
 
@@ -14,11 +13,6 @@ const GH_STUB = `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "api repos/{owner}/{repo}/releases/generate-notes")
-    echo "## What's Changed"
-    echo ""
-    echo "* promoted notes"
-    ;;
   "release edit") echo "https://example.invalid/releases/tag/$3" ;;
   "run list")
     if [ "\${GH_LIST_FAIL:-}" = "true" ]; then
@@ -63,8 +57,10 @@ type Fixture = {
 };
 
 /** A throwaway repo on `main` with a bare origin: promoted at 0.0.1, beta 0.0.2-beta.1 tagged. */
-async function tempRepo(opts: { tagBeta?: boolean } = {}): Promise<Fixture> {
-  const { tagBeta = true } = opts;
+async function tempRepo(
+  opts: { tagBeta?: boolean; releaseNotes?: string | null } = {},
+): Promise<Fixture> {
+  const { tagBeta = true, releaseNotes = "## Highlights\n\n- Promoted change.\n" } = opts;
   const base = await Deno.realPath(await Deno.makeTempDir({ prefix: "geode-promote-" }));
   const repo = `${base}/repo`;
   const home = `${base}/home`;
@@ -122,6 +118,14 @@ async function tempRepo(opts: { tagBeta?: boolean } = {}): Promise<Fixture> {
     await git(["commit", "-m", "chore(release): 0.0.2-beta.1"]);
     await git(["tag", "0.0.2-beta.1"]);
     await git(["push", "origin", "main", "0.0.2-beta.1"]);
+  }
+
+  if (releaseNotes !== null) {
+    await Deno.mkdir(`${repo}/docs/releases`, { recursive: true });
+    await Deno.writeTextFile(`${repo}/docs/releases/0.0.2.md`, releaseNotes);
+    await git(["add", "-A"]);
+    await git(["commit", "-m", "docs(release): 0.0.2 notes"]);
+    await git(["push", "origin", "main"]);
   }
 
   return { base, repo, home, log, env, git };
@@ -198,7 +202,7 @@ Deno.test("promote: bumps manifest, versions, and package.json, pushes main and 
   }
 });
 
-Deno.test("promote: waits for release.yml and rewrites release notes since previous final", async () => {
+Deno.test("promote: waits for release.yml and uses docs/releases/X.Y.Z.md as release body", async () => {
   const fx = await tempRepo();
   try {
     const res = await runPromote(fx);
@@ -206,19 +210,40 @@ Deno.test("promote: waits for release.yml and rewrites release notes since previ
     const lines = (await Deno.readTextFile(fx.log)).split("\n");
     const listIdx = lines.findIndex((l) => l.includes("--workflow=release.yml"));
     const watchIdx = lines.findIndex((l) => l.startsWith("run watch 7 --exit-status"));
-    const notesIdx = lines.findIndex((l) => l.includes("generate-notes"));
     const editIdx = lines.findIndex((l) => l.startsWith("release edit 0.0.2"));
     assert(listIdx >= 0, `must poll release.yml runs:\n${lines.join("\n")}`);
     assert(watchIdx > listIdx, "watches the release run");
-    assert(notesIdx > watchIdx, "generates notes after release run succeeds");
-    assert(editIdx > notesIdx, "edits release notes after generating them");
-    assertStringIncludes(lines[notesIdx], "tag_name=0.0.2");
-    assertStringIncludes(lines[notesIdx], "previous_tag_name=v0.0.1");
+    assert(editIdx > watchIdx, "edits release notes after release run succeeds");
     assertStringIncludes(lines[editIdx], "--prerelease=false");
     assertStringIncludes(lines[editIdx], "--latest");
-    assertStringIncludes(lines[editIdx], "## What's Changed");
+    assertStringIncludes(lines[editIdx], "--notes-file");
+    assertStringIncludes(lines[editIdx], "docs/releases/0.0.2.md");
   } finally {
     await Deno.remove(fx.base, { recursive: true });
+  }
+});
+
+Deno.test("promote: refuses without docs/releases/X.Y.Z.md before modifying or pushing anything", async () => {
+  for (const releaseNotes of [null, "   \n"]) {
+    const fx = await tempRepo({ releaseNotes });
+    try {
+      const beforeRemote = await revParse(`${fx.base}/origin.git`, "main");
+      const res = await runPromote(fx);
+      assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
+      assertStringIncludes(res.stderr, "docs/releases/0.0.2.md");
+      assertEquals(
+        JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`)).version,
+        "0.0.1",
+      );
+      assertEquals(
+        JSON.parse(await Deno.readTextFile(`${fx.repo}/package.json`)).version,
+        "0.0.2-beta.1",
+      );
+      assertEquals(await revParse(`${fx.base}/origin.git`, "main"), beforeRemote);
+      assertEquals((await Deno.readTextFile(fx.log)).trim(), "", "gh must not run on refusal");
+    } finally {
+      await Deno.remove(fx.base, { recursive: true });
+    }
   }
 });
 
@@ -397,18 +422,4 @@ Deno.test("promote: release.yml triggers on beta and final tags and tags images 
   assertStringIncludes(yaml, "prerelease: ${{ contains(github.ref_name, '-beta.') }}");
   assertStringIncludes(yaml, "ghcr.io/hrt-htk/geode:beta");
   assertStringIncludes(yaml, "ghcr.io/hrt-htk/geode:latest");
-});
-
-// #12: releases are tagged with the bare manifest version, so the community
-// directory can match tag to manifest. Tags cut before #12 keep their `v`.
-Deno.test("prevReleaseTag: the bare tag wins when both forms exist", () => {
-  assertEquals(prevReleaseTag("0.42.0", ["0.42.0", "v0.42.0"]), "0.42.0");
-});
-
-Deno.test("prevReleaseTag: a pre-#12 tag is found by its v-prefixed form", () => {
-  assertEquals(prevReleaseTag("0.41.8", ["v0.41.7", "v0.41.8"]), "v0.41.8");
-});
-
-Deno.test("prevReleaseTag: null when the version was never tagged", () => {
-  assertEquals(prevReleaseTag("0.42.1", ["v0.41.8", "0.42.0"]), null);
 });

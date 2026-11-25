@@ -4,6 +4,7 @@ import { builtinModules } from "node:module";
 import path from "node:path";
 import { findLoadTimeNodeRequires } from "./bundle-node-requires.mjs";
 import { stampManifest } from "./manifest-stamp.mjs";
+import { generateReleaseNotesModule, readReleaseNotesDir } from "./release-notes-bundle.mjs";
 
 const watch = process.argv.includes("--watch");
 const rootDir = process.cwd();
@@ -76,6 +77,13 @@ for (const file of ["main.js", "main.js.map", "manifest.json", "styles.css", "ve
 
 const generatedDir = path.join(rootDir, "plugin", "_generated");
 await mkdir(generatedDir, { recursive: true });
+
+// #93: bundle docs/releases/X.Y.Z.md deterministically into the plugin build.
+const releaseNotes = await readReleaseNotesDir(path.join(rootDir, "docs", "releases"));
+await writeFile(
+  path.join(generatedDir, "release-notes.ts"),
+  generateReleaseNotesModule(releaseNotes),
+);
 
 // Generate base64-inlined libsodium WASM + a patched libsodium-sumo. The Electron
 // renderer can't fetch the .wasm (it hangs), so we extract the wasm the Emscripten

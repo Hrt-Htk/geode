@@ -635,10 +635,10 @@ Each section yields rows (`settings-legacy.ts` `SettingsRow`): a `render` row de
   section collapsible (Advanced and Logs start collapsed) and supports the subset the tree uses:
   render rows, number and toggle controls, `visible`, cleanups (run on `hide()`).
 
-Four rows are real controls, searchable and bound through `getControlValue`/`setControlValue` onto
-`pluginSettings` + `saveSettings()`: Auto lock after (hours), Trash retention (days), Developer
-console (also mirrors the log to the DevTools console; the last row of the Logs page) and Sync
-config folder (also calls
+Five rows are real controls, searchable and bound through `getControlValue`/`setControlValue` onto
+`pluginSettings` + `saveSettings()`: Auto lock after (hours), Trash retention (days), Check for
+updates (on Advanced; refreshes the Plugin version row), Developer console (also mirrors the log to
+the DevTools console; the last row of the Logs page) and Sync config folder (also calls
 `setSyncObsidianConfig` and reconciles; Config to sync follows `visible`). Their names live in
 `settings-row-names.ts` because the E2E drives the rows by name (a control row cannot carry a testid
 on 1.13+), and a refused number puts the stored value back and shows the reason on both paths
@@ -666,21 +666,37 @@ into `serverUrl`, a bare host gets `http` on loopback or a private range (10/8, 
 100.64/10) and `https` anywhere else, and an already stored address without a scheme follows the same
 rule. The wizard, the flows and the modal all go through it, so no caller re-derives a scheme.
 
-**Server update** (`ui/server-update.ts`, `ui/server-update-logic.ts` for the decisions,
-`ui/server-update-modal.ts` for the dialog, `plumbing/update-client.ts` for the calls): a `Server
-update` row in Status shows `Server X, plugin Y.` with `Update` while the host job's heartbeat is
-fresh, and the copy button when it is not (`server.md` §11). The row is "versions match" quiet
-(`Server X.`, no control) and shows only the versions while the server refuses this plugin, because
-the refusal banner carries the action there. `Update` opens one dialog: the consequences, then the
-session's admin token (the same prompt as Devices, `ui/admin-token-modal.ts`), then the request and
-progress in the same dialog, then one result line. Closing the dialog hides it and the run keeps
-going: the status row reads `Updating the server.` while it does, and `Update` stays disabled. The
-result comes from the job's own words, mapped in `server-update-logic.ts`; a failed or missed run
-shows the command instead of pretending. The one-time notice after a plugin update is once per
-plugin version (`PluginSettings.updateNoticeVersion`), with the action only when the job can answer
-it. A server behind the plugin is no longer a status-line hint: the row and the notice carry it, so
-`Up to date. Last backup 2 min ago.` stays readable. The plugin's own update keeps its hint and
-banner.
+**Server update and version rows** (`ui/server-update.ts`, `ui/server-update-logic.ts` for the
+decisions, `ui/server-update-modal.ts` for the dialog, `ui/version-copy.ts` for blocked-session
+copy, `plumbing/update-client.ts` for the calls): Status always shows `Server version` (`X. Up to
+date.`, `X. Update available.`, `X. Updating.`, `X. Last update failed.`, or `X. Too old for this
+plugin.`) and `Plugin version` below it. One accent `Update` button appears whenever the server is
+older and not refused, whether or not the host update job is installed (`server.md` §11): when the
+job is installed, `Update` opens the confirm dialog (with a `What's new` link to GitHub releases,
+no target version before the result line, then the session's admin token prompt, progress, and one
+result line); when the job is not installed, `Update` opens the dialog directly with the compose
+command and `Copy command`. A failed update stays visible on `Server version` until a later update
+works. While the server refuses this plugin, the non-dismissible `Sync is stopped` banner carries
+the one `Update` button, and a successful in-plugin update restarts the unlocked session so sync
+resumes without reloading Obsidian. The one-time server update notice is once per plugin version
+(`PluginSettings.updateNoticeVersion`).
+
+**Plugin update check and What's new** (`ui/plugin-releases.ts`, `ui/whats-new-view.ts`,
+`ui/release-check-logic.ts`, `plumbing/release-client.ts`, build-bundled
+`plugin/_generated/release-notes.ts`): when
+`checkForUpdates` is on (default true; toggle at the top of Advanced), startup queries GitHub
+`releases/latest` (and raw `versions.json` on `main` when newer to check `minAppVersion`, never a
+release asset) over the platform HTTP layer (`requestUrl` on desktop, `fetch` on mobile). Failures
+are silent (debug log only). When a newer compatible final release exists, a one-time Notice
+(`lastNotifiedReleaseVersion`) links `Open in community plugins` to `obsidian://show-plugin?id=geode`,
+and the `Plugin version` row shows `X. Y is available.` with an accent `Update` opening the same
+link. When `checkForUpdates` is off, `Plugin version` shows only the bare installed version.
+Curated release notes in `docs/releases/X.Y.Z.md` are bundled deterministically by
+`scripts/plugin-build.mjs` and rendered in the `What's new` workspace tab (`WhatsNewView`, also
+opened from Advanced -> `What's new` -> `Open`). On startup, the tab opens once per device when the
+installed final version differs from `lastSeenVersion`; never on a fresh install (sets
+`lastSeenVersion` silently) and never for a beta. On a beta, `Open` shows the latest bundled final
+release's notes plus a link to GitHub releases; with no bundled notes, a short line and that link.
 
 **Status bar** (`statusbar.ts`, `statusbar-icon.ts`): a single icon whose color and tooltip encode the
 state: synced with last-sync age, syncing progress, pending count, offline with the retry delay, locked,
@@ -790,7 +806,8 @@ retention floor (#677, `../ops/trash-soft-delete.md` §5).
 | `sync/commit.ts`, `path-lock.ts`, `rename-*.ts`, `parked-moves.ts` | outbound commits, one-writer-per-path, rename links |
 | `sync/history-*.ts`, `export-vault.ts`, `recovery.ts`, `rebuild-flow.ts`, `join-plan.ts`, `rejoin.ts`, `rekey-*.ts` | history, export, resync and rejoin rebuilds, join mode, rejoin backup, re-key |
 | `ui/` | settings tab + sections, status bar/menu, modals, views |
-| `ui/server-update*.ts`, `plumbing/update-client.ts` | #44: the server update run, its dialog, the Status row's copy, the two HTTP calls |
+| `ui/server-update*.ts`, `ui/version-copy.ts`, `plumbing/update-client.ts` | #44/#51: server update run, dialog, Server version row, blocked copy, HTTP calls |
+| `ui/plugin-releases.ts`, `ui/whats-new-view.ts`, `ui/release-check-logic.ts`, `plumbing/release-client.ts` | #93: startup GitHub release check, Plugin version row, What's new tab |
 
 ---
 

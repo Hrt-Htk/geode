@@ -62,6 +62,12 @@ export interface PluginSettings {
   massDeleteMinPercent: number;
   /** #44: the plugin version the server update notice was last shown for (once per version). */
   updateNoticeVersion: string;
+  /** #93: check GitHub for a newer final Geode release when Obsidian starts. */
+  checkForUpdates: boolean;
+  /** #93: last Geode version seen on this device (controls the once-per-update What's new tab). */
+  lastSeenVersion: string;
+  /** #93: newest GitHub release version already notified on this device (once per version). */
+  lastNotifiedReleaseVersion: string;
 }
 
 // #454: config-category keys (the mockup ConfigModal's settings categories).
@@ -107,6 +113,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   massDeleteMinFiles: MASS_DELETE_MIN_FILES,
   massDeleteMinPercent: MASS_DELETE_MIN_PERCENT,
   updateNoticeVersion: "",
+  checkForUpdates: true,
+  lastSeenVersion: "",
+  lastNotifiedReleaseVersion: "",
 };
 
 const GEODE_PLUGIN_ID = "geode";

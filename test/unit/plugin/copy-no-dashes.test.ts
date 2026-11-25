@@ -161,6 +161,15 @@ import {
   UPDATE_WHATS_NEW,
   updateOutcome,
 } from "../../../plugin/ui/server-update-logic.ts";
+import {
+  CHECK_FOR_UPDATES_DESC,
+  PLUGIN_UPDATE_NOTICE_LINK,
+  pluginVersionRow,
+  WHATS_NEW_OPEN_BUTTON,
+  WHATS_NEW_ROW_DESC,
+  WHATS_NEW_ROW_NAME,
+} from "../../../plugin/ui/release-check-logic.ts";
+import { CHECK_FOR_UPDATES_ROW } from "../../../plugin/ui/settings-row-names.ts";
 import { copySpaceCheck, formatEta, liveEta } from "../../../plugin/ui/rekey-estimate.ts";
 import {
   CANCEL_BUTTON,
@@ -599,6 +608,20 @@ Deno.test("copy-no-dashes - the server update surfaces (#44/#51)", () => {
       ),
     ].flat(),
   );
+});
+
+Deno.test("copy-no-dashes - plugin update check and What's new (#93)", () => {
+  assertNoDashes("release-check", [
+    CHECK_FOR_UPDATES_ROW,
+    CHECK_FOR_UPDATES_DESC,
+    WHATS_NEW_ROW_NAME,
+    WHATS_NEW_ROW_DESC,
+    WHATS_NEW_OPEN_BUTTON,
+    PLUGIN_UPDATE_NOTICE_LINK,
+    pluginVersionRow({ own: "1.0.2", checkEnabled: false, checked: false, available: null }).desc,
+    pluginVersionRow({ own: "1.0.2", checkEnabled: true, checked: true, available: "1.0.2" }).desc,
+    pluginVersionRow({ own: "1.0.2", checkEnabled: true, checked: true, available: "1.0.3" }).desc,
+  ]);
 });
 
 Deno.test("copy-no-dashes - update hints (#529)", () => {

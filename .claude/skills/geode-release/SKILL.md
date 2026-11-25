@@ -26,7 +26,7 @@ Project-scoped to the Geode repo. Machine-specific values: read `.env.local` at 
 3. `deno task release X.Y.Z-beta.N`, then watch that tag's `release.yml` run to success.
 4. Update your own server (below) and confirm `/version` reports the new version.
 
-**Promote:** restate `X.Y.Z` and wait for the go, `deno task promote X.Y.Z`, then step 4 above.
+**Promote:** draft `docs/releases/X.Y.Z.md` from the betas' GitHub notes, get maintainer approval, commit via PR to `main`, restate `X.Y.Z` and wait for the go, run `deno task promote X.Y.Z`, then step 4 above.
 
 ## Release a beta (to BRAT + GHCR)
 
@@ -71,7 +71,7 @@ image is published (`gh run list --workflow=Release`), then update through the h
 gives you the rollback. The job pulls whatever tag `compose.yaml` pins: `latest`, a promoted release,
 by default; `beta` on a host that follows the betas.
 
-- **The plugin's own button**: Geode settings, **Server update** -> **Update** (asks for the admin
+- **The plugin's own button**: Geode settings, **Server version** -> **Update** (asks for the admin
   token). It answers in about a minute.
 - **Over ssh**, for a UI you cannot reach:
 
@@ -90,27 +90,31 @@ hand.
 
 ## Promote (final `X.Y.Z` to the community directory)
 
+Before running promote: draft `docs/releases/X.Y.Z.md` from the betas' GitHub notes, get maintainer
+approval, and commit it via PR to `main` (docs-only, so it does not trigger a new beta). The build
+bundles `docs/releases/X.Y.Z.md` into the plugin's What's new tab, and `promote` uses it as the
+GitHub release body.
+
 ```
 deno task promote X.Y.Z
 ```
 
 Runs `scripts/promote.ts`:
 
-1. Verifies at least one `X.Y.Z-beta.N` tag exists, is an ancestor of `HEAD`, and no commit touching
-   shipped paths (`plugin/`, `server/`, `core/`, `db/`) landed after the latest `X.Y.Z-beta.N` tag:
-   what reaches the directory is what was tested as a beta.
+1. Verifies at least one `X.Y.Z-beta.N` tag exists, is an ancestor of `HEAD`, no commit touching
+   shipped paths (`plugin/`, `server/`, `core/`, `db/`) landed after the latest `X.Y.Z-beta.N` tag,
+   and `docs/releases/X.Y.Z.md` exists and is non-empty: what reaches the directory is what was
+   tested as a beta, with approved release notes.
 2. Bumps `package.json`, sets root `manifest.json` `version` to `X.Y.Z`, and appends
    `versions.json` `X.Y.Z -> minAppVersion` (never edits an existing row).
 3. Commits `chore(release): promote X.Y.Z` and pushes `main`, so the tag commit's root `manifest.json`
    equals the release manifest.
 4. Tags `X.Y.Z` and pushes the tag. `release.yml` runs on that tag: builds and tags the server image
-   `X.Y.Z`, `latest`, and `beta` (so `:beta` reaches the final too), builds and attests the plugin,
-   and creates the non-prerelease GitHub release marked latest. `promote.ts` polls and watches that
-   `release.yml` run to completion.
-5. Generates release notes covering every change since the previously promoted final release
-   (`previous_tag_name` = the old root `manifest.json` version, resolved via `prevReleaseTag` to its
-   `v`-prefixed tag when it predates #12), and runs
-   `gh release edit X.Y.Z --prerelease=false --latest --notes <body>`.
+   `X.Y.Z`, `latest`, and `beta` (so `:beta` reaches the final too), builds and attests the plugin
+   (bundling `docs/releases/X.Y.Z.md`), and creates the non-prerelease GitHub release marked latest.
+   `promote.ts` polls and watches that `release.yml` run to completion.
+5. Sets the GitHub release body from `docs/releases/X.Y.Z.md` with
+   `gh release edit X.Y.Z --prerelease=false --latest --notes-file docs/releases/X.Y.Z.md`.
 
 **Promote only after a beta has been out for a while and no bug surfaced.** A bad beta is never
 promoted: fix it and ship the next `X.Y.Z-beta.N`. Never promote a version at or below the root
@@ -123,8 +127,9 @@ manifest's.
 - Working tree clean.
 - Release only: valid `X.Y.Z-beta.N` and not already current in `package.json`.
 - Promote only: valid `X.Y.Z` above root `manifest.json`'s version, tag `X.Y.Z` does not exist yet,
-  at least one `X.Y.Z-beta.N` tag exists and is an ancestor of `HEAD`, and no commit touching
-  `plugin/`, `server/`, `core/`, `db/` landed after the latest `X.Y.Z-beta.N` tag.
+  at least one `X.Y.Z-beta.N` tag exists and is an ancestor of `HEAD`, no commit touching
+  `plugin/`, `server/`, `core/`, `db/` landed after the latest `X.Y.Z-beta.N` tag, and
+  `docs/releases/X.Y.Z.md` exists and is non-empty.
 
 **Release and promote are atomic + irreversible** (bump -> tag -> image + release). Confirm ALL
 intended issues are merged to `main` *before* running them: you cannot fold more in once the tag
@@ -146,14 +151,12 @@ pushes; a late addition needs its own follow-up beta.
   ships the final `X.Y.Z` release. Accepted caveat: Obsidian does not auto-update `X.Y.Z-beta.1` to
   `X.Y.Z` on its own; BRAT users update through BRAT.
 - **Release notes:** `release.yml` sets `generate_release_notes: true`, so a beta's body is
-  auto-populated from merged PRs/commits since the previous tag. `promote` rewrites the final
-  release's body with the notes since the previous final version.
+  auto-populated from merged PRs/commits since the previous tag. `promote` replaces the final
+  release's body with `docs/releases/X.Y.Z.md`.
 
 ## Gotchas
 - **Tag convention:** tags are bare semver (`1.0.2-beta.1`, `1.0.2`): the community directory
-  matches the release tag to `manifest.json`, so a `v` prefix would be rejected. Tags cut before #12
-  keep their `v`: `scripts/promote.ts` resolves that form with `prevReleaseTag` when it generates
-  notes since the previous final release.
+  matches the release tag to `manifest.json`, so a `v` prefix would be rejected.
 - **A failed `release.yml` during promote:** `main` and the `X.Y.Z` tag are already pushed. Do NOT
   delete the tag: fix or rerun the failed `release.yml` jobs (`gh run rerun <run-id> --failed`), then
   finish the notes with `gh release edit X.Y.Z --prerelease=false --latest --notes-file <file>`.

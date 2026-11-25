@@ -23,6 +23,13 @@ import {
   STRENGTH_ROW_NAME,
   strengthLevelOf,
 } from "./rekey-modal-logic.ts";
+import { CHECK_FOR_UPDATES_ROW } from "./settings-row-names.ts";
+import {
+  CHECK_FOR_UPDATES_DESC,
+  WHATS_NEW_OPEN_BUTTON,
+  WHATS_NEW_ROW_DESC,
+  WHATS_NEW_ROW_NAME,
+} from "./release-check-logic.ts";
 
 export type AdvancedSectionHost = {
   app: ObsidianApp;
@@ -35,9 +42,11 @@ export type AdvancedSectionHost = {
   leaveVault: () => Promise<void>;
   /** #559: the re-key modal, entered from the Encryption strength row. */
   openRekeyModal: (kind: RekeyKind) => void;
+  /** #93: open the What's new release notes tab. */
+  openWhatsNew: () => void;
 };
 
-/** Advanced section rows: read-only values + check-gated live server-address edit. */
+/** Advanced section rows: update check, What's new, read-only values, server-address edit. */
 export class SettingsAdvancedSection {
   private advServerValueEl: HTMLElement | null = null;
   private resyncBtn: ButtonComponent | null = null;
@@ -46,6 +55,23 @@ export class SettingsAdvancedSection {
 
   rows(): SettingsRow[] {
     return [
+      {
+        name: CHECK_FOR_UPDATES_ROW,
+        desc: CHECK_FOR_UPDATES_DESC,
+        control: { type: "toggle", key: "checkForUpdates" },
+      },
+      {
+        name: WHATS_NEW_ROW_NAME,
+        desc: WHATS_NEW_ROW_DESC,
+        render: (row) => {
+          row.settingEl.dataset.testid = "geode-settings-whats-new";
+          row.addButton((btn) => {
+            btn.setButtonText(WHATS_NEW_OPEN_BUTTON);
+            btn.buttonEl.dataset.testid = "geode-settings-whats-new-open";
+            btn.onClick(() => this.host.openWhatsNew());
+          });
+        },
+      },
       this.readOnlyRow({
         name: "Server address",
         desc: "Applies to this device only.",

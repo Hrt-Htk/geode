@@ -1,5 +1,5 @@
 ---
-covers: [package.json, manifest.json, versions.json, tsconfig.plugin.json, eslint.config.mjs, .github/workflows/*.yml, scripts/plugin-build.mjs, scripts/manifest-stamp.mjs, scripts/bundle-node-requires.mjs, scripts/phone-*.ts, test/e2e/playwright.config.ts, test/e2e/global-setup.ts, .env.example]
+covers: [package.json, manifest.json, versions.json, tsconfig.plugin.json, eslint.config.mjs, .github/workflows/*.yml, scripts/plugin-build.mjs, scripts/manifest-stamp.mjs, scripts/bundle-node-requires.mjs, scripts/release-notes-bundle.mjs, scripts/phone-*.ts, test/e2e/playwright.config.ts, test/e2e/global-setup.ts, .env.example]
 watches: [deno.json, test/e2e/fixtures/*.ts]
 ---
 
@@ -105,7 +105,7 @@ Holds the import map (aliases for `@noble/hashes/*`, `libsodium-wrappers-sumo`, 
 | `deno task dev` | Server with `--watch`; `--allow-ffi` is needed by `@db/sqlite` |
 | `deno task build:plugin` | esbuild bundle, then copies the manifest (stamped with `package.json`'s version), `versions.json` and `styles.css` into `plugin-dist/` |
 | `deno task release` | `scripts/release.ts`: bump `package.json` to `X.Y.Z-beta.N`, commit, push, tag a BRAT pre-release (#22, #81) |
-| `deno task promote` | `scripts/promote.ts`: require a `X.Y.Z-beta.N` tag with no later shipped changes, bump `package.json`, root `manifest.json` and `versions.json`, commit, push, tag `X.Y.Z`, wait for `release.yml` (`latest` + `beta` image + final release), write notes since the previous final (#81) |
+| `deno task promote` | `scripts/promote.ts`: require a `X.Y.Z-beta.N` tag with no later shipped changes and `docs/releases/X.Y.Z.md`, bump `package.json`, root `manifest.json` and `versions.json`, commit, push, tag `X.Y.Z`, wait for `release.yml` (`latest` + `beta` image + final release), set the GitHub release body from `docs/releases/X.Y.Z.md` (#81, #93) |
 | `deno task test` | `deno test --allow-all` |
 | `deno task test:ci` | The suite CI runs, with a wall-clock cap (`scripts/test-timeout.ts`) |
 | `deno task standards` | lint, plugin `tsc`, ESLint, unused exports, jscpd, CSS syntax, LOC tripwire, docs gate, private-data gate |
@@ -156,9 +156,11 @@ Node script calling esbuild with `format: "cjs"`, `platform: "browser"`, `target
 Obsidian, Electron and Node builtins external. Both `npm run build` (`build:plugin`) and
 `deno task build:plugin` invoke it, so CI releases and clean npm checkouts produce the same output.
 It aliases the `@noble/hashes` and libsodium specifiers to their `node_modules` files (the CJS
-libsodium entry, see the comment in `deno.json`), inlines the libsodium WASM as a base64 module
-(`plugin/_generated/`), strips Emscripten's unused `require("fs")` Node fallback from libsodium,
-and copies the manifest, `versions.json` and `styles.css` into `plugin-dist/`. The manifest is
+libsodium entry, see the comment in `deno.json`), bundles curated `docs/releases/X.Y.Z.md` notes
+deterministically into `plugin/_generated/release-notes.ts` (`scripts/release-notes-bundle.mjs`, #93),
+inlines the libsodium WASM as a base64 module (`plugin/_generated/`), strips Emscripten's unused
+`require("fs")` Node fallback from libsodium, and copies the manifest, `versions.json` and
+`styles.css` into `plugin-dist/`. The manifest is
 written by `stampManifest` (`scripts/manifest-stamp.mjs`) with the released version from
 `package.json`, not the root manifest's promoted one (#22). `--watch` rebuilds on change. It does
 not talk to a running Obsidian. After a non-watch build it reads `main.js` back via

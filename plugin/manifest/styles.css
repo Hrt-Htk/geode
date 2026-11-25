@@ -1838,3 +1838,39 @@ body:not(.is-phone) .geode-missing-modal .modal-content {
   font-size: var(--font-ui-smaller);
 }
 
+/* #93: What's new workspace tab. */
+.geode-whats-new-view {
+  overflow-y: auto;
+  padding: var(--size-4-6) var(--size-4-8);
+}
+
+.is-phone .geode-whats-new-view {
+  padding: var(--size-4-4);
+}
+
+.geode-whats-new-container {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.geode-whats-new-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.geode-whats-new-body {
+  margin-top: var(--size-4-4);
+}
+
+.geode-whats-new-footer {
+  margin-top: var(--size-4-6);
+  padding-top: var(--size-4-4);
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+}
+
+.notice .geode-notice-link {
+  color: inherit;
+  text-decoration: underline;
+}
+
