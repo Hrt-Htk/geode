@@ -48,8 +48,12 @@ base branch.
    and cancels the old one: rerun the NEW run (`gh run rerun <new> --failed`, plus `--job <gate>` so
    Gate evidence reads the new body).
 4. **Ready → merge by hand**: once nothing is owed, `gh pr ready N`. CI re-runs on
-   `ready_for_review`. Once CI is green, the maintainer merges (`gh pr merge N --merge --delete-branch`),
-   or an agent does on the maintainer's explicit go. Ready does not merge itself.
+   `ready_for_review`. Ready does not merge itself. **Merge N** (on the maintainer's go only):
+   1. `gh pr view N --json isDraft,mergeable`: not a draft, `MERGEABLE`. `gh pr checks N`: every
+      check `pass` (it shows the latest run only; `statusCheckRollup` also lists runs a body edit
+      cancelled). The review comment ends with `Review pass: done`.
+   2. `gh pr merge N --merge --delete-branch`; confirm the `Closes` issues closed.
+   3. Archive the PR's Paseo workspace (`Workspace not found` is normal), then step 5.
 5. **After-merge (local)**: `deno task after-merge` from `main`: prunes gone local branches
    (`git branch -d` only, never `-D`) and sets Status=Done on closed board items. It does not release:
    cut a beta (`deno task release X.Y.Z-beta.N`) or final (`deno task promote X.Y.Z`) release by hand

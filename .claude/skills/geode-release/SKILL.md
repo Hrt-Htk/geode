@@ -17,6 +17,17 @@ Project-scoped to the Geode repo. Machine-specific values: read `.env.local` at 
 (template `.env.example`). Release and promote read no environment; updating a server over ssh uses
 `$GEODE_SSH_HOST` and `$GEODE_PROD_URL`.
 
+## One pass
+
+**Beta:**
+1. Pick the version: the next `-beta.N` of the open base (`git tag -l '*-beta.*' --sort=-v:refname`),
+   or a new base from the commits since the last final (SemVer guidance below).
+2. Restate the version to the maintainer and wait for the go: a tag publishes to every BRAT vault.
+3. `deno task release X.Y.Z-beta.N`, then watch that tag's `release.yml` run to success.
+4. Update your own server (below) and confirm `/version` reports the new version.
+
+**Promote:** restate `X.Y.Z` and wait for the go, `deno task promote X.Y.Z`, then step 4 above.
+
 ## Release a beta (to BRAT + GHCR)
 
 ```
