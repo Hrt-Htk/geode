@@ -44,7 +44,9 @@ base branch.
    doc updated in this PR (`deno task docs:drift` names it) or a `docs: unaffected - <reason>` line in
    the body.
 3. **CI**: `gh pr checks N`: Workflow Checks (commit format / branch / issue), Deno checks
-   (`deno task standards`), Gate evidence. All must be green.
+   (`deno task standards`), Gate evidence. All must be green. Editing the PR body starts a new CI run
+   and cancels the old one: rerun the NEW run (`gh run rerun <new> --failed`, plus `--job <gate>` so
+   Gate evidence reads the new body).
 4. **Ready → auto-merge**: once nothing is owed, `gh pr ready N`. CI re-runs on
    `ready_for_review` and the `Auto-ship` workflow merges the ready PR (`gh pr merge N --merge
    --delete-branch`) once CI is green. Drafts stay open. No manual merge step. A PR from a fork or
