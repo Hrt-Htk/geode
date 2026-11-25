@@ -5,26 +5,29 @@ export interface SemVer {
   major: number;
   minor: number;
   patch: number;
+  beta?: number;
 }
 
-const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)$/;
+const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/;
 
 /**
- * Parse a "MAJOR.MINOR.PATCH" string into a SemVer object.
- * Returns null for any non-matching input (prerelease tags, "v" prefix, etc.).
+ * Parse a "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH-beta.N" string into a SemVer object.
+ * Returns null for any non-matching input (other prerelease tags, "v" prefix, etc.).
  */
 export function parseSemVer(v: string): SemVer | null {
   const m = SEMVER_RE.exec(v);
   if (!m) return null;
-  return {
+  const parsed: SemVer = {
     major: parseInt(m[1], 10),
     minor: parseInt(m[2], 10),
     patch: parseInt(m[3], 10),
   };
+  if (m[4] !== undefined) parsed.beta = parseInt(m[4], 10);
+  return parsed;
 }
 
 /**
- * Compare two semver strings.
+ * Compare two semver strings with pre-release precedence (`X.Y.Z-beta.N < X.Y.Z`).
  * Returns -1, 0, or 1.
  * Unparseable versions are treated as "below" any valid version.
  * Two unparseable versions compare as equal (0).
@@ -40,7 +43,11 @@ export function compareSemVer(a: string, b: string): -1 | 0 | 1 {
   if (pa.major !== pb.major) return pa.major > pb.major ? 1 : -1;
   if (pa.minor !== pb.minor) return pa.minor > pb.minor ? 1 : -1;
   if (pa.patch !== pb.patch) return pa.patch > pb.patch ? 1 : -1;
-  return 0;
+
+  if (pa.beta === pb.beta) return 0;
+  if (pa.beta === undefined) return 1;
+  if (pb.beta === undefined) return -1;
+  return pa.beta > pb.beta ? 1 : -1;
 }
 
 /**

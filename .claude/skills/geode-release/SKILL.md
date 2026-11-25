@@ -1,62 +1,57 @@
 ---
 name: geode-release
 description: >
-  Cut a Geode release (pre-release to BRAT + server image), update your own server from it, and
-  promote a tested one to the community directory: project-scoped to the Geode repo. Use when the
-  user asks to release, bump the version, "bump BRAT", promote a release, update the server, or
-  ship to their vaults.
+  Cut a Geode beta release (X.Y.Z-beta.N to BRAT + server image), update your own server from it,
+  and promote a tested beta to the final release (X.Y.Z) in the community directory: project-scoped
+  to the Geode repo. Use when the user asks to release, bump the version, "bump BRAT", promote a
+  release, update the server, or ship to their vaults.
 ---
 
 # Geode Release
 
-Three steps, one shared version line: release (bump, tag, publish), update your server from it, and
-promote a tested release to the directory. **Every release is a pre-release:** BRAT installs it, the
-community directory does not.
+Three steps, one shared version line: release a beta (`X.Y.Z-beta.N`), update your server from it,
+and promote a tested beta to the final release (`X.Y.Z`). Releases are chosen by hand:
+`deno task after-merge` does not release.
 
 Project-scoped to the Geode repo. Machine-specific values: read `.env.local` at the repo root
-(template `.env.example`). The release reads no environment; updating a server over ssh uses
-`$GEODE_SSH_HOST` and `$GEODE_PROD_URL`. `deno task after-merge` loads that file itself
-(`--env-file=.env.local`), so a fresh shell needs no manual export.
+(template `.env.example`). Release and promote read no environment; updating a server over ssh uses
+`$GEODE_SSH_HOST` and `$GEODE_PROD_URL`.
 
-`release` runs automatically from `deno task after-merge` after a merge (skill `geode-pr-flow`);
-promote is always manual.
-
-## Release (a beta, to BRAT + GHCR)
+## Release a beta (to BRAT + GHCR)
 
 ```
-deno task release X.Y.Z
+deno task release X.Y.Z-beta.N
 ```
 
-Bumps `package.json` only, commits `chore(release): X.Y.Z`, pushes to `main`, and tags the bare
-`X.Y.Z`: **one atomic step.** The tag is the whole release. `release.yml` builds, attests and publishes
-the plugin as a **pre-release** (→ BRAT) and the server image to GHCR. The script deploys nothing.
+Accepts only the `X.Y.Z-beta.N` form. Bumps `package.json` only, commits
+`chore(release): X.Y.Z-beta.N`, pushes to `main`, and tags `X.Y.Z-beta.N`: **one atomic step.**
+`release.yml` builds, attests and publishes the plugin as a **pre-release** (BRAT) and the server
+image to GHCR tagged `X.Y.Z-beta.N` and `beta`. The script deploys nothing.
 
 **The tag also builds the server image, and a failed image job blocks the plugin release.**
 `release.yml` builds `Dockerfile` for amd64 and arm64, merges the two digests into one manifest, attests
-them and pushes `ghcr.io/hrt-htk/geode:X.Y.Z` plus `beta`; the `release` job `needs` that manifest.
-So a broken image means no BRAT release either. Recover by re-running the failed jobs of that tag's run
-(`gh run list --workflow=Release`, then `gh run rerun <run-id> --failed`): never delete and re-push the
-tag, and never cut a new version for it.
+them and pushes `ghcr.io/hrt-htk/geode:X.Y.Z-beta.N` plus `beta`; the `release` job `needs` that
+manifest. So a broken image means no BRAT release either. Recover by re-running the failed jobs of
+that tag's run (`gh run list --workflow=Release`, then `gh run rerun <run-id> --failed`): never
+delete and re-push the tag, and never cut a new version for it.
 
-**`latest` does not move here.** A release tags `X.Y.Z` and `beta` only: `latest` is what directory
-users pull, and a beta that bumps the wire protocol would stop their sync. It moves in Promote, below.
-
-**The root manifest does not move here.** `manifest.json` and `versions.json` are untouched: they are
-what the community directory reads off `main`, so a beta must not move them. The build stamps
-`package.json`'s version into `plugin-dist/manifest.json`, and that is the file the release ships and
-the plugin reads at runtime (status bar, `hello.plugin_version`). Two version numbers, on purpose:
+**`latest` and root `manifest.json` do not move here.** A beta release tags `X.Y.Z-beta.N` and
+`beta` only: `latest` and root `manifest.json` / `versions.json` are what community directory users
+follow, so a beta does not move them. The build stamps `package.json`'s version into
+`plugin-dist/manifest.json`, and that is the file the release ships and the plugin reads at runtime
+(status bar, `hello.plugin_version`).
 
 | File | Version | Read by |
 | --- | --- | --- |
-| `package.json` | latest release, beta or promoted | build → `plugin-dist/manifest.json`; server `SERVER_VERSION` |
-| root `manifest.json` | latest **promoted** release | community directory |
-| root `versions.json` | one row per **promoted** release | community directory |
+| `package.json` | latest release (`X.Y.Z-beta.N` or promoted `X.Y.Z`) | build -> `plugin-dist/manifest.json`; server `SERVER_VERSION` |
+| root `manifest.json` | latest **promoted** final release (`X.Y.Z`) | community directory |
+| root `versions.json` | one row per **promoted** final release (`X.Y.Z`) | community directory |
 
 **One tag, two artifacts, separate installs.** A plugin update and a server update are two actions: a
-version difference does not block sync (the server gates on wire protocol + minimum version only, and a
-compatible difference shows an update hint), but both come from the same tag, so a client never runs
-against a server from a different protocol generation. There is **no plugin-only release**: the script
-has no flag to skip any of it, and the image is not optional.
+version difference does not block sync (the server gates on wire protocol + minimum version only, and
+a compatible difference shows an update hint), but both come from the same tag, so a client never
+runs against a server from a different protocol generation. There is **no plugin-only release**: the
+script has no flag to skip any of it, and the image is not optional.
 
 ## Update your own server (after the tag)
 
@@ -65,7 +60,7 @@ image is published (`gh run list --workflow=Release`), then update through the h
 gives you the rollback. The job pulls whatever tag `compose.yaml` pins: `latest`, a promoted release,
 by default; `beta` on a host that follows the betas.
 
-- **The plugin's own button**: Geode settings, **Server update** → **Update** (asks for the admin
+- **The plugin's own button**: Geode settings, **Server update** -> **Update** (asks for the admin
   token). It answers in about a minute.
 - **Over ssh**, for a UI you cannot reach:
 
@@ -82,7 +77,7 @@ image: read the job's reason on the host, fix the image, release again.
 plugin then copies `docker compose pull && docker compose up -d` to run in the compose directory by
 hand.
 
-## Promote (to the community directory)
+## Promote (final `X.Y.Z` to the community directory)
 
 ```
 deno task promote X.Y.Z
@@ -90,94 +85,67 @@ deno task promote X.Y.Z
 
 Runs `scripts/promote.ts`:
 
-1. `gh release view X.Y.Z --json isPrerelease`: the release must exist and still be a pre-release.
-2. `gh api repos/{owner}/{repo}/releases/generate-notes`: notes for every change since the previously
-   promoted version (`previous_tag_name` = the current root `manifest.json` version, resolved to its
-   `v`-prefixed tag when it predates #12).
-3. `gh workflow run promote-image.yml -f version=X.Y.Z`, then `gh run watch --exit-status` on that
-   **new** run (only a run id above the newest existing one counts, so a rerun never watches the
-   earlier run of the same name): the job copies that release's image index onto
-   `ghcr.io/hrt-htk/geode:latest`. Same digest, no rebuild, and the run fails if the digest moved.
-   It runs **before** the manifest commit: the directory must never offer a plugin whose server
-   image has not caught up.
-4. Sets root `manifest.json` `version`, appends `versions.json` `X.Y.Z -> minAppVersion` (never edits
-   an existing row).
-5. Commits `chore(release): promote X.Y.Z`, pushes `main`.
-6. `gh release edit X.Y.Z --prerelease=false --latest --notes <body>`.
+1. Verifies at least one `X.Y.Z-beta.N` tag exists, is an ancestor of `HEAD`, and no commit touching
+   shipped paths (`plugin/`, `server/`, `core/`, `db/`) landed after the latest `X.Y.Z-beta.N` tag:
+   what reaches the directory is what was tested as a beta.
+2. Bumps `package.json`, sets root `manifest.json` `version` to `X.Y.Z`, and appends
+   `versions.json` `X.Y.Z -> minAppVersion` (never edits an existing row).
+3. Commits `chore(release): promote X.Y.Z` and pushes `main`, so the tag commit's root `manifest.json`
+   equals the release manifest.
+4. Tags `X.Y.Z` and pushes the tag. `release.yml` runs on that tag: builds and tags the server image
+   `X.Y.Z`, `latest`, and `beta` (so `:beta` reaches the final too), builds and attests the plugin,
+   and creates the non-prerelease GitHub release marked latest. `promote.ts` polls and watches that
+   `release.yml` run to completion.
+5. Generates release notes covering every change since the previously promoted final release
+   (`previous_tag_name` = the old root `manifest.json` version, resolved via `prevReleaseTag` to its
+   `v`-prefixed tag when it predates #12), and runs
+   `gh release edit X.Y.Z --prerelease=false --latest --notes <body>`.
 
-No rebuild and no new image bytes: `latest` becomes a second tag on the exact build testers ran, and
-versions in between are skipped for directory users (1.0 → 1.3).
-
-**Promote only after a release has been out for a while and no bug surfaced.** A bad beta is never
-promoted: fix it and ship the next beta. Never promote a version at or below the root manifest's.
+**Promote only after a beta has been out for a while and no bug surfaced.** A bad beta is never
+promoted: fix it and ship the next `X.Y.Z-beta.N`. Never promote a version at or below the root
+manifest's.
 
 ## Preconditions (scripts enforce these)
-- No `RELEASE_HOLD` file at the repo root: while it exists, `after-merge` skips the release and
-  `deno task release` / `deno task promote` refuse; remove it in its own PR to resume.
+- No `RELEASE_HOLD` file at the repo root: while it exists, `deno task release` and
+  `deno task promote` refuse; remove it in its own PR to resume.
 - On branch `main`.
 - Working tree clean.
-- Valid semver `X.Y.Z`.
-- Release only: version not already current. Promote only: release exists, is a pre-release, and is
-  **above** the root manifest's version.
+- Release only: valid `X.Y.Z-beta.N` and not already current in `package.json`.
+- Promote only: valid `X.Y.Z` above root `manifest.json`'s version, tag `X.Y.Z` does not exist yet,
+  at least one `X.Y.Z-beta.N` tag exists and is an ancestor of `HEAD`, and no commit touching
+  `plugin/`, `server/`, `core/`, `db/` landed after the latest `X.Y.Z-beta.N` tag.
 
-**Release is atomic + irreversible** (bump → tag → image + BRAT publish). Confirm ALL intended
-issues are merged to `main` *before* running it: you cannot fold more in once it fires; a late addition
-needs its own follow-up version.
+**Release and promote are atomic + irreversible** (bump -> tag -> image + release). Confirm ALL
+intended issues are merged to `main` *before* running them: you cannot fold more in once the tag
+pushes; a late addition needs its own follow-up beta.
 
 ## SemVer guidance
-- **PATCH** (`0.5.0 → 0.5.1`): backward-compatible fix only.
-- **MINOR** (`0.5.0 → 0.6.0`): backward-compatible feature (even small).
-- **MAJOR** (`0.5.0 → 1.0.0`): breaking change or "declared stable".
-- Pre-1.0: **fix → last digit, feature → middle digit.**
-
-## Version from commits (post-merge)
-Cut a release only after a merge. Count only commits since the last tag that touch shipped code
-(`plugin/`, `server/`, `core/`, `db/`):
-```
-git log $(git describe --tags --abbrev=0)..HEAD --no-merges --format=%s -- plugin server core db
-```
-- any `feat` → MINOR
-- else any `fix` / `perf` → PATCH
-- else (none, or only `docs`/`chore`/`test`/`ci`/`refactor`/`style`/`build`) → **no release**
-
-Run it locally after pruning (skill `geode-pr-flow`); Actions never decides a release and never
-touches a server.
+- **PATCH** (`1.0.1 -> 1.0.2-beta.1 -> 1.0.2`): backward-compatible fix only.
+- **MINOR** (`1.0.1 -> 1.1.0-beta.1 -> 1.1.0`): backward-compatible feature (even small).
+- **MAJOR** (`1.0.1 -> 2.0.0-beta.1 -> 2.0.0`): breaking change.
 
 ## After release
 - **First release only: make the GHCR package public.** The image lands in
   `ghcr.io/hrt-htk/geode` as a private package, so `docker compose` cannot pull it anonymously. In the
   package settings, change the visibility to public and link the package to the repository (its
-  provenance and source then show on the package page). One-time, after the first tag.
+  provenance and source then show on the package page).
 - **Reload devices / cutover:** local dev vaults still run the old build until it is rebuilt and
   reinstalled, and a server keeps running its old image until it is updated (the step above). BRAT
-  users get the plugin update on their next plugin check. Directory users get nothing until it is
-  promoted.
+  users get beta updates on their next plugin check. Directory users get nothing until `promote`
+  ships the final `X.Y.Z` release. Accepted caveat: Obsidian does not auto-update `X.Y.Z-beta.1` to
+  `X.Y.Z` on its own; BRAT users update through BRAT.
 - **Release notes:** `release.yml` sets `generate_release_notes: true`, so a beta's body is
-  auto-populated from merged PRs/commits since the previous tag (plus a short BRAT preamble).
-  Promote replaces that body with the notes from the last **promoted** version.
+  auto-populated from merged PRs/commits since the previous tag. `promote` rewrites the final
+  release's body with the notes since the previous final version.
 
 ## Gotchas
-- **Tag convention:** the tag is the bare version (`0.41.8`): the community directory matches the
-  release tag to the version in `manifest.json`, so a `v` prefix would be rejected. Tags cut before
-  #12 keep their `v`: `scripts/promote.ts` resolves that form with `prevReleaseTag` when it needs the
-  tag a previous version stands for.
-- **A half-done promote:** `latest` moves before the manifest commit, so a failure after the retag
-  leaves the image ahead of `main`. Recover by hand, never by deleting the tag:
-  - **`git push` failed:** the promote commit is local. `git push origin main`, then
-    `gh release edit X.Y.Z --prerelease=false --latest --notes-file <file>`. Or drop it and rerun:
-    `git reset --hard origin/main`, then `deno task promote X.Y.Z` (the preconditions hold again and
-    the retag is idempotent).
-  - **`gh release edit` failed:** `main` already advertises `X.Y.Z` with the old body and the
-    pre-release flag still set; rerunning refuses (the version is no longer above the manifest's).
-    Finish with `gh release edit X.Y.Z --prerelease=false --latest --notes-file <file>`.
-  - **The retag failed, or the 60s wait for its run lapsed:** `main` and `manifest.json` are
-    untouched. Check `gh run list --workflow=promote-image.yml`: the run may still be retagging, and
-    the promote can simply be rerun once it finished.
-  While the two disagree, a server pulling `latest` is *newer* than the plugin the directory serves:
-  the compatible direction, since the server gates on wire protocol and minimum version.
-- **The retag workflow must be on `main`:** `gh workflow run promote-image.yml` dispatches the default
-  branch's copy, so a promote fails (before touching `main`) on a checkout that predates it.
-- **Check the published artifacts, not the tag.** Verify with `gh release view X.Y.Z --json
-  assets,isPrerelease` (expect `main.js`/`manifest.json` and `isPrerelease: true`); allow ~1-2 min lag,
-  empty `assets` right after release ≠ failure. The image is a separate job: `gh run view` shows it, and
-  a private package is the first-release trap above.
+- **Tag convention:** tags are bare semver (`1.0.2-beta.1`, `1.0.2`): the community directory
+  matches the release tag to `manifest.json`, so a `v` prefix would be rejected. Tags cut before #12
+  keep their `v`: `scripts/promote.ts` resolves that form with `prevReleaseTag` when it generates
+  notes since the previous final release.
+- **A failed `release.yml` during promote:** `main` and the `X.Y.Z` tag are already pushed. Do NOT
+  delete the tag: fix or rerun the failed `release.yml` jobs (`gh run rerun <run-id> --failed`), then
+  finish the notes with `gh release edit X.Y.Z --prerelease=false --latest --notes-file <file>`.
+- **Check the published artifacts, not the tag.** Verify with `gh release view <tag> --json
+  assets,isPrerelease` (expect `main.js`/`manifest.json`/`styles.css` and `isPrerelease: true` for
+  betas, `false` for finals); allow ~1-2 min lag, empty `assets` right after tag push != failure.

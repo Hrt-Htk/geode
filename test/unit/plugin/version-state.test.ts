@@ -88,3 +88,12 @@ Deno.test("version-state - no hint when versions match", () => {
 Deno.test("version-state - no hint when both unparseable", () => {
   assertEquals(describeVersionHint("", ""), null);
 });
+
+Deno.test("version-state - beta precedence in blockedSide and describeVersionHint", () => {
+  assertEquals(blockedSide("1.0.2-beta.1", "1.0.1"), "server");
+  assertEquals(blockedSide("1.0.2", "1.0.2-beta.1"), "server");
+  assertEquals(describeVersionHint("1.0.2-beta.1", "1.0.2"), "Plugin update available");
+  assertEquals(describeVersionHint("1.0.2", "1.0.2-beta.1"), "Server update available");
+  assertEquals(describeVersionHint("1.0.2-beta.1", "1.0.2-beta.2"), "Plugin update available");
+  assertEquals(describeVersionHint("1.0.2-beta.1", "1.0.2-beta.1"), null);
+});

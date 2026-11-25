@@ -3,9 +3,9 @@ name: Release
 on:
   push:
     tags:
-      # #12: the tag is the bare manifest version (0.41.8), never v0.41.8: the
-      # community directory matches the release tag to manifest.json.
+      # #12/#81: bare semver (final) or X.Y.Z-beta.N (beta), never v-prefixed.
       - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
 
 permissions:
   contents: write
@@ -111,9 +111,8 @@ jobs:
       - name: Merge and tag
         working-directory: /tmp/digests
         # Exactly two, or the tag would ship one architecture. The digests arrive as bare
-        # hex; imagetools wants the `sha256:` prefix back. #65: a release never tags
-        # `latest`: directory users follow it, so it moves only when
-        # `deno task promote X.Y.Z` retags it onto a tested release (promote-image.yml).
+        # hex; imagetools wants the `sha256:` prefix back. #65/#81: every release tags `beta`
+        # (so `:beta` follows the newest release, beta or final); final releases also tag `latest`.
         run: |
           digests=()
           for file in *; do digests+=("ghcr.io/hrt-htk/geode@sha256:$file"); done
@@ -121,10 +120,15 @@ jobs:
             echo "::error::expected 2 architecture digests, found ${#digests[@]}: ${digests[*]}"
             exit 1
           fi
-          docker buildx imagetools create \
-            --tag ghcr.io/hrt-htk/geode:${{ github.ref_name }} \
-            --tag ghcr.io/hrt-htk/geode:beta \
-            "${digests[@]}"
+          tags=(
+            --tag "ghcr.io/hrt-htk/geode:${{ github.ref_name }}"
+            --tag "ghcr.io/hrt-htk/geode:beta"
+          )
+          case "${{ github.ref_name }}" in
+            *-beta.*) ;;
+            *) tags+=(--tag "ghcr.io/hrt-htk/geode:latest") ;;
+          esac
+          docker buildx imagetools create "${tags[@]}" "${digests[@]}"
 
       - name: Read the manifest digest
         id: digest
@@ -187,9 +191,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          # #22: every release is a beta: BRAT installs it, the community
-          # directory does not until `deno task promote X.Y.Z` clears the flag.
-          prerelease: true
+          # #22/#81: `-beta.N` releases are pre-releases (BRAT); final `X.Y.Z` releases are
+          # marked latest for the community directory (`promote.ts` rewrites notes since the
+          # previous final release).
+          prerelease: ${{ contains(github.ref_name, '-beta.') }}
+          make_latest: ${{ !contains(github.ref_name, '-beta.') }}
           generate_release_notes: true
           body: |
             Install or update via [BRAT](https://github.com/TfTHacker/obsidian42-brat).

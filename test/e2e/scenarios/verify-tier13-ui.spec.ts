@@ -4,6 +4,7 @@ import { launchObsidian } from "../fixtures/obsidian";
 import { startServer } from "../fixtures/server";
 import { readGeodeStatusBar, waitForStatusBar } from "../helpers/waits";
 import { shotPath } from "../helpers/shots";
+import { parseSemVer } from "../../../core/version";
 
 const PASSPHRASE = "verify-tier13-pass";
 
@@ -241,7 +242,7 @@ test("verify tier1-3 UI: #529 real-seam version difference syncs and shows the u
       `app.plugins.plugins.geode.transport.getServerVersion()`,
     );
     expect(serverVersion).not.toBe("9.9.9");
-    expect(/^\d+\.\d+\.\d+$/.test(serverVersion)).toBe(true);
+    expect(parseSemVer(serverVersion) !== null).toBe(true);
 
     /* A real file written in the vault must reach the server through the live sync. */
     await obsidian.eval(

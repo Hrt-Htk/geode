@@ -4,6 +4,7 @@
 // must run in a bare shell. The gate runs in a throwaway repo with a bare origin.
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import { releaseHold } from "../../../scripts/release.ts";
 
 const REPO_ROOT = new URL("../../../", import.meta.url);
 
@@ -36,9 +37,9 @@ async function tempRepo(): Promise<{ base: string; repo: string; home: string }>
   return { base, repo, home };
 }
 
-async function runRelease(repo: string, home: string) {
+async function runRelease(repo: string, home: string, version = "9.9.9-beta.1") {
   const out = await new Deno.Command(Deno.execPath(), {
-    args: ["run", "-A", new URL("scripts/release.ts", REPO_ROOT).pathname, "9.9.9"],
+    args: ["run", "-A", new URL("scripts/release.ts", REPO_ROOT).pathname, version],
     cwd: repo,
     clearEnv: true,
     env: {
@@ -57,9 +58,9 @@ async function runRelease(repo: string, home: string) {
   };
 }
 
-// #22: a release is a BRAT beta. It moves the shared version line (package.json)
-// only; the root manifest.json/versions.json stay on the last promoted version,
-// because the community directory reads them.
+// #22/#81: a release is a BRAT beta (X.Y.Z-beta.N). It moves the shared version line
+// (package.json) only; the root manifest.json/versions.json stay on the last promoted
+// version, because the community directory reads them.
 Deno.test("release: bumps package.json only, then commits, pushes and tags it", async () => {
   const { base, repo, home } = await tempRepo();
   const git = async (args: string[]) => {
@@ -87,7 +88,7 @@ Deno.test("release: bumps package.json only, then commits, pushes and tags it", 
     assertStringIncludes(res.stdout, "[4/4] Tagging and pushing");
     assert(!res.stdout.includes("[5/"), `the release has no deploy step: ${res.stdout}`);
     const pkg = JSON.parse(await Deno.readTextFile(`${repo}/package.json`));
-    assertEquals(pkg.version, "9.9.9", "the release moves the shared version line");
+    assertEquals(pkg.version, "9.9.9-beta.1", "the release moves the shared version line");
     const manifest = JSON.parse(await Deno.readTextFile(`${repo}/manifest.json`));
     assertEquals(manifest.version, "0.0.1", "a beta must not move the directory's manifest");
     assertEquals(
@@ -95,13 +96,31 @@ Deno.test("release: bumps package.json only, then commits, pushes and tags it", 
       "{}\n",
       "a beta must not add a versions.json entry",
     );
-    // #12: the new tag is the bare manifest version, not `v`-prefixed.
+    // #12/#81: the new tag is the bare beta version, not `v`-prefixed.
     const tags = await new Deno.Command("git", {
       args: ["tag", "--list"],
       cwd: repo,
       stdout: "piped",
     }).output();
-    assertEquals(new TextDecoder().decode(tags.stdout).trim().split("\n"), ["9.9.9", "v0.0.1"]);
+    assertEquals(
+      new TextDecoder().decode(tags.stdout).trim().split("\n"),
+      ["9.9.9-beta.1", "v0.0.1"],
+    );
+  } finally {
+    await Deno.remove(base, { recursive: true });
+  }
+});
+
+Deno.test("release: refuses non-beta versions (only X.Y.Z-beta.N is accepted)", async () => {
+  const { base, repo, home } = await tempRepo();
+  try {
+    for (const bad of ["9.9.9", "9.9.9-beta", "9.9.9-rc.1", "v9.9.9-beta.1"]) {
+      const res = await runRelease(repo, home, bad);
+      assertEquals(res.code, 1, `expected failure for ${bad}`);
+      assertStringIncludes(res.stderr, "X.Y.Z-beta.N");
+    }
+    const pkg = JSON.parse(await Deno.readTextFile(`${repo}/package.json`));
+    assertEquals(pkg.version, "0.0.1");
   } finally {
     await Deno.remove(base, { recursive: true });
   }
@@ -112,4 +131,27 @@ Deno.test("after-merge loads .env.local, so the board id reaches it", async () =
   const denoJson = await Deno.readTextFile(new URL("deno.json", REPO_ROOT));
   const task = new RegExp(`"[a-z-]+": "[^"]*--env-file=\\.env\\.local [^"]*after-merge\\.ts"`);
   assert(task.test(denoJson), "no task loads .env.local before after-merge.ts");
+});
+
+// #438: a committed RELEASE_HOLD file holds releases: release and promote refuse.
+Deno.test("releaseHold: returns the trimmed reason when RELEASE_HOLD exists", async () => {
+  const dir = await Deno.makeTempDir();
+  await Deno.writeTextFile(
+    `${dir}/RELEASE_HOLD`,
+    "#256 settings tab in progress: remove when the epic closes\n",
+  );
+  try {
+    assertEquals(releaseHold(dir), "#256 settings tab in progress: remove when the epic closes");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("releaseHold: null when RELEASE_HOLD is absent", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    assertEquals(releaseHold(dir), null);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });

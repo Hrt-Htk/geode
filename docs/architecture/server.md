@@ -796,11 +796,10 @@ Docker: no clone, no build.
   runs at build time, so the container never fetches anything; `--build-arg VERSION` is the version
   `/version` reports.
 - **Release.** `release.yml` builds amd64 on `ubuntu-latest` and arm64 on `ubuntu-24.04-arm`, merges the
-  two digests into one manifest tagged `X.Y.Z` and `beta`, and attests them. It never tags `latest`:
-  directory users follow that tag, so it moves only when `deno task promote X.Y.Z` retags it onto a
-  tested release through `promote-image.yml`, which copies the released index, so `latest` resolves to
-  the digest the release attested. The GitHub release `needs` that manifest, so a broken image blocks
-  the plugin release too (skill `geode-release`).
+  two digests into one manifest, and attests them. A beta tag (`X.Y.Z-beta.N`) tags `X.Y.Z-beta.N`
+  and `beta`; a final tag (`X.Y.Z`, cut by `deno task promote X.Y.Z`) tags `X.Y.Z`, `latest`, and
+  `beta`, so `:beta` follows the newest release too. The GitHub release `needs` that manifest, so a
+  broken image blocks the plugin release too (skill `geode-release`).
 - **Networks.** Geode is on an `internal: true` network and publishes nothing; a front joins that
   network and `egress` and takes the traffic, `caddy:2` for a domain or the pinned `alpine/socat` relay
   otherwise. Both fronts sit behind a compose profile (`https`, `forward`) because compose has none:

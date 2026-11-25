@@ -171,18 +171,18 @@ CI runs no job on a draft PR: the local `deno task ci` before every push is the 
 a PR ready runs CI once; a new commit or a body edit on a ready PR runs it again, in full. A newer run
 for the same PR cancels the older one; pushes to `main` always run to the end.
 
-Auto-ship only merges. No release decision and no server update happen in Actions: the agent prunes
-and runs `deno task release X.Y.Z` after the merge, and the server update is a step of its own
-(skill `geode-release`). A release tags the image `X.Y.Z` and `beta`, never `latest`:
-`deno task promote X.Y.Z` dispatches `promote-image.yml`, which copies the released index onto
-`latest`, so a beta that bumps the wire protocol cannot reach the directory users who pull it (#65).
+Auto-ship only merges. No release decision and no server update happen in Actions: releases are cut
+by hand with `deno task release X.Y.Z-beta.N` (beta) or `deno task promote X.Y.Z` (final), and the
+server update is a step of its own (skill `geode-release`). A beta tag (`X.Y.Z-beta.N`) tags the
+image `X.Y.Z-beta.N` and `beta`; a final tag (`X.Y.Z`) tags `X.Y.Z`, `latest`, and `beta`, so `:beta`
+follows every release while a beta that bumps the wire protocol cannot reach directory users who pull
+`latest` (#65, #81).
 
 ### Runner
 
 Every job runs on `${{ vars.GEODE_RUNNER || 'ubuntu-latest' }}`, except the `Docker smoke` entries in
-`ci.yml` and the image jobs in `release.yml` and `promote-image.yml` (the two `Image` entries, the
-manifest merge and the retag): those name their runner, and the `Image` entries must, because an arm64
-image can only be built natively. While the repo is private, the repo
+`ci.yml` and the image jobs in `release.yml` (the two `Image` entries and the manifest merge): those
+name their runner, and the `Image` entries must, because an arm64 image can only be built natively. While the repo is private, the repo
 variable `GEODE_RUNNER=self-hosted` sends jobs to three self-hosted runners on the maintainer's machine,
 so CI uses no Actions minutes and PRs do not queue behind each other. Each runs as a user service:
 `systemctl --user status actions-runner actions-runner-2 actions-runner-3` (install dirs

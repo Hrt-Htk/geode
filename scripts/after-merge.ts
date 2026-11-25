@@ -8,36 +8,8 @@
  * Usage: deno run -A scripts/after-merge.ts [--dry-run]
  */
 
-const SHIPPED = ["plugin", "server", "core", "db"];
 const root = Deno.cwd();
 const dry = Deno.args.includes("--dry-run");
-
-const TYPE = /^(\w+)(\(.+\))?(!)?:/;
-
-// Map the subjects of commits since the last tag (already filtered to shipped
-// paths by the caller) to the next version, or null for "no release".
-// feat or a `!` breaking change -> MINOR (pre-1.0: breaking counts as MINOR),
-// else fix/perf -> PATCH, else null. Only a Conventional Commit type prefix
-// counts: a subject merely containing "fix" doesn't.
-export function nextVersion(current: string, subjects: string[]): string | null {
-  const [major, minor, patch] = current.split(".").map(Number);
-  let wantPatch = false;
-  for (const s of subjects) {
-    const m = s.match(TYPE);
-    if (!m) continue;
-    const [, type, , bang] = m;
-    if (type === "feat" || bang) return `${major}.${minor + 1}.0`;
-    if (type === "fix" || type === "perf") wantPatch = true;
-  }
-  return wantPatch ? `${major}.${minor}.${patch + 1}` : null;
-}
-
-// #12: releases are tagged with the bare manifest version, so the community
-// directory can match tag to manifest. Tags cut before #12 keep their `v`, so
-// resolving the tag a release replaces has to try both forms.
-export function prevReleaseTag(version: string, tags: string[]): string | null {
-  return tags.find((t) => t === version || t === `v${version}`) ?? null;
-}
 
 // Project board node id; the board step is skipped when unset. The Status field
 // and its "Done" option are looked up by name.
@@ -64,17 +36,6 @@ export function staleBoardItems(items: BoardItem[]): string[] {
       i.fieldValueByName?.name !== "Done"
     )
     .map((i) => i.id);
-}
-
-// #438: a committed RELEASE_HOLD file holds the release: the trimmed content
-// is the reason, null when the file is absent.
-export function releaseHold(root: string): string | null {
-  try {
-    return Deno.readTextFileSync(`${root}/RELEASE_HOLD`).trim();
-  } catch (e) {
-    if (e instanceof Deno.errors.NotFound) return null;
-    throw e;
-  }
 }
 
 async function run(cmd: string, args: string[]): Promise<string> {
@@ -186,45 +147,6 @@ if (import.meta.main) {
           done,
         ]);
       }
-    }
-  }
-
-  // Step 5: release decision per #393: a committed RELEASE_HOLD file skips it.
-  const hold = releaseHold(root);
-  if (hold) {
-    console.log(`Release held: ${hold}`);
-  } else {
-    const tag = await git(["describe", "--tags", "--abbrev=0"]);
-    const subjects = (await git([
-      "log",
-      `${tag}..HEAD`,
-      "--no-merges",
-      "--format=%s",
-      "--",
-      ...SHIPPED,
-    ]))
-      .split("\n")
-      .filter(Boolean);
-    const pkg = JSON.parse(await Deno.readTextFile(`${root}/package.json`)) as { version: string };
-    const next = nextVersion(pkg.version, subjects);
-    if (next) {
-      act(
-        `release due: ${pkg.version} -> ${next}: invoke deno run -A scripts/release.ts ${next}`,
-      );
-      if (!dry) {
-        const release = new Deno.Command(Deno.execPath(), {
-          args: ["run", "-A", "scripts/release.ts", next],
-          cwd: root,
-          stdout: "inherit",
-          stderr: "inherit",
-        });
-        const st = await release.output();
-        if (st.code !== 0) Deno.exit(st.code);
-      }
-    } else {
-      console.log(
-        `No release: ${subjects.length} commits since ${tag} touch shipped code, none warrant one.`,
-      );
     }
   }
 }

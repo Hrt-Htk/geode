@@ -125,3 +125,28 @@ Deno.test("server update - the notice is once per plugin version, and only for a
   assertEquals(noticeDue({ own: OWN, server: "0.44.0", seenVersion: "0.44.0" }), true);
   assertEquals(noticeDue({ own: OWN, server: "0.44.0", seenVersion: OWN }), false);
 });
+
+Deno.test("server update - beta versions follow semver precedence", () => {
+  assertEquals(
+    serverUpdateRow({
+      own: "1.0.2-beta.2",
+      server: "1.0.2-beta.1",
+      refused: false,
+      jobInstalled: true,
+      updating: false,
+    }),
+    { kind: "action", desc: "Server 1.0.2-beta.1, plugin 1.0.2-beta.2.", control: "update" },
+  );
+  assertEquals(
+    serverUpdateRow({
+      own: "1.0.2-beta.1",
+      server: "1.0.2",
+      refused: false,
+      jobInstalled: true,
+      updating: false,
+    }),
+    { kind: "plain", desc: "Server 1.0.2." },
+  );
+  assertEquals(noticeDue({ own: "1.0.2", server: "1.0.2-beta.1", seenVersion: "" }), true);
+  assertEquals(noticeDue({ own: "1.0.2-beta.1", server: "1.0.2", seenVersion: "" }), false);
+});

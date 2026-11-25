@@ -52,8 +52,8 @@ base branch.
    --delete-branch`) once CI is green. Drafts stay open. No manual merge step. A PR from a fork or
    another author is merged by hand.
 5. **After-merge (local)**: `deno task after-merge` from `main`: prunes gone local branches
-   (`git branch -d` only, never `-D`), sets Status=Done on closed board items (auto-ship closes
-   with `github.token`, which skips the board's "Item closed" workflow), and cuts a release per
-   skill `geode-release` if
-   `feat`/`fix`/`perf` touched shipped code since the last tag: otherwise "no release". A tag push
-   publishes to ALL BRAT vaults: treat it as irreversible/outward.
+   (`git branch -d` only, never `-D`) and sets Status=Done on closed board items (auto-ship closes
+   with `github.token`, which skips the board's "Item closed" workflow). It does not release: cut a
+   beta (`deno task release X.Y.Z-beta.N`) or final (`deno task promote X.Y.Z`) release by hand per
+   skill `geode-release`. A tag push publishes to ALL BRAT or directory vaults: treat it as
+   irreversible/outward.

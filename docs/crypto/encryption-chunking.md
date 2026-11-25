@@ -429,7 +429,7 @@ every reassembly.
 | `compact.ts` | the pure compaction planner (which versions fold into which checkpoint) |
 | `concurrency.ts` | `mapWithConcurrency`, used by reassembly and the reconciler |
 | `log.ts` | structured log entry + sinks (the server prints JSON lines, the plugin ring-buffers) |
-| `version.ts` | semver parse/compare + `meetsMinimum` for the version gate |
+| `version.ts` | semver parse/compare (incl. `-beta.N` pre-releases) + `meetsMinimum` for the version gate |
 
 ---
 
