@@ -21,7 +21,8 @@ import { formatLogExport } from "./ui/log-format.ts";
 import { makeTrashApi, TrashApi } from "./plumbing/trash-client.ts";
 import { Transport } from "./sync/transport.ts";
 import { StateDB } from "./plumbing/state.ts";
-import { blockedCopy, blockedSide, type VersionStatus } from "./sync/version-state.ts";
+import { blockedSide, type VersionStatus } from "./sync/version-state.ts";
+import { blockedCopy } from "./ui/version-copy.ts";
 import { VaultEventHandler } from "./sync/events.ts";
 import { SyncManager } from "./sync/sync-manager.ts";
 import { ActivityRecorder } from "./sync/activity-log.ts";
@@ -52,6 +53,7 @@ import {
   leaveVault,
   lockVault,
   restartUnlockedSession,
+  resumeAfterServerUpdate,
   tryCachedKeys,
   unlockAfterRemoteRekeyFlow,
   unlockVault as unlockVaultWithLocalKeys,
@@ -160,19 +162,18 @@ export default class GeodePlugin extends Plugin {
     wirePlatformHttp();
     this.updater = new ServerUpdate({
       app: this.app,
-      serverUrl: () => this.pluginSettings.serverUrl,
-      deviceToken: () => this.pluginSettings.deviceToken,
+      settings: () => this.pluginSettings,
+      saveSettings: () => this.saveSettings(),
       ownVersion: () => this.manifest.version,
       adminToken: () => this.adminToken,
       setAdminToken: (token) => {
         this.adminToken = token;
       },
-      seenVersion: () => this.pluginSettings.updateNoticeVersion,
-      rememberSeenVersion: (version) => {
-        this.pluginSettings.updateNoticeVersion = version;
-        void this.saveSettings();
-      },
       onChange: () => this.settingTab?.updateServerUpdateRow(),
+      onUpdated: (word, version) => {
+        const busy = Boolean(this.resyncInFlight || this.rejoinInFlight);
+        resumeAfterServerUpdate(this, word, version, busy);
+      },
     });
     registerCommands(this);
     this.statusBar = new StatusBar(this);
@@ -424,6 +425,7 @@ export default class GeodePlugin extends Plugin {
     this.serverVersion = serverVersion;
     this.statusBar?.setVersionStatus(this.versionStatus);
     this.settingTab?.updateVersionBanner();
+    if (side === "server") void this.updater.refreshJob();
     if (!this.blockedNoticeShown) {
       this.blockedNoticeShown = true;
       new Notice(blockedCopy(side).notice, 15000);

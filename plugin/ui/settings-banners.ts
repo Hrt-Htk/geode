@@ -1,6 +1,7 @@
 import { type ButtonComponent, setIcon, type Setting } from "obsidian";
 import type { PluginSettings } from "../plumbing/settings-types.ts";
-import { blockedCopy, describeVersionHint, type VersionStatus } from "../sync/version-state.ts";
+import { describeVersionHint, type VersionStatus } from "../sync/version-state.ts";
+import { blockedCopy } from "./version-copy.ts";
 import { BannerRow } from "./banner-row.ts";
 import { filesMissing } from "./mass-delete-review.ts";
 import { describePauseBanner } from "./pause.ts";

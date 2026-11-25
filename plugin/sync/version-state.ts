@@ -14,37 +14,6 @@ export type VersionStatus =
   | ({ kind: "hint" } & VersionPair)
   | { kind: "blocked"; side: BlockedSide };
 
-export interface BlockedCopy {
-  title: string;
-  notice: string;
-  bannerDesc: string;
-  tooltip: string;
-  row: string;
-}
-
-const BLOCKED_COPY: Record<BlockedSide, BlockedCopy> = {
-  plugin: {
-    title: "Update required",
-    notice: "Geode needs an update to keep syncing. Update the plugin, then reload Obsidian.",
-    bannerDesc: "Update the plugin, then reload Obsidian.",
-    tooltip: "Geode: update the plugin to keep syncing",
-    row: "Update the plugin to keep syncing.",
-  },
-  server: {
-    title: "Server update required",
-    notice:
-      "The Geode server needs an update to keep syncing. Update the server, then reload Obsidian.",
-    bannerDesc: "Update the Geode server, then reload Obsidian.",
-    tooltip: "Geode: the server needs an update to keep syncing",
-    row: "Update the Geode server to keep syncing.",
-  },
-};
-
-/** #625: blocked UI copy: it must name the side that has to update. */
-export function blockedCopy(side: BlockedSide): BlockedCopy {
-  return BLOCKED_COPY[side];
-}
-
 /**
  * #625: the refusal reason names the side: a minimum-version refusal means the
  * plugin, a protocol refusal the lower protocol number. The server's own parseable

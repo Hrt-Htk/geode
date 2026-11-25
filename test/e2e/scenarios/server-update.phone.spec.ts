@@ -22,7 +22,6 @@ const NEWER_PLUGIN = "9.9.9";
 
 const ROW = '[data-testid="geode-settings-server-update"]';
 const UPDATE = '[data-testid="geode-settings-update"]';
-const COPY = '[data-testid="geode-settings-update-copy"]';
 const STATUS_ROW = '[data-testid="geode-settings-sync-status"]';
 const DIALOG = ".modal.geode-confirm";
 const BANNER = '[data-testid="geode-settings-version-banner"]';
@@ -73,6 +72,7 @@ test("server update (phone): notice, row, confirm, progress, and both command re
        notice is once per plugin version, and that setting outlives a previous run. */
     await obsidian.eval(`
       const p = app.plugins.plugins.geode;
+      window.__geodeOrigManifestVersion = p.manifest.version;
       p.pluginSettings.updateNoticeVersion = "";
       await p.saveSettings();
       p.manifest.version = ${JSON.stringify(NEWER_PLUGIN)};
@@ -94,7 +94,7 @@ test("server update (phone): notice, row, confirm, progress, and both command re
     await clearNotices(obsidian);
     await openSettingsTab(obsidian, true);
     await expect.poll(() => rowText(obsidian, ROW), { timeout: 20_000 }).toBe(
-      `Server ${SERVER_VERSION}, plugin ${NEWER_PLUGIN}.`,
+      `${SERVER_VERSION}. Update available.`,
     );
     expect(await rowText(obsidian, STATUS_ROW)).toMatch(/^Up to date\. Last backup /);
     await obsidian.eval(
@@ -180,6 +180,15 @@ test("server update (phone): notice, row, confirm, progress, and both command re
     await obsidian.screenshot(shotPath("44-E6-result-not-run-phone.png"));
     await evalClick(obsidian, '[data-testid="geode-update-done"]');
   } finally {
+    await obsidian.eval(`
+      const p = app.plugins.plugins.geode;
+      if (p && window.__geodeOrigManifestVersion) {
+        p.manifest.version = window.__geodeOrigManifestVersion;
+        delete window.__geodeOrigManifestVersion;
+      }
+      return true;
+    `).catch(() => {});
+    await clearNotices(obsidian).catch(() => {});
     await obsidian.close();
     await server.stop().catch(() => {});
   }
@@ -217,6 +226,7 @@ test("server update (phone): no job, and a refused server", async () => {
        this run starts as a fresh plugin version would. */
     await obsidian.eval(`
       const p = app.plugins.plugins.geode;
+      window.__geodeOrigManifestVersion = p.manifest.version;
       p.pluginSettings.updateNoticeVersion = "";
       await p.saveSettings();
       p.manifest.version = ${JSON.stringify(NEWER_PLUGIN)};
@@ -224,30 +234,30 @@ test("server update (phone): no job, and a refused server", async () => {
       return true;
     `);
 
-    /* The notice is due, but without an action: the settings row carries the command. */
+    /* One Update on the notice too: opens the dialog with the command when no job. */
     await expect
       .poll(
-        () => obsidian.eval<number>(`document.querySelectorAll(".notice").length`),
+        () => obsidian.eval<number>(`document.querySelectorAll(".notice-cta").length`),
         { timeout: 20_000 },
       )
-      .toBeGreaterThan(0);
-    expect(await obsidian.eval<number>(`document.querySelectorAll(".notice-cta").length`)).toBe(0);
+      .toBe(1);
     await clearNotices(obsidian);
 
     await openSettingsTab(obsidian, true);
     await expect.poll(() => rowText(obsidian, ROW), { timeout: 20_000 }).toBe(
-      "The update job is not installed. Run the command on the server.",
+      `${SERVER_VERSION}. Update available.`,
     );
-    expect(await obsidian.eval<boolean>(`!!document.querySelector(${JSON.stringify(COPY)})`)).toBe(
-      true,
-    );
+    expect(await obsidian.eval<boolean>(`!!document.querySelector(${JSON.stringify(UPDATE)})`))
+      .toBe(
+        true,
+      );
     await obsidian.eval(
       `document.querySelector(".vertical-tab-content")?.scrollTo(0, 0); return true;`,
     );
     await settle(obsidian);
     await obsidian.screenshot(shotPath("44-B2-row-no-job-phone.png"));
 
-    /* ---- B4: the refusal keeps its action on the banner, the row to the versions ---- */
+    /* ---- B4: the refusal keeps its action on the banner, the row names the stop ---- */
     await obsidian.eval(`
       app.plugins.plugins.geode.transport.dispatchEvent(new CustomEvent("blocked", {
         detail: { server_version: ${JSON.stringify(SERVER_VERSION)}, client_version: ${
@@ -262,7 +272,7 @@ test("server update (phone): no job, and a refused server", async () => {
       })
       .toBe(true);
     await expect.poll(() => rowText(obsidian, ROW), { timeout: 10_000 }).toBe(
-      `Server ${SERVER_VERSION}, plugin ${NEWER_PLUGIN}.`,
+      `${SERVER_VERSION}. Too old for this plugin.`,
     );
     expect(await obsidian.eval<boolean>(`!!document.querySelector(${JSON.stringify(UPDATE)})`))
       .toBe(
@@ -275,6 +285,15 @@ test("server update (phone): no job, and a refused server", async () => {
     await settle(obsidian);
     await obsidian.screenshot(shotPath("44-B4-blocked-banner-phone.png"));
   } finally {
+    await obsidian.eval(`
+      const p = app.plugins.plugins.geode;
+      if (p && window.__geodeOrigManifestVersion) {
+        p.manifest.version = window.__geodeOrigManifestVersion;
+        delete window.__geodeOrigManifestVersion;
+      }
+      return true;
+    `).catch(() => {});
+    await clearNotices(obsidian).catch(() => {});
     await obsidian.close();
     await server.stop().catch(() => {});
   }

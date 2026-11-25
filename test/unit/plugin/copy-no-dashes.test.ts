@@ -139,9 +139,12 @@ import {
   serverAddressCheckMessage,
   serverAddressError,
 } from "../../../plugin/plumbing/server-address.ts";
-import { blockedCopy, describeVersionHint } from "../../../plugin/sync/version-state.ts";
+import { describeVersionHint } from "../../../plugin/sync/version-state.ts";
+import { blockedCopy } from "../../../plugin/ui/version-copy.ts";
 import {
   notRun,
+  PLUGIN_VERSION_ROW_NAME,
+  serverUpdateRow,
   UPDATE_BUTTON,
   UPDATE_CONFIRM_LINES,
   UPDATE_COPY,
@@ -155,6 +158,7 @@ import {
   UPDATE_TITLE_RUN,
   UPDATE_TOKEN_MESSAGE,
   UPDATE_TOKEN_TITLE,
+  UPDATE_WHATS_NEW,
   updateOutcome,
 } from "../../../plugin/ui/server-update-logic.ts";
 import { copySpaceCheck, formatEta, liveEta } from "../../../plugin/ui/rekey-estimate.ts";
@@ -531,13 +535,15 @@ Deno.test("copy-no-dashes - blocked copy, both sides (#625)", () => {
   }
 });
 
-Deno.test("copy-no-dashes - the server update surfaces (#44)", () => {
+Deno.test("copy-no-dashes - the server update surfaces (#44/#51)", () => {
   assertNoDashes(
     "server-update",
     [
       UPDATE_ROW_NAME,
+      PLUGIN_VERSION_ROW_NAME,
       UPDATE_NOTICE,
       UPDATE_BUTTON,
+      UPDATE_WHATS_NEW,
       UPDATE_TITLE_ASK,
       UPDATE_TITLE_RUN,
       UPDATE_CONFIRM_LINES,
@@ -548,6 +554,41 @@ Deno.test("copy-no-dashes - the server update surfaces (#44)", () => {
       UPDATE_COPY,
       UPDATE_DONE,
       UPDATE_NO_JOB,
+      serverUpdateRow({
+        own: "1.0.2",
+        server: "1.0.2",
+        refused: false,
+        updating: false,
+        lastUpdateFailed: false,
+      }).desc,
+      serverUpdateRow({
+        own: "1.0.2",
+        server: "1.0.1",
+        refused: false,
+        updating: false,
+        lastUpdateFailed: false,
+      }).desc,
+      serverUpdateRow({
+        own: "1.0.2",
+        server: "1.0.1",
+        refused: false,
+        updating: true,
+        lastUpdateFailed: false,
+      }).desc,
+      serverUpdateRow({
+        own: "1.0.2",
+        server: "1.0.1",
+        refused: false,
+        updating: false,
+        lastUpdateFailed: true,
+      }).desc,
+      serverUpdateRow({
+        own: "1.0.2",
+        server: "1.0.1",
+        refused: true,
+        updating: false,
+        lastUpdateFailed: false,
+      }).desc,
       // SERVER_UPDATE_COMMAND is a shell command, not copy: it carries the job's own flags.
       notRun().text,
       ...["updated", "up-to-date", "rate-limited", "rolled-back", "blocked", "pull-failed"].map(

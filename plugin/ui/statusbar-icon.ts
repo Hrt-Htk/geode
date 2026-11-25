@@ -1,5 +1,6 @@
 /** Pure status-icon resolution: no obsidian import (safe for deno unit tests). */
-import { blockedCopy, type VersionStatus } from "../sync/version-state.ts";
+import type { VersionStatus } from "../sync/version-state.ts";
+import { blockedCopy } from "./version-copy.ts";
 import type { MassDeleteHold } from "../sync/mass-delete-hold.ts";
 import { pauseAgeColor, pauseTooltip } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";

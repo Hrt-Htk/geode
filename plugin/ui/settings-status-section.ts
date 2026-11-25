@@ -7,10 +7,10 @@ import { runWithFeedback } from "./button-feedback.ts";
 import { createForgotLink } from "./forgot-modal.ts";
 import { FORGOT_TITLE } from "./passphrase-copy.ts";
 import {
+  PLUGIN_VERSION_ROW_NAME,
   type ServerUpdateInput,
   serverUpdateRow,
   UPDATE_BUTTON,
-  UPDATE_COPY,
   UPDATE_ROW_NAME,
 } from "./server-update-logic.ts";
 import type { SettingsRow } from "./settings-legacy.ts";
@@ -42,10 +42,10 @@ export type StatusSectionHost = {
   openActivityModal: () => void;
   /** #432: the sync-status row's [Review] opens the Conflicts modal. */
   openConflictsModal: () => void;
-  /** #44: the Status row for the server's own version, and the two things it can do. */
+  /** #44/#51: Server version row and Plugin version row in Status. */
   getServerUpdateInput: () => ServerUpdateInput;
+  getPluginVersion: () => string;
   startServerUpdate: () => void;
-  copyUpdateCommand: () => void;
 };
 
 /** Status section rows: sync-status row updates in place; never re-renders the tab. */
@@ -63,7 +63,7 @@ export class SettingsStatusSection {
   private serverUpdateSetting: Setting | null = null;
   private serverUpdateDescEl: HTMLElement | null = null;
   private serverUpdateBtn: ButtonComponent | null = null;
-  private serverUpdateControl: "none" | "update" | "copy" | "updating" = "none";
+  private serverUpdateControl: "none" | "update" | "updating" = "none";
 
   constructor(private host: StatusSectionHost) {}
 
@@ -80,10 +80,16 @@ export class SettingsStatusSection {
     return [
       { name: "Sync status", render: (s) => this.renderStatusRow(s) },
       {
-        // #44: a locked tab keeps to its rows (#458), and the version it would offer is stale.
+        // #44/#51: Server version row, shown once unlocked and known.
         name: UPDATE_ROW_NAME,
         visible: () => this.host.getUnlocked() && this.host.getServerUpdateInput().server !== null,
         render: (s) => this.renderServerUpdateRow(s),
+      },
+      {
+        // #51: Plugin version row beside Server version.
+        name: PLUGIN_VERSION_ROW_NAME,
+        visible: () => this.host.getUnlocked(),
+        render: (s) => this.renderPluginVersionRow(s),
       },
       {
         // #440: "Forgot your passphrase?" link row, visible only while locked.
@@ -144,7 +150,12 @@ export class SettingsStatusSection {
     this.updateServerUpdateRow();
   }
 
-  /** Re-describe the Server update row in place: its control follows the job's state, so a
+  private renderPluginVersionRow(row: Setting): void {
+    row.settingEl.dataset.testid = "geode-settings-plugin-version";
+    row.descEl.createSpan({ text: this.host.getPluginVersion() });
+  }
+
+  /** Re-describe the Server version row in place: its control follows the run's state, so a
    * closed dialog never leaves a second Update one click away. */
   updateServerUpdateRow(): void {
     const setting = this.serverUpdateSetting;
@@ -161,12 +172,7 @@ export class SettingsStatusSection {
     if (control === "none") return;
     setting.addButton((btn) => {
       this.serverUpdateBtn = btn;
-      if (control === "copy") {
-        btn.setButtonText(UPDATE_COPY).onClick(() => this.host.copyUpdateCommand());
-        btn.buttonEl.dataset.testid = "geode-settings-update-copy";
-        return;
-      }
-      btn.setButtonText(UPDATE_BUTTON).onClick(() => this.host.startServerUpdate());
+      btn.setCta().setButtonText(UPDATE_BUTTON).onClick(() => this.host.startServerUpdate());
       btn.buttonEl.dataset.testid = "geode-settings-update";
       btn.setDisabled(control === "updating");
     });

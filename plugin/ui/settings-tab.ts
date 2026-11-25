@@ -242,8 +242,8 @@ export class GeodeSettingTab extends PluginSettingTab {
           this.plugin.versionStatus.kind === "blocked" &&
             this.plugin.versionStatus.side === "server",
         ),
+      getPluginVersion: () => this.plugin.manifest.version,
       startServerUpdate: () => this.plugin.updater.prompt(),
-      copyUpdateCommand: () => this.plugin.updater.copyCommand(),
     });
     const status: TreeSection<SettingsRow> = {
       id: "status",
@@ -394,6 +394,7 @@ export class GeodeSettingTab extends PluginSettingTab {
   /** A version change only rewrites the version rows; the state rows stay in place. */
   updateVersionBanner(): void {
     this.banners.updateVersion();
+    this.statusSection?.updateServerUpdateRow();
     this.refreshDom();
   }
 
