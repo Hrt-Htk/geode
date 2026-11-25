@@ -109,11 +109,10 @@ ci/issue377-enforce-standards
 - Fill in every checklist item in the PR template, including the gate evidence checkboxes.
 - Reference an open issue in the PR body or in a commit message.
 - Follow conventional commit format. CI checks commit messages; the PR title is a convention, and
-  auto-ship merges with a merge commit, so the commits keep their messages.
+  PRs merge with a merge commit (`gh pr merge N --merge --delete-branch`), so the commits keep their
+  messages.
 - Open the PR as a draft while anything is still owed, and mark it ready when the gates and the review
-  pass are done. Auto-ship merges ready PRs only, and only the maintainer's own PRs from this repo.
-  A PR from a fork or another author is never auto-merged: the maintainer reviews and merges it by
-  hand.
+  pass are done. Ready no longer merges itself: every PR is merged by hand once CI is green.
 
 ## Size limits
 
@@ -171,12 +170,12 @@ CI runs no job on a draft PR: the local `deno task ci` before every push is the 
 a PR ready runs CI once; a new commit or a body edit on a ready PR runs it again, in full. A newer run
 for the same PR cancels the older one; pushes to `main` always run to the end.
 
-Auto-ship only merges. No release decision and no server update happen in Actions: releases are cut
-by hand with `deno task release X.Y.Z-beta.N` (beta) or `deno task promote X.Y.Z` (final), and the
-server update is a step of its own (skill `geode-release`). A beta tag (`X.Y.Z-beta.N`) tags the
-image `X.Y.Z-beta.N` and `beta`; a final tag (`X.Y.Z`) tags `X.Y.Z`, `latest`, and `beta`, so `:beta`
-follows every release while a beta that bumps the wire protocol cannot reach directory users who pull
-`latest` (#65, #81).
+Merging is manual (`gh pr merge N --merge --delete-branch`). No release decision and no server update
+happen in Actions: releases are cut by hand with `deno task release X.Y.Z-beta.N` (beta) or
+`deno task promote X.Y.Z` (final), and the server update is a step of its own (skill `geode-release`).
+A beta tag (`X.Y.Z-beta.N`) tags the image `X.Y.Z-beta.N` and `beta`; a final tag (`X.Y.Z`) tags
+`X.Y.Z`, `latest`, and `beta`, so `:beta` follows every release while a beta that bumps the wire
+protocol cannot reach directory users who pull `latest` (#65, #81).
 
 ### Runner
 

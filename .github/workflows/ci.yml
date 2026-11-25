@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main, master]
     # `edited` re-runs on PR-body changes (gate-evidence checkboxes);
-    # `ready_for_review` re-runs when a draft PR is marked ready; auto-ship then merges.
+    # `ready_for_review` re-runs CI when a draft PR is marked ready.
     types: [opened, synchronize, reopened, edited, ready_for_review]
 
 # Drafts run no job (#713): the local `deno task ci` gates every push. A newer

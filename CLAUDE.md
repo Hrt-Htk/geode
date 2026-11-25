@@ -216,16 +216,15 @@ intermediate ones. CI hard-fails on bad commit format, branch name, or a missing
 1. **Open a draft PR against `main`.** Every PR must reference an open issue (PR body or a commit).
    One issue → one PR, except when issues genuinely share files: one branch, a commit per issue, one
    PR closing each (`Closes #a, closes #b`: a keyword per issue, or GitHub closes only the first), noted in the body. Draft it while anything is still owed (a
-   Done gate, the review pass, a follow-up issue). Auto-ship never merges a draft.
+   Done gate, the review pass, a follow-up issue); ready PRs stay open until merged by hand.
 2. **Never close an issue without a green PR.** An issue stays open until the PR that fixes it is
    merged and CI is green. Don't close issues based on tests alone, manual verification alone, or
    analysis alone. Wait for the green PR.
-3. **Ready → auto-merge.** Once nothing is owed, `gh pr ready N` (or open the PR ready directly).
-   The `Auto-ship` workflow (on CI `workflow_run` success, pull_request events) merges a **ready**
-   PR (`gh pr merge N --merge --delete-branch`); drafts stay open, and only the maintainer's own PRs
-   from this repo auto-merge. CI must be green: Workflow Checks + Deno checks + Gate evidence. The
-   `Closes #N` footer **auto-closes the issue** on merge to `main` (never close it manually before
-   merge).
+3. **Ready → merge by hand.** Once nothing is owed, `gh pr ready N` (or open the PR ready directly).
+   CI must be green: Workflow Checks + Deno checks + Gate evidence + Secret scan + Docker smoke.
+   Every PR is merged by hand (`gh pr merge N --merge --delete-branch`) by the maintainer, or by an
+   agent on the maintainer's explicit go; ready does not merge itself. The `Closes #N` footer
+   **auto-closes the issue** on merge to `main` (never close it manually before merge).
 4. **Keep docs in sync in the *same* PR.** If the change alters behavior a doc describes (paths, flows,
    gates, wire format), update it; if a doc no longer matches reality and isn't worth keeping, delete
    it (a stale doc is worse than none). Never delete the cited load-bearing docs

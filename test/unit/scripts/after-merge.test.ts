@@ -3,8 +3,7 @@
 import { assertEquals } from "@std/assert";
 import { staleBoardItems } from "../../../scripts/after-merge.ts";
 
-// #413: auto-ship closes issues with github.token, which never fires the
-// board's "Item closed → Done" workflow: after-merge moves them itself.
+// #413: after-merge moves closed issues and merged PRs to Done on the board.
 const item = (id: string, state: string | undefined, status: string | null) => ({
   id,
   content: state ? { state } : {},

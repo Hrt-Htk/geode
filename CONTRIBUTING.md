@@ -52,8 +52,7 @@ hard rules, each read from `.github/workflows/` and the scripts it runs:
 - **Secret scan.** gitleaks runs over the commits a PR adds.
 - **Draft PRs run no job.** Run `deno task ci` yourself until the PR is ready.
 
-Only the maintainer's own PRs from this repo auto-merge; a PR from a fork is reviewed and merged by
-hand.
+Every PR is reviewed and merged by hand (`gh pr merge N --merge --delete-branch`) once CI is green.
 
 ## Security
 

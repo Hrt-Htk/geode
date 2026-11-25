@@ -1,9 +1,8 @@
 #!/usr/bin/env -S deno run -A
 /**
- * After a merge: prune gone local branches, move closed board items to Done,
- * and cut a release per the #393 rule.
- * Local counterpart of the online auto-ship.yml. Runs on `main` with a clean tree; `--dry-run` prints every
- * action and the release decision without changing anything.
+ * After a merge: fetch and fast-forward main, prune worktrees and gone local
+ * branches, and move closed board items to Done. Runs on `main` with a clean
+ * tree; `--dry-run` prints every action without changing anything.
  *
  * Usage: deno run -A scripts/after-merge.ts [--dry-run]
  */
@@ -27,8 +26,7 @@ type BoardItem = {
   fieldValueByName: { name: string } | null;
 };
 
-// auto-ship closes issues with github.token, which never fires the board's
-// "Item closed → Done" workflow (#413): pick the closed/merged items it missed.
+// Pick closed issues and merged PRs whose board Status is not yet "Done" (#413).
 export function staleBoardItems(items: BoardItem[]): string[] {
   return items
     .filter((i) =>
