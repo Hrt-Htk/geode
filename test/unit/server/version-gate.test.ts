@@ -48,6 +48,14 @@ Deno.test("version-gate - checkMinVersion uses env default when no minimum given
   assert(result.ok);
 });
 
+Deno.test("version-gate - checkMinVersion accepts betas above minimum and rejects below", () => {
+  assert(checkMinVersion("1.0.2-beta.1", "1.0.1").ok);
+  assert(checkMinVersion("1.0.2-beta.1", "1.0.2-beta.1").ok);
+  assert(checkMinVersion("1.0.2-beta.1", "0.0.0").ok);
+  assertEquals(checkMinVersion("1.0.2-beta.1", "1.0.2").ok, false);
+  assertEquals(checkMinVersion("1.0.2-beta.1", "1.0.2-beta.2").ok, false);
+});
+
 // ── exact-match gate removed (#529) ─────────────────────────────────
 
 Deno.test("version-gate - exact-match gate removed: no checkServerVersionMatch export", async () => {

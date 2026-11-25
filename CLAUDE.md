@@ -216,16 +216,15 @@ intermediate ones. CI hard-fails on bad commit format, branch name, or a missing
 1. **Open a draft PR against `main`.** Every PR must reference an open issue (PR body or a commit).
    One issue → one PR, except when issues genuinely share files: one branch, a commit per issue, one
    PR closing each (`Closes #a, closes #b`: a keyword per issue, or GitHub closes only the first), noted in the body. Draft it while anything is still owed (a
-   Done gate, the review pass, a follow-up issue). Auto-ship never merges a draft.
+   Done gate, the review pass, a follow-up issue); ready PRs stay open until merged by hand.
 2. **Never close an issue without a green PR.** An issue stays open until the PR that fixes it is
    merged and CI is green. Don't close issues based on tests alone, manual verification alone, or
    analysis alone. Wait for the green PR.
-3. **Ready → auto-merge.** Once nothing is owed, `gh pr ready N` (or open the PR ready directly).
-   The `Auto-ship` workflow (on CI `workflow_run` success, pull_request events) merges a **ready**
-   PR (`gh pr merge N --merge --delete-branch`); drafts stay open, and only the maintainer's own PRs
-   from this repo auto-merge. CI must be green: Workflow Checks + Deno checks + Gate evidence. The
-   `Closes #N` footer **auto-closes the issue** on merge to `main` (never close it manually before
-   merge).
+3. **Ready → merge by hand.** Once nothing is owed, `gh pr ready N` (or open the PR ready directly).
+   CI must be green: Workflow Checks + Deno checks + Gate evidence + Secret scan + Docker smoke.
+   Every PR is merged by hand (`gh pr merge N --merge --delete-branch`) by the maintainer, or by an
+   agent on the maintainer's explicit go; ready does not merge itself. The `Closes #N` footer
+   **auto-closes the issue** on merge to `main` (never close it manually before merge).
 4. **Keep docs in sync in the *same* PR.** If the change alters behavior a doc describes (paths, flows,
    gates, wire format), update it; if a doc no longer matches reality and isn't worth keeping, delete
    it (a stale doc is worse than none). Never delete the cited load-bearing docs
@@ -233,29 +232,28 @@ intermediate ones. CI hard-fails on bad commit format, branch name, or a missing
    `deno task docs:drift` names the doc your change drifted from; `docs: unaffected - <reason>` in the
    PR body opts out of a hard `covers:` drift (`watches:` only warns).
 5. **After a merge: archive the PR's Paseo workspace, then `deno task after-merge`**: prune gone
-   branches (after `git worktree prune`), move closed board items to Done, release per skill `geode-release`. Archive first: git refuses to delete a branch still checked out
-   in a live worktree. No release decision and no server update in Actions: they stay local. Paseo often
-   archives a merged
-   PR's workspace itself (its agent stops): `Workspace not found` then is normal; continue with
+   branches (after `git worktree prune`) and move closed board items to Done. Archive first: git
+   refuses to delete a branch still checked out in a live worktree. `after-merge` no longer releases;
+   cutting a beta or final release is manual per skill `geode-release`. Paseo often archives a
+   merged PR's workspace itself (its agent stops): `Workspace not found` then is normal; continue with
    after-merge.
 6. **Transient CI** (empty `runner_name`, cancelled-while-queued, "Service Unavailable") **→ re-run, not a code bug** (`gh api repos/OWNER/REPO/actions/runs/<id>/jobs`).
 
-**Release to users**: `deno task release X.Y.Z` is the manual release path: bumps the shared version
-line (`package.json` only), commits `chore(release): X.Y.Z`, pushes `main`, tags the bare `X.Y.Z`.
-`release.yml` then publishes two things from that tag: the plugin as an attested pre-release (BRAT) and
-the server image to GHCR, tagged `X.Y.Z` and `beta`: never `latest`, which directory users pull. The
-release script deploys nothing. A version difference does not block sync: the server gates on wire
-protocol + minimum version only, and a compatible difference shows an update
-hint instead. The build stamps `package.json`'s version into `plugin-dist/manifest.json`, so the release
-asset says `X.Y.Z` while the root `manifest.json` keeps the last promoted version. **Every release is a
-pre-release:** BRAT picks it up, the community directory does not. `deno task promote X.Y.Z` moves a
-tested release to the directory: root `manifest.json` + `versions.json`, commit
-`chore(release): promote X.Y.Z`, push `main`, clear the pre-release flag, mark it latest, notes since the
-last promoted version. No rebuild: `latest` moves onto that release's existing digest through
-`promote-image.yml`. No `--no-deploy` mode. `after-merge` calls
-`release` automatically (step 5); promote is always manual. Updating your own server after a release is
-a separate step, through the host update job (skill `geode-release`). Skill `geode-release`. While
-`RELEASE_HOLD` exists at the repo root, `after-merge` skips the release and `deno task release` /
+**Release to users**: `deno task release X.Y.Z-beta.N` cuts a beta: bumps `package.json` only,
+commits `chore(release): X.Y.Z-beta.N`, pushes `main`, tags `X.Y.Z-beta.N`. `release.yml` then
+publishes the plugin as an attested pre-release (BRAT) and the server image to GHCR tagged
+`X.Y.Z-beta.N` and `beta`: never `latest`, which directory users pull. Root `manifest.json` and
+`versions.json` keep the last final version, while the build stamps `package.json`'s version into
+`plugin-dist/manifest.json`. `deno task promote X.Y.Z` cuts the final release: refuses unless at
+least one `X.Y.Z-beta.N` tag exists and no commit touching `plugin/`, `server/`, `core/`, `db/` landed
+after the latest one; bumps `package.json`, root `manifest.json`, and `versions.json`; commits
+`chore(release): promote X.Y.Z`; pushes `main`; tags `X.Y.Z`; waits for `release.yml` (which tags
+the image `X.Y.Z`, `latest`, and `beta` and creates the non-prerelease GitHub release); and writes the
+release notes covering every change since the previous final release. Neither script deploys to a
+running server: updating your own server is a separate step through the host update job (skill
+`geode-release`). A version difference does not block sync: the server gates on wire protocol +
+minimum version only (accepting betas with semver precedence), and a compatible difference shows an
+update hint instead. While `RELEASE_HOLD` exists at the repo root, `deno task release` and
 `deno task promote` refuse: remove the file in its own PR to resume.
 
 Full process spec: `docs/dev/workflow.md`, `CONTRIBUTING.md`.

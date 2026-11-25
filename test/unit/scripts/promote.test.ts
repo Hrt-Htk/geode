@@ -1,53 +1,50 @@
-// #22: a release ships to BRAT testers as a pre-release; promoting it points the
-// community directory's root manifest.json/versions.json on main at that exact
-// build, clears the pre-release flag, and rewrites its notes to cover every
-// change since the previously promoted version. `gh` is stubbed via PATH, so
-// nothing here touches GitHub.
+// #22/#81: betas ship as X.Y.Z-beta.N pre-releases; `deno task promote X.Y.Z`
+// cuts the final X.Y.Z release from a commit that bumps root manifest.json,
+// versions.json, and package.json, pushes main and tags X.Y.Z so release.yml
+// builds and publishes the final image (`X.Y.Z` + `latest`) and GitHub release,
+// then rewrites the release notes since the previous final release. `gh` is
+// stubbed via PATH, so nothing here touches GitHub.
 
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import { prevReleaseTag } from "../../../scripts/promote.ts";
 
 const REPO_ROOT = new URL("../../../", import.meta.url);
 
-// Records its argv, answers the three calls promote makes.
 const GH_STUB = `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "release view")
-    if [ "\${GH_PRERELEASE:-true}" = "false" ]; then
-      echo '{"isPrerelease":false}'
-    else
-      echo '{"isPrerelease":true}'
-    fi
-    ;;
   "api repos/{owner}/{repo}/releases/generate-notes")
     echo "## What's Changed"
     echo ""
     echo "* promoted notes"
     ;;
   "release edit") echo "https://example.invalid/releases/tag/$3" ;;
-  "workflow run") ;;
   "run list")
+    if [ "\${GH_LIST_FAIL:-}" = "true" ]; then
+      echo "gh: not authenticated" >&2
+      exit 1
+    fi
     n=$(( $(cat "$GH_LISTS" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$GH_LISTS"
     if [ "\${GH_OLD_RUN:-}" = "true" ]; then
       case "$n" in
-        1) echo '[{"databaseId":3,"name":"Promote image 0.0.2"}]' ;;
+        1) echo '[{"databaseId":3,"headBranch":"0.0.2"}]' ;;
         2) echo '[]' ;;
-        *) echo '[{"databaseId":9,"name":"Promote image 0.0.2"},{"databaseId":3,"name":"Promote image 0.0.2"}]' ;;
+        *) echo '[{"databaseId":9,"headBranch":"0.0.2"},{"databaseId":3,"headBranch":"0.0.2"}]' ;;
       esac
     elif [ "$n" = "1" ]; then
       echo '[]'
     else
-      echo '[{"databaseId":7,"name":"Promote image 0.0.2"}]'
+      echo '[{"databaseId":7,"headBranch":"0.0.2"}]'
     fi
     ;;
   "run watch")
     if [ "\${GH_RUN_FAIL:-}" = "true" ]; then
-      echo "X Promote image 0.0.2 failed" >&2
+      echo "X Release 0.0.2 failed" >&2
       exit 1
     fi
-    echo "OK Promote image 0.0.2"
+    echo "OK Release 0.0.2"
     ;;
   *)
     echo "gh stub: unhandled: $*" >&2
@@ -62,10 +59,12 @@ type Fixture = {
   home: string;
   log: string;
   env: Record<string, string>;
+  git: (args: string[]) => Promise<void>;
 };
 
-/** A throwaway repo on `main` with a bare origin: manifest promoted at 0.0.1, released 0.0.2. */
-async function tempRepo(): Promise<Fixture> {
+/** A throwaway repo on `main` with a bare origin: promoted at 0.0.1, beta 0.0.2-beta.1 tagged. */
+async function tempRepo(opts: { tagBeta?: boolean } = {}): Promise<Fixture> {
+  const { tagBeta = true } = opts;
   const base = await Deno.realPath(await Deno.makeTempDir({ prefix: "geode-promote-" }));
   const repo = `${base}/repo`;
   const home = `${base}/home`;
@@ -85,21 +84,19 @@ async function tempRepo(): Promise<Fixture> {
     PATH: `${bin}:${Deno.env.get("PATH") ?? ""}`,
   };
 
-  const git = (args: string[]) =>
-    new Deno.Command("git", {
+  const git = async (args: string[]) => {
+    const out = await new Deno.Command("git", {
       args: ["-c", "user.name=geode", "-c", "user.email=geode@example.com", ...args],
       cwd: repo,
       env,
       stdout: "piped",
       stderr: "piped",
     }).output();
-  const ok = async (args: string[]) => {
-    const out = await git(args);
     assertEquals(out.code, 0, new TextDecoder().decode(out.stderr));
   };
 
-  await ok(["init", "-b", "main"]);
-  await Deno.writeTextFile(`${repo}/package.json`, JSON.stringify({ version: "0.0.2" }) + "\n");
+  await git(["init", "-b", "main"]);
+  await Deno.writeTextFile(`${repo}/package.json`, JSON.stringify({ version: "0.0.1" }) + "\n");
   await Deno.writeTextFile(
     `${repo}/manifest.json`,
     JSON.stringify({ version: "0.0.1", minAppVersion: "1.5.0" }, null, 2) + "\n",
@@ -108,14 +105,26 @@ async function tempRepo(): Promise<Fixture> {
     `${repo}/versions.json`,
     JSON.stringify({ "0.0.1": "1.5.0" }, null, 2) + "\n",
   );
-  await ok(["add", "-A"]);
-  await ok(["commit", "-m", "chore: init"]);
-  await ok(["init", "--bare", "-b", "main", `${base}/origin.git`]);
-  await ok(["remote", "add", "origin", `${base}/origin.git`]);
-  await ok(["push", "-u", "origin", "main"]);
+  await git(["add", "-A"]);
+  await git(["commit", "-m", "chore: init"]);
+  await git(["init", "--bare", "-b", "main", `${base}/origin.git`]);
+  await git(["remote", "add", "origin", `${base}/origin.git`]);
+  await git(["push", "-u", "origin", "main"]);
   // The previously promoted version predates #12 and is `v`-prefixed.
-  await ok(["tag", "v0.0.1"]);
-  return { base, repo, home, log, env };
+  await git(["tag", "v0.0.1"]);
+
+  if (tagBeta) {
+    await Deno.writeTextFile(
+      `${repo}/package.json`,
+      JSON.stringify({ version: "0.0.2-beta.1" }) + "\n",
+    );
+    await git(["add", "-A"]);
+    await git(["commit", "-m", "chore(release): 0.0.2-beta.1"]);
+    await git(["tag", "0.0.2-beta.1"]);
+    await git(["push", "origin", "main", "0.0.2-beta.1"]);
+  }
+
+  return { base, repo, home, log, env, git };
 }
 
 async function runPromote(fx: Fixture, version = "0.0.2") {
@@ -147,7 +156,17 @@ async function subjects(fx: Fixture): Promise<string[]> {
   return new TextDecoder().decode(out.stdout).trim().split("\n");
 }
 
-Deno.test("promote: points main's root manifest and versions.json at the release", async () => {
+async function revParse(cwd: string, ref: string): Promise<string> {
+  const out = await new Deno.Command("git", {
+    args: ["rev-parse", ref],
+    cwd,
+    stdout: "piped",
+  }).output();
+  assertEquals(out.code, 0);
+  return new TextDecoder().decode(out.stdout).trim();
+}
+
+Deno.test("promote: bumps manifest, versions, and package.json, pushes main and tag, waits for release.yml", async () => {
   const fx = await tempRepo();
   try {
     const res = await runPromote(fx);
@@ -155,100 +174,94 @@ Deno.test("promote: points main's root manifest and versions.json at the release
     const manifest = JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`));
     assertEquals(manifest.version, "0.0.2");
     assertEquals(manifest.minAppVersion, "1.5.0", "the manifest's own minAppVersion is kept");
+    const pkg = JSON.parse(await Deno.readTextFile(`${fx.repo}/package.json`));
+    assertEquals(pkg.version, "0.0.2", "package.json matches root manifest at tag commit");
     const versions = JSON.parse(await Deno.readTextFile(`${fx.repo}/versions.json`));
     assertEquals(versions, { "0.0.1": "1.5.0", "0.0.2": "1.5.0" });
     assert(
       (await subjects(fx)).includes("chore(release): promote 0.0.2"),
       "the promote is its own commit",
     );
-    const local = await new Deno.Command("git", {
-      args: ["rev-parse", "HEAD"],
-      cwd: fx.repo,
-      stdout: "piped",
-    }).output();
-    const remote = await new Deno.Command("git", {
-      args: ["rev-parse", "main"],
-      cwd: `${fx.base}/origin.git`,
-      stdout: "piped",
-    }).output();
-    assertEquals(
-      new TextDecoder().decode(remote.stdout).trim(),
-      new TextDecoder().decode(local.stdout).trim(),
-      "the promote commit reaches origin/main",
-    );
+
+    const localHead = await revParse(fx.repo, "HEAD");
+    const remoteHead = await revParse(`${fx.base}/origin.git`, "main");
+    assertEquals(remoteHead, localHead, "the promote commit reaches origin/main");
+
+    // The 0.0.2 tag exists on origin and points directly at the promote commit,
+    // so the tag commit's root manifest equals the release manifest.
+    const tagTarget = await revParse(`${fx.base}/origin.git`, "refs/tags/0.0.2");
+    assertEquals(tagTarget, localHead, "tag 0.0.2 points to the promote commit");
+
     assert(!res.stdout.includes("deploy"), "promote never deploys the server");
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
 });
 
-Deno.test("promote: clears the pre-release flag, marks it latest, rewrites the notes", async () => {
-  const fx = await tempRepo();
-  try {
-    const res = await runPromote(fx);
-    assertEquals(res.code, 0, `promote failed\n${res.stdout}${res.stderr}`);
-    const log = await Deno.readTextFile(fx.log);
-    const edit = log.split("\n").find((l) => l.startsWith("release edit")) ?? "";
-    assertStringIncludes(edit, "release edit 0.0.2");
-    assertStringIncludes(edit, "--prerelease=false");
-    assertStringIncludes(edit, "--latest");
-    assertStringIncludes(edit, "## What's Changed");
-    // The notes must span everything since the last promoted version, which is
-    // the root manifest's version, in either tag form.
-    const notes = log.split("\n").find((l) => l.includes("generate-notes")) ?? "";
-    assertStringIncludes(notes, "tag_name=0.0.2");
-    assertStringIncludes(notes, "previous_tag_name=v0.0.1");
-  } finally {
-    await Deno.remove(fx.base, { recursive: true });
-  }
-});
-
-// #65: a release never moves the image's `latest` tag, so a promote does it, onto
-// the digest it already attested.
-Deno.test("promote: retags the image latest onto the release", async () => {
+Deno.test("promote: waits for release.yml and rewrites release notes since previous final", async () => {
   const fx = await tempRepo();
   try {
     const res = await runPromote(fx);
     assertEquals(res.code, 0, `promote failed\n${res.stdout}${res.stderr}`);
     const lines = (await Deno.readTextFile(fx.log)).split("\n");
-    const dispatch = lines.findIndex((l) => l.startsWith("workflow run"));
-    assert(dispatch >= 0, `promote must dispatch the retag\n${lines.join("\n")}`);
-    assertStringIncludes(lines[dispatch], "promote-image.yml");
-    assertStringIncludes(lines[dispatch], "version=0.0.2");
-    const watch = lines.findIndex((l) => l.startsWith("run watch"));
-    assertStringIncludes(lines[watch], "7");
-    assertStringIncludes(lines[watch], "--exit-status");
-    assert(dispatch < watch, "the dispatch comes before the watch");
+    const listIdx = lines.findIndex((l) => l.includes("--workflow=release.yml"));
+    const watchIdx = lines.findIndex((l) => l.startsWith("run watch 7 --exit-status"));
+    const notesIdx = lines.findIndex((l) => l.includes("generate-notes"));
+    const editIdx = lines.findIndex((l) => l.startsWith("release edit 0.0.2"));
+    assert(listIdx >= 0, `must poll release.yml runs:\n${lines.join("\n")}`);
+    assert(watchIdx > listIdx, "watches the release run");
+    assert(notesIdx > watchIdx, "generates notes after release run succeeds");
+    assert(editIdx > notesIdx, "edits release notes after generating them");
+    assertStringIncludes(lines[notesIdx], "tag_name=0.0.2");
+    assertStringIncludes(lines[notesIdx], "previous_tag_name=v0.0.1");
+    assertStringIncludes(lines[editIdx], "--prerelease=false");
+    assertStringIncludes(lines[editIdx], "--latest");
+    assertStringIncludes(lines[editIdx], "## What's Changed");
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
 });
 
-Deno.test("promote: a failed image retag leaves main and the manifest alone", async () => {
+Deno.test("promote: a failed release.yml run surfaces the error without editing notes", async () => {
   const fx = await tempRepo();
   try {
     fx.env.GH_RUN_FAIL = "true";
     const res = await runPromote(fx);
     assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
-    assertStringIncludes(res.stderr, "promote-image");
-    assertEquals(
-      JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`)).version,
-      "0.0.1",
-      "an image retag that failed must not move the manifest",
-    );
-    assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release)")), "no promote commit");
+    assertStringIncludes(res.stderr, "release");
     assert(
       !(await Deno.readTextFile(fx.log)).includes("release edit"),
-      "the release is not promoted without its image",
+      "must not rewrite notes on a failed release run",
     );
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
 });
 
-// #65: a rerun after a failed retag must watch its own run, not the earlier one of the
-// same name: `gh run list` is newest-first and the first poll can predate the dispatch.
-Deno.test("promote: a rerun watches the new retag run, not an earlier one", async () => {
+Deno.test("promote: gh failure in preconditions leaves files, local main, and origin untouched", async () => {
+  const fx = await tempRepo();
+  try {
+    const beforeRemote = await revParse(`${fx.base}/origin.git`, "main");
+    fx.env.GH_LIST_FAIL = "true";
+    const res = await runPromote(fx);
+    assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
+    assertStringIncludes(res.stderr, "not authenticated");
+    assertEquals(JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`)).version, "0.0.1");
+    assertEquals(
+      JSON.parse(await Deno.readTextFile(`${fx.repo}/package.json`)).version,
+      "0.0.2-beta.1",
+    );
+    assertEquals(JSON.parse(await Deno.readTextFile(`${fx.repo}/versions.json`)), {
+      "0.0.1": "1.5.0",
+    });
+    assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release): promote")));
+    assertEquals(await revParse(`${fx.base}/origin.git`, "main"), beforeRemote);
+  } finally {
+    await Deno.remove(fx.base, { recursive: true });
+  }
+});
+
+Deno.test("promote: a rerun watches the new release run, not an earlier one", async () => {
   const fx = await tempRepo();
   try {
     fx.env.GH_OLD_RUN = "true";
@@ -257,40 +270,78 @@ Deno.test("promote: a rerun watches the new retag run, not an earlier one", asyn
     const watched = (await Deno.readTextFile(fx.log))
       .split("\n")
       .filter((l) => l.startsWith("run watch"));
-    assertEquals(watched, ["run watch 9 --exit-status"], "watches the dispatched run");
+    assertEquals(watched, ["run watch 9 --exit-status"], "watches the new run");
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
 });
 
-// The name is the only link between the two files: a rename on either side would leave
-// promote polling for a run that never appears.
-Deno.test("promote: the retag workflow names its run the way promote looks for it", async () => {
-  const yaml = await Deno.readTextFile(
-    new URL("../../../.github/workflows/promote-image.yml", import.meta.url),
-  );
-  const runName = yaml.split("\n").find((l) => l.startsWith("run-name: "));
-  assertEquals(runName, "run-name: Promote image ${{ inputs.version }}");
-  assert(
-    yaml.includes("\n      version:\n"),
-    "the workflow takes the `version` input promote dispatches",
-  );
-});
-
-Deno.test("promote: refuses a release that is not a pre-release", async () => {
-  const fx = await tempRepo();
+Deno.test("promote: refuses when no X.Y.Z-beta.N tag exists", async () => {
+  const fx = await tempRepo({ tagBeta: false });
   try {
-    fx.env.GH_PRERELEASE = "false";
     const res = await runPromote(fx);
     assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
-    assertStringIncludes(res.stderr, "0.0.2");
-    assertStringIncludes(res.stderr, "pre-release");
+    assertStringIncludes(res.stderr, "0.0.2-beta");
     assertEquals(
       JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`)).version,
       "0.0.1",
-      "a refused promote must not move the manifest",
     );
-    assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release)")), "no promote commit");
+    assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release): promote")));
+  } finally {
+    await Deno.remove(fx.base, { recursive: true });
+  }
+});
+
+Deno.test("promote: refuses when shipped code changed after the latest X.Y.Z-beta.N tag", async () => {
+  for (const shippedDir of ["plugin", "server", "core", "db"]) {
+    const fx = await tempRepo();
+    try {
+      await Deno.mkdir(`${fx.repo}/${shippedDir}`, { recursive: true });
+      await Deno.writeTextFile(`${fx.repo}/${shippedDir}/touched.ts`, "export const x = 1;\n");
+      await fx.git(["add", "-A"]);
+      await fx.git(["commit", "-m", `fix: late change in ${shippedDir}`]);
+      await fx.git(["push", "origin", "main"]);
+
+      const res = await runPromote(fx);
+      assertEquals(res.code, 1, `expected refusal for ${shippedDir}\n${res.stdout}${res.stderr}`);
+      assertStringIncludes(res.stderr, "0.0.2-beta.1");
+      assertEquals(
+        JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`)).version,
+        "0.0.1",
+      );
+      assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release): promote")));
+    } finally {
+      await Deno.remove(fx.base, { recursive: true });
+    }
+  }
+});
+
+Deno.test("promote: allows non-shipped changes after the latest beta and picks highest numeric beta", async () => {
+  const fx = await tempRepo();
+  try {
+    // beta.2 and beta.10 after beta.1, with shipped code before beta.10 and only docs after beta.10.
+    await Deno.mkdir(`${fx.repo}/plugin`, { recursive: true });
+    await Deno.writeTextFile(`${fx.repo}/plugin/a.ts`, "export const a = 1;\n");
+    await fx.git(["add", "-A"]);
+    await fx.git(["commit", "-m", "fix: plugin change"]);
+    await fx.git(["tag", "0.0.2-beta.2"]);
+    await Deno.writeTextFile(`${fx.repo}/plugin/a.ts`, "export const a = 2;\n");
+    await fx.git(["add", "-A"]);
+    await fx.git(["commit", "-m", "fix: another plugin change"]);
+    await fx.git(["tag", "0.0.2-beta.10"]);
+    await Deno.mkdir(`${fx.repo}/docs`, { recursive: true });
+    await Deno.writeTextFile(`${fx.repo}/docs/note.md`, "# note\n");
+    await fx.git(["add", "-A"]);
+    await fx.git(["commit", "-m", "docs: update note"]);
+    await fx.git(["push", "origin", "main", "0.0.2-beta.2", "0.0.2-beta.10"]);
+
+    const res = await runPromote(fx);
+    assertEquals(
+      res.code,
+      0,
+      `promote should succeed after docs-only commit\n${res.stdout}${res.stderr}`,
+    );
+    assertEquals(JSON.parse(await Deno.readTextFile(`${fx.repo}/manifest.json`)).version, "0.0.2");
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
@@ -302,7 +353,18 @@ Deno.test("promote: refuses a version that is not above the promoted one", async
     const res = await runPromote(fx, "0.0.1");
     assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
     assertStringIncludes(res.stderr, "above");
-    assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release)")), "no promote commit");
+    assert(!(await subjects(fx)).some((s) => s.startsWith("chore(release): promote")));
+  } finally {
+    await Deno.remove(fx.base, { recursive: true });
+  }
+});
+
+Deno.test("promote: refuses a beta version argument", async () => {
+  const fx = await tempRepo();
+  try {
+    const res = await runPromote(fx, "0.0.2-beta.1");
+    assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
+    assertStringIncludes(res.stderr, "X.Y.Z");
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
@@ -312,26 +374,8 @@ Deno.test("promote: respects RELEASE_HOLD", async () => {
   const fx = await tempRepo();
   try {
     await Deno.writeTextFile(`${fx.repo}/RELEASE_HOLD`, "waiting on upstream\n");
-    const add = await new Deno.Command("git", {
-      args: ["-c", "user.name=geode", "-c", "user.email=geode@example.com", "add", "-A"],
-      cwd: fx.repo,
-      stdout: "null",
-    }).output();
-    assertEquals(add.code, 0);
-    const commit = await new Deno.Command("git", {
-      args: [
-        "-c",
-        "user.name=geode",
-        "-c",
-        "user.email=geode@example.com",
-        "commit",
-        "-m",
-        "chore: hold",
-      ],
-      cwd: fx.repo,
-      stdout: "null",
-    }).output();
-    assertEquals(commit.code, 0);
+    await fx.git(["add", "-A"]);
+    await fx.git(["commit", "-m", "chore: hold"]);
     const res = await runPromote(fx);
     assertEquals(res.code, 1, `expected failure\n${res.stdout}${res.stderr}`);
     assertStringIncludes(res.stderr, "waiting on upstream");
@@ -343,4 +387,28 @@ Deno.test("promote: respects RELEASE_HOLD", async () => {
   } finally {
     await Deno.remove(fx.base, { recursive: true });
   }
+});
+
+Deno.test("promote: release.yml triggers on beta and final tags and tags images accordingly", async () => {
+  const yaml = await Deno.readTextFile(
+    new URL("../../../.github/workflows/release.yml", import.meta.url),
+  );
+  assertStringIncludes(yaml, "[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+");
+  assertStringIncludes(yaml, "prerelease: ${{ contains(github.ref_name, '-beta.') }}");
+  assertStringIncludes(yaml, "ghcr.io/hrt-htk/geode:beta");
+  assertStringIncludes(yaml, "ghcr.io/hrt-htk/geode:latest");
+});
+
+// #12: releases are tagged with the bare manifest version, so the community
+// directory can match tag to manifest. Tags cut before #12 keep their `v`.
+Deno.test("prevReleaseTag: the bare tag wins when both forms exist", () => {
+  assertEquals(prevReleaseTag("0.42.0", ["0.42.0", "v0.42.0"]), "0.42.0");
+});
+
+Deno.test("prevReleaseTag: a pre-#12 tag is found by its v-prefixed form", () => {
+  assertEquals(prevReleaseTag("0.41.8", ["v0.41.7", "v0.41.8"]), "v0.41.8");
+});
+
+Deno.test("prevReleaseTag: null when the version was never tagged", () => {
+  assertEquals(prevReleaseTag("0.42.1", ["v0.41.8", "0.42.0"]), null);
 });

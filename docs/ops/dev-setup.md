@@ -104,8 +104,8 @@ Holds the import map (aliases for `@noble/hashes/*`, `libsodium-wrappers-sumo`, 
 | --- | --- |
 | `deno task dev` | Server with `--watch`; `--allow-ffi` is needed by `@db/sqlite` |
 | `deno task build:plugin` | esbuild bundle, then copies the manifest (stamped with `package.json`'s version), `versions.json` and `styles.css` into `plugin-dist/` |
-| `deno task release` | `scripts/release.ts`: bump, commit, push, tag. A pre-release (#22) |
-| `deno task promote` | `scripts/promote.ts`: move the root manifest/versions to a tested release (#22), then move the image's `latest` tag onto it through `promote-image.yml`, waited on (#65). Needs `gh` with the `workflow` scope |
+| `deno task release` | `scripts/release.ts`: bump `package.json` to `X.Y.Z-beta.N`, commit, push, tag a BRAT pre-release (#22, #81) |
+| `deno task promote` | `scripts/promote.ts`: require a `X.Y.Z-beta.N` tag with no later shipped changes, bump `package.json`, root `manifest.json` and `versions.json`, commit, push, tag `X.Y.Z`, wait for `release.yml` (`latest` + `beta` image + final release), write notes since the previous final (#81) |
 | `deno task test` | `deno test --allow-all` |
 | `deno task test:ci` | The suite CI runs, with a wall-clock cap (`scripts/test-timeout.ts`) |
 | `deno task standards` | lint, plugin `tsc`, ESLint, unused exports, jscpd, CSS syntax, LOC tripwire, docs gate, private-data gate |
@@ -134,12 +134,13 @@ each plugin version to its `minAppVersion`. Both live at the repo root, which is
 reads them; they are the single source for the directory. `styles.css` stays in
 `plugin/manifest/`.
 
-**They move only on promote (#22).** Every release is a GitHub pre-release, and its version lives in
-`package.json`; the root manifest keeps the last version promoted to the directory. `deno task promote
-X.Y.Z` sets the root `manifest.json` version and appends the `versions.json` row (never edit an
-existing one). `deno task build:plugin` stamps the released version from `package.json` into
-`plugin-dist/manifest.json`, so the release asset and the running plugin both report `X.Y.Z` while the
-root manifest still says the promoted version. `plugin-dist/` is what you install into a vault.
+**They move only on promote (#22, #81).** Betas use semver pre-releases (`X.Y.Z-beta.N`) in
+`package.json`; the root manifest keeps the last final version promoted to the directory.
+`deno task promote X.Y.Z` bumps `package.json`, sets the root `manifest.json` version, and appends the
+`versions.json` row (never edit an existing one) in the tag commit so the tag commit's root manifest
+equals the release manifest. `deno task build:plugin` stamps `package.json`'s version into
+`plugin-dist/manifest.json`, so beta assets report `X.Y.Z-beta.N` while the root manifest keeps the
+last promoted version. `plugin-dist/` is what you install into a vault.
 
 ### 3.4 `tsconfig.plugin.json` and `tsconfig.lint.json`
 

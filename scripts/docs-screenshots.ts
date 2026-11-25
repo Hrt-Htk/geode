@@ -3,11 +3,11 @@
 import { dirname, join } from "jsr:@std/path@^1";
 
 const ROOT = Deno.cwd();
-// Every doc that shows a committed image, with a `Taken on plugin vX.Y.Z.` caption per image.
+// Every doc that shows a committed image, with a `Taken on plugin vX.Y.Z.` (or `-beta.N`) caption per image.
 const CAPTION_FILES = ["README.md", "docs/screenshots/README.md"];
-// The one token a reshoot rewrites: dotted numbers only, so the sentence's own full stop stays.
+// The one token a reshoot rewrites: version numbers only, so the sentence's own full stop stays.
 // The gaps repair a caption the doc wrapped inside the token.
-const VERSION_TOKEN = /Taken\s+on\s+plugin\s+v\d+\.\d+\.\d+/g;
+const VERSION_TOKEN = /Taken\s+on\s+plugin\s+v\d+\.\d+\.\d+(?:-beta\.\d+)?/g;
 
 function spawn(cmd: string, args: string[], env = Deno.env.toObject()): Promise<number> {
   return new Deno.Command(cmd, {
