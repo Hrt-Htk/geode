@@ -2,8 +2,9 @@
   "name": "geode",
   "private": true,
   "scripts": {
-    "build:plugin": "deno run -A --node-modules-dir=auto scripts/plugin-build.ts",
-    "build:plugin:watch": "deno run -A --node-modules-dir=auto scripts/plugin-build.ts --watch",
+    "build": "node scripts/plugin-build.mjs",
+    "build:plugin": "node scripts/plugin-build.mjs",
+    "build:plugin:watch": "node scripts/plugin-build.mjs --watch",
     "test:e2e": "node node_modules/@playwright/test/cli.js test --config=test/e2e/playwright.config.ts"
   },
   "devDependencies": {
@@ -21,6 +22,7 @@
   },
   "dependencies": {
     "@noble/hashes": "2.2.0",
+    "libsodium-sumo": "^0.7.15",
     "libsodium-wrappers-sumo": "^0.7.15",
     "node-diff3": "^3.1.2"
   },

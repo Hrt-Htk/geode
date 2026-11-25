@@ -3,7 +3,7 @@
 // directory reads. The build must not copy the root manifest verbatim.
 
 import { assertEquals } from "@std/assert";
-import { stampManifest } from "../../../scripts/manifest-stamp.ts";
+import { stampManifest } from "../../../scripts/manifest-stamp.mjs";
 
 const ROOT_MANIFEST = JSON.stringify({
   id: "geode",

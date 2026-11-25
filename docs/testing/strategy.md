@@ -315,7 +315,7 @@ The five used daily (the full list is in `deno.json`):
     "dev": "deno run --allow-net --allow-read --allow-write=./data --allow-env --allow-ffi --watch server/main.ts",
     "test": "deno test --allow-all",
     "test:ci": "deno run -A scripts/test-timeout.ts",
-    "build:plugin": "deno run -A --node-modules-dir=auto scripts/plugin-build.ts",
+    "build:plugin": "node scripts/plugin-build.mjs",
     "ci": "deno install && deno check server/main.ts core/*.ts && deno task build:plugin && deno task standards && deno task test:ci && deno task docs:drift"
   }
 }

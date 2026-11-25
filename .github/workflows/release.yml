@@ -161,21 +161,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: 2.x
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build plugin
-        run: deno task build:plugin
+        run: npm run build
 
       # #17: the community directory wants verified build provenance on the
       # assets Obsidian loads.
@@ -207,4 +202,3 @@ jobs:
             plugin-dist/main.js
             plugin-dist/manifest.json
             plugin-dist/styles.css
-            plugin-dist/versions.json

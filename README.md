@@ -439,6 +439,18 @@ It never receives note contents or file names in the clear.
 There is no telemetry, no analytics, no crash reporting and no third-party service: no CDN, no font
 or icon host, no update endpoint of its own. Those are the only network calls the plugin makes.
 
+What the plugin accesses on this device:
+
+- **Vault files.** Sync lists every file and folder in the vault (including `.obsidian/` when config
+  sync is enabled) to detect edits, creations and deletions made outside Obsidian or while the app
+  was closed. Files and folders outside your selective sync scope are left untouched.
+- **Clipboard.** The plugin writes to the clipboard only when you click a copy button (vault ID,
+  device token, encryption salt, server update command, diagnostic logs, and the file list in a
+  mass delete hold). It never reads the clipboard.
+- **Folder export (desktop only).** The **Export decrypted vault to folder...** command writes
+  decrypted copies of your vault files to a folder you pick. It uses Node's filesystem API on
+  desktop only and is not available on mobile.
+
 ## Privacy and security
 
 - Each device encrypts your notes with a key derived from your passphrase before anything is sent.
@@ -484,7 +496,8 @@ Found a security problem? Report it privately, not in a public issue: [`SECURITY
 - The encryption and chunking code is shared by the server and the plugin.
 
 `main.js` is about 3.5 MB because it is the whole plugin in one file: the sync engine and every
-library it runs on, bundled by `deno task build:plugin` (`scripts/plugin-build.ts`, esbuild). More
+library it runs on, bundled by `npm run build` (`scripts/plugin-build.mjs`, esbuild; also run via
+`deno task build:plugin`). More
 than half of the size is libsodium, which arrives as WebAssembly inlined as base64. An Electron
 window never finishes fetching a separate `.wasm` file, so the build extracts the WebAssembly module
 from libsodium's own JavaScript, inlines it, and patches libsodium to start from those bytes
