@@ -2570,6 +2570,7 @@
         "npm:eslint-plugin-obsidianmd@~0.4.2",
         "npm:eslint@^10.11.0",
         "npm:jscpd@^5.3.0",
+        "npm:libsodium-sumo@~0.7.15",
         "npm:libsodium-wrappers-sumo@~0.7.15",
         "npm:node-diff3@^3.1.2",
         "npm:obsidian@^1.14.4",

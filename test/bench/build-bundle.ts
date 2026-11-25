@@ -11,7 +11,7 @@ import path from "node:path";
 const rootDir = Deno.cwd();
 // The patched libsodium-sumo CJS is dual-env (Emscripten): it require()s node
 // builtins behind an ENVIRONMENT_IS_NODE guard, so they stay external like in
-// scripts/plugin-build.ts.
+// scripts/plugin-build.mjs.
 const external = [...builtinModules, ...builtinModules.map((name) => `node:${name}`)];
 const aliases = new Map<string, string>([
   ["@noble/hashes/blake3", path.join(rootDir, "node_modules", "@noble", "hashes", "blake3.js")],

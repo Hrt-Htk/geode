@@ -15,7 +15,7 @@
     // throws ERR_MODULE_NOT_FOUND on a clean install. The CJS entry require()s
     // the (hoisted) libsodium-sumo package and works. deno still pins the npm
     // package from this path, so it stays installed. libsodium-sumo above is a
-    // direct dep so it hoists to top-level for scripts/plugin-build.ts.
+    // direct dep so it hoists to top-level for scripts/plugin-build.mjs.
     "libsodium-wrappers-sumo": "./node_modules/libsodium-wrappers-sumo/dist/modules-sumo/libsodium-wrappers.js",
     "node-diff3": "npm:node-diff3@^3.1.2",
     "postcss": "npm:postcss@^8.5.6"
@@ -28,7 +28,7 @@
 
   "tasks": {
     "dev": "deno run --allow-net --allow-read --allow-write=./data --allow-env --allow-ffi --watch server/main.ts",
-    "build:plugin": "deno run -A --node-modules-dir=auto scripts/plugin-build.ts",
+    "build:plugin": "node scripts/plugin-build.mjs",
     "test": "deno test --allow-all",
     "test:ci": "deno run -A scripts/test-timeout.ts",
     "fuzz:sweep": "deno run --allow-all --no-check test/fuzz/sweep.ts",

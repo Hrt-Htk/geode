@@ -557,7 +557,7 @@ Three specs in `test/e2e/scenarios/`, driven against a real Obsidian over CDP:
   joins with a wrong passphrase and asserts the wizard surfaces an error and B stays locked.
 - `gate7-brat-shape-smoke.spec.ts` (+ `.phone`): load a plugin dir containing only `main.js` and
   `manifest.json` (no sidecar), then unlock and sync. This proves the libsodium WASM is inlined
-  (`plugin/_generated/libsodium-wasm-base64.ts`, built by `scripts/plugin-build.ts`).
+  (`plugin/_generated/libsodium-wasm-base64.ts`, built by `scripts/plugin-build.mjs`).
 
 The `gate7-` prefix is historical; these specs verify gate 11.
 

@@ -265,7 +265,7 @@ Full process spec: `docs/dev/workflow.md`, `CONTRIBUTING.md`.
 - **Personas** (`.agents/personas/`) are Paseo/pi agent definitions, not peer docs: Paseo frontmatter plus
   `contact_supervisor`/`intercom` tools. Without Paseo, read them as review checklists.
 - **`deno`:** on `PATH`. E2E tool overrides (`DENO_BIN`, `OBSIDIAN_BIN`, `ADB_PATH`, `GEODE_SEED_VAULT_DIR`): `docs/ops/dev-setup.md` §2.
-- **Build plugin:** `deno task build:plugin` → `plugin-dist/` (builds only; deploys nothing).
+- **Build plugin:** `npm run build` / `deno task build:plugin` → `plugin-dist/` (builds only; deploys nothing).
 - **Skills:** `geode-pr-flow` (branch/PR/merge/purge) · `geode-release` (version bump + BRAT + image,
   then the server update) · `geode-review-loop` (worker → reviewer → lean pass before draft→ready) ·
   `geode-benchmark-vault` + `geode-fuzz` (sync validation) · `geode-phone-e2e` (device/hybrid

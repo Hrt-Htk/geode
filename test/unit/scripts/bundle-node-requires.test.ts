@@ -2,7 +2,7 @@
 // Node's modules do not exist.
 
 import { assertEquals } from "@std/assert";
-import { findLoadTimeNodeRequires } from "../../../scripts/bundle-node-requires.ts";
+import { findLoadTimeNodeRequires } from "../../../scripts/bundle-node-requires.mjs";
 
 Deno.test("bundle-node-requires - the pre-#15 bundle's load-time requires are found", () => {
   const bundle = [

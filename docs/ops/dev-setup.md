@@ -1,5 +1,5 @@
 ---
-covers: [package.json, manifest.json, versions.json, tsconfig.plugin.json, eslint.config.mjs, .github/workflows/*.yml, scripts/plugin-build.ts, scripts/phone-*.ts, test/e2e/playwright.config.ts, test/e2e/global-setup.ts, .env.example]
+covers: [package.json, manifest.json, versions.json, tsconfig.plugin.json, eslint.config.mjs, .github/workflows/*.yml, scripts/plugin-build.mjs, scripts/manifest-stamp.mjs, scripts/bundle-node-requires.mjs, scripts/phone-*.ts, test/e2e/playwright.config.ts, test/e2e/global-setup.ts, .env.example]
 watches: [deno.json, test/e2e/fixtures/*.ts]
 ---
 
@@ -16,13 +16,13 @@ files, the dev loop, and the checks that prove the setup works. Design docs desc
 | Deno | `2.x` | `.github/workflows/ci.yml` (`deno-version: 2.x`) |
 | Node.js | `22` (20.12 or newer required) | `ci.yml`; `@types/node` in `package.json` |
 | Obsidian | `1.8.7` or newer | `minAppVersion` in the root `manifest.json` |
-| esbuild | `^0.25.5` | `package.json` devDependency; `scripts/plugin-build.ts` imports `npm:esbuild` |
+| esbuild | `^0.25.5` | `package.json` devDependency; `scripts/plugin-build.mjs` imports `esbuild` |
 | TypeScript | `^6.0.3` | `package.json` devDependency; the gate is `tsc -p tsconfig.plugin.json` |
 | `obsidian` typings | `^1.14.4` | `package.json`, resolved through `package-lock.json` |
 | Playwright | `^1.54.0` | `package.json` devDependency |
 | jscpd, eslint, ts-unused-exports | current | `package.json`, run by `deno task standards` |
 | eslint-plugin-obsidianmd | `0.4.2` | `package.json`; its `recommended` config is the community scanner ruleset |
-| `libsodium-wrappers-sumo` | `^0.7.15`, plus `libsodium-sumo` as a direct dep | `deno.json` imports, `package.json` |
+| `libsodium-wrappers-sumo` | `^0.7.15`, plus `libsodium-sumo` as a direct dep | `deno.json` imports, `package.json` dependencies |
 | `@noble/hashes` | `2.2.0` | `deno.json` imports, `package.json` |
 | `node-diff3` | `^3.1.2` | `deno.json` imports, `package.json` |
 | Docker with compose v2 | current | not pinned; `scripts/docker-smoke.ts` builds `Dockerfile` and runs `compose.yaml`, `scripts/host-update-test.ts` drives `geode-update.sh` |
@@ -122,8 +122,9 @@ later issue owns is `off` there with a comment naming that issue.
 ### 3.2 `package.json`
 
 Holds the dev-only toolchain (esbuild, typescript, eslint, eslint-plugin-obsidianmd, jscpd,
-ts-unused-exports, Playwright, `obsidian` typings) and the three runtime deps the plugin bundle needs.
-Its npm scripts `build:plugin`, `build:plugin:watch` and `test:e2e` wrap the plugin build and the
+ts-unused-exports, Playwright, `obsidian` typings) and the runtime deps the plugin bundle needs
+(`@noble/hashes`, `libsodium-sumo`, `libsodium-wrappers-sumo`, `node-diff3`). Its npm scripts
+`build`, `build:plugin`, `build:plugin:watch` and `test:e2e` run the Node plugin build and the
 Playwright run.
 
 ### 3.3 `manifest.json` and `versions.json` (repo root)
@@ -149,17 +150,21 @@ last promoted version. `plugin-dist/` is what you install into a vault.
 Deno type-checks the server and core (`deno check server/main.ts core/*.ts`); there is no root
 tsconfig file.
 
-### 3.5 `scripts/plugin-build.ts`
+### 3.5 `scripts/plugin-build.mjs`
 
-esbuild with `format: "cjs"`, `platform: "browser"`, `target: "es2020"`, and Obsidian, Electron and
-Node builtins external. It aliases the `@noble/hashes` and libsodium specifiers to their `node_modules`
-files (the CJS libsodium entry, see the comment in `deno.json`), inlines the libsodium WASM as a base64
-module (`plugin/_generated/`), and copies the manifest, `versions.json` and `styles.css` into
-`plugin-dist/`. The manifest is written by `stampManifest` (`scripts/manifest-stamp.ts`) with the
-released version from `package.json`, not the root manifest's promoted one (#22). `--watch` rebuilds on
-change. It does not talk to a running Obsidian. After a non-watch build it reads `main.js` back and
-fails on any `require("node:...")` at load, because mobile has no Node (#15): Node builtins must sit
-inside a function behind `Platform.isDesktop`.
+Node script calling esbuild with `format: "cjs"`, `platform: "browser"`, `target: "es2020"`, and
+Obsidian, Electron and Node builtins external. Both `npm run build` (`build:plugin`) and
+`deno task build:plugin` invoke it, so CI releases and clean npm checkouts produce the same output.
+It aliases the `@noble/hashes` and libsodium specifiers to their `node_modules` files (the CJS
+libsodium entry, see the comment in `deno.json`), inlines the libsodium WASM as a base64 module
+(`plugin/_generated/`), strips Emscripten's unused `require("fs")` Node fallback from libsodium,
+and copies the manifest, `versions.json` and `styles.css` into `plugin-dist/`. The manifest is
+written by `stampManifest` (`scripts/manifest-stamp.mjs`) with the released version from
+`package.json`, not the root manifest's promoted one (#22). `--watch` rebuilds on change. It does
+not talk to a running Obsidian. After a non-watch build it reads `main.js` back via
+`findLoadTimeNodeRequires` (`scripts/bundle-node-requires.mjs`) and fails on any `require("node:...")`
+at load, because mobile has no Node (#15): Node builtins must sit inside a function behind
+`Platform.isDesktop`.
 
 Why the WASM is inlined and patched: libsodium's Emscripten loader fetches its `.wasm` file at init,
 and that request never resolves in Obsidian's Electron window, so the plugin would hang on unlock. The

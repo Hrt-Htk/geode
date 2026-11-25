@@ -78,7 +78,7 @@ import { b64decode } from "../core/protocol.ts";
 
 // libsodium's Emscripten loader tries to fetch its .wasm over the network in the
 // Electron renderer, which hangs forever. Hand it the build-inlined binary via a
-// global that the patched libsodium-sumo (see scripts/plugin-build.ts) reads at init.
+// global that the patched libsodium-sumo (see scripts/plugin-build.mjs) reads at init.
 // `window` is the renderer's globalThis, so the patched `globalThis.` read still sees it.
 {
   const g = window as { __GEODE_LIBSODIUM_WASM__?: Uint8Array };
