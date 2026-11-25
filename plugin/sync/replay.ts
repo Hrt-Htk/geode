@@ -1,5 +1,5 @@
-import { ServerVersion } from "../../core/protocol.ts";
-import { VaultKeys } from "../../core/crypto.ts";
+import { b64decode, ServerVersion } from "../../core/protocol.ts";
+import { decryptMetadata, VaultKeys } from "../../core/crypto.ts";
 import { type InFlightWrite, StateDB } from "../plumbing/state.ts";
 import { resolveInterruptedWrites } from "./interrupted-writes.ts";
 import { Transport, TransportState } from "./transport.ts";
@@ -13,7 +13,7 @@ import {
 import { diskPlaintextHash, Vault } from "./vault-io.ts";
 import { CoalescedEntry, coalesceReplay } from "./replay-coalesce.ts";
 import type { ActivityRecord } from "./activity-log.ts";
-import { log } from "../plumbing/log.ts";
+import { formatError, log } from "../plumbing/log.ts";
 import { withTimeout } from "../plumbing/timeout.ts";
 
 // The inbound replay/apply pipeline: version serialization (versionQueue),
@@ -119,7 +119,12 @@ export class ReplayPipeline {
       const state = this.deps.state();
       const keys = this.deps.keys();
       if (!state || !keys) return;
-      await applyVersion(msg, this.buildApplyDeps(state, keys));
+      try {
+        await applyVersion(msg, this.buildApplyDeps(state, keys));
+      } catch (err) {
+        await this.recordApplyError(msg, state.getLocalFileByHash(msg.path_hash), keys, err);
+        throw err;
+      }
       this.deps.onStatusUpdate("sync", { apply: true });
     });
     this.versionQueue = run.catch(() => {});
@@ -165,15 +170,9 @@ export class ReplayPipeline {
               path: row?.path,
               path_hash: entry.winner.path_hash,
               seq: entry.winner.seq,
-              error: err instanceof Error ? err.message : String(err),
+              error: formatError(err),
             });
-            if (row?.path) {
-              this.deps.recordActivity?.({
-                path: row.path,
-                kind: "error",
-                cause: err instanceof Error ? err.message : String(err),
-              });
-            }
+            await this.recordApplyError(entry.winner, row, keys, err);
             continue;
           }
           // Surface the apply backlog as it drains, so the status icon shows
@@ -234,6 +233,7 @@ export class ReplayPipeline {
             seq: msg.seq,
             error: String(error),
           });
+          await this.recordApplyError(msg, row, keys, error);
           continue;
         }
         this.deferredVersions.delete(key);
@@ -306,8 +306,9 @@ export class ReplayPipeline {
           log.warn("parked version not applied, left for the next connection", {
             path_hash: msg.path_hash,
             seq: msg.seq,
-            error: error instanceof Error ? error.message : String(error),
+            error: formatError(error),
           });
+          await this.recordApplyError(msg, state.getLocalFileByHash(msg.path_hash), keys, error);
         }
       }
     });
@@ -420,6 +421,25 @@ export class ReplayPipeline {
     if (stateDB) {
       this.deps.transport.rewindLastSeen(stateDB.getSyncCursor());
     }
+  }
+
+  /** #84: surface an apply failure in Activity even when no local row exists yet. */
+  private async recordApplyError(
+    msg: ServerVersion,
+    row: { path: string } | null,
+    keys: VaultKeys,
+    err: unknown,
+  ): Promise<void> {
+    if (!this.deps.recordActivity) return;
+    let path = row?.path;
+    if (!path) {
+      try {
+        path = (await decryptMetadata(b64decode(msg.enc_metadata), keys, msg.path_hash)).path;
+      } catch {
+        path = msg.path_hash;
+      }
+    }
+    this.deps.recordActivity({ path, kind: "error", cause: formatError(err) });
   }
 
   private cacheVersion(msg: ServerVersion): void {
