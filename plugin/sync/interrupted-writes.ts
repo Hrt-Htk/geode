@@ -9,7 +9,7 @@ import { decryptChunk, decryptMetadata, VaultKeys } from "../../core/crypto.ts";
 import { blake3Hex } from "../../core/hash.ts";
 import { normalizeForHash } from "../../core/normalize.ts";
 import { type InFlightWrite, StateDB } from "../plumbing/state.ts";
-import { log } from "../plumbing/log.ts";
+import { formatError, log } from "../plumbing/log.ts";
 import { type ApplyDeps, applyVersion } from "./apply.ts";
 import { readVaultBinary, removeVaultPath } from "./vault-io.ts";
 
@@ -44,10 +44,12 @@ export async function resolveInterruptedWrites(
       if (await resolveOne(entry, { ...deps, apply })) torn++;
       resolved.push(entry);
     } catch (error) {
+      const cause = formatError(error);
       log.warn("interrupted write not resolved, retrying at the next connection", {
         path: entry.path,
-        error: error instanceof Error ? error.message : String(error),
+        error: cause,
       });
+      deps.apply.recordActivity?.({ path: entry.path, kind: "error", cause });
     } finally {
       deps.state.releaseResolve(entry.path_hash);
     }

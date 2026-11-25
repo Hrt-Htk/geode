@@ -320,7 +320,10 @@ of re-uploading every file.
 
 Inbound `server_version` messages go to disk. `replay.ts` serializes this through the version queue,
 buffers until `live`, and coalesces superseded versions per path. On the flush it reports the whole
-backlog (`applying 0/N`) before the first apply, then the applied count per file.
+backlog (`applying 0/N`) before the first apply, then the applied count per file. Any apply failure
+(replay flush, live apply, parked or deferred retries, or an unresolved interrupted write) leaves
+the sync cursor behind the failed version and records an Activity error using the local row's path,
+the decrypted metadata path when no row exists yet, or `path_hash` if metadata decryption fails (#84).
 
 ```
 applyVersion(v):
