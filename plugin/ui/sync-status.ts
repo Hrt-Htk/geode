@@ -1,6 +1,7 @@
 /** Pure sync-status row text for the settings tab: no obsidian import (safe for deno unit tests). */
 import type { IconInput } from "./statusbar-icon.ts";
-import { blockedCopy, describeVersionHint } from "../sync/version-state.ts";
+import { describeVersionHint } from "../sync/version-state.ts";
+import { blockedCopy } from "./version-copy.ts";
 import { pauseAgeColor } from "./pause.ts";
 import { holdSentence } from "./mass-delete-review.ts";
 import { UPDATE_STATUS_UPDATING } from "./server-update-logic.ts";

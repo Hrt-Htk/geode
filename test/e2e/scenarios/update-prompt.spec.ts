@@ -15,7 +15,7 @@ import { shotPath } from "../helpers/shots";
 const PASSPHRASE = "update-prompt-pass";
 const NOTICE = "Geode needs an update to keep syncing. Update the plugin, then reload Obsidian.";
 const SERVER_BEHIND_NOTICE =
-  "The Geode server needs an update to keep syncing. Update the server, then reload Obsidian.";
+  "Sync is stopped. The server is too old for this plugin. Update it to sync again.";
 
 test("issue625: a refused plugin version blocks with an update prompt and never reconnects", async () => {
   test.slow();
@@ -156,27 +156,27 @@ test("issue625: an old server that speaks a lower protocol asks for a server upd
       .toBe("server");
 
     const notice = obsidian.win.locator(".notice").filter({
-      hasText: "The Geode server needs an update",
+      hasText: "Sync is stopped",
     });
     await expect(notice.first()).toBeVisible({ timeout: 10_000 });
     expect((await notice.first().textContent())?.trim()).toBe(SERVER_BEHIND_NOTICE);
     const statusEl = obsidian.win.locator('[data-testid="geode-statusbar"]');
     await expect(statusEl).toHaveClass(/geode-statusbar-error/, { timeout: 10_000 });
     expect(await statusEl.getAttribute("title"))
-      .toBe("Geode: the server needs an update to keep syncing");
+      .toBe("Geode: sync is stopped. Update the server to sync again.");
     await obsidian.win.screenshot({ path: shotPath("625-server-behind-notice.png") });
 
     await openSettingsTab(obsidian);
     const banner = obsidian.win.locator(".setting-item").filter({
-      hasText: "Server update required",
+      hasText: "Sync is stopped",
     });
     await expect(banner.first()).toBeVisible({ timeout: 10_000 });
     const bannerText = (await banner.first().textContent()) ?? "";
-    expect(bannerText).toContain("Update the Geode server, then reload Obsidian.");
+    expect(bannerText).toContain("The server is too old for this plugin. Update it to sync again.");
     const syncRow = obsidian.win.locator('[data-testid="geode-settings-sync-status"]');
     await expect
       .poll(async () => await syncRow.first().textContent(), { timeout: 10_000 })
-      .toContain("Update the Geode server to keep syncing.");
+      .toContain("Sync is stopped. Update the server to sync again.");
     await obsidian.win.screenshot({ path: shotPath("625-server-behind-settings.png") });
   } finally {
     await obsidian.close();

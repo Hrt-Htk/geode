@@ -17,11 +17,13 @@ import {
 import { formatError, getRecentLog, log, setDebugLogging } from "./plumbing/log.ts";
 import { compareSemVer } from "../core/version.ts";
 import { ServerUpdate } from "./ui/server-update.ts";
+import { PluginReleaseController } from "./ui/plugin-releases.ts";
 import { formatLogExport } from "./ui/log-format.ts";
 import { makeTrashApi, TrashApi } from "./plumbing/trash-client.ts";
 import { Transport } from "./sync/transport.ts";
 import { StateDB } from "./plumbing/state.ts";
-import { blockedCopy, blockedSide, type VersionStatus } from "./sync/version-state.ts";
+import { blockedSide, type VersionStatus } from "./sync/version-state.ts";
+import { blockedCopy } from "./ui/version-copy.ts";
 import { VaultEventHandler } from "./sync/events.ts";
 import { SyncManager } from "./sync/sync-manager.ts";
 import { ActivityRecorder } from "./sync/activity-log.ts";
@@ -52,6 +54,7 @@ import {
   leaveVault,
   lockVault,
   restartUnlockedSession,
+  resumeAfterServerUpdate,
   tryCachedKeys,
   unlockAfterRemoteRekeyFlow,
   unlockVault as unlockVaultWithLocalKeys,
@@ -113,6 +116,8 @@ export default class GeodePlugin extends Plugin {
   serverVersion: string | null = null;
   /** #44: the one server update run this session owns (dialog, polling, notice). */
   updater!: ServerUpdate;
+  /** #93: startup plugin release check and What's new view controller. */
+  releases!: PluginReleaseController;
   // #433: in-memory admin token from the Devices view's privileged-action
   // prompt; never persisted (asked again next time Obsidian starts).
   adminToken: string | null = null;
@@ -160,20 +165,21 @@ export default class GeodePlugin extends Plugin {
     wirePlatformHttp();
     this.updater = new ServerUpdate({
       app: this.app,
-      serverUrl: () => this.pluginSettings.serverUrl,
-      deviceToken: () => this.pluginSettings.deviceToken,
+      settings: () => this.pluginSettings,
+      saveSettings: () => this.saveSettings(),
       ownVersion: () => this.manifest.version,
       adminToken: () => this.adminToken,
       setAdminToken: (token) => {
         this.adminToken = token;
       },
-      seenVersion: () => this.pluginSettings.updateNoticeVersion,
-      rememberSeenVersion: (version) => {
-        this.pluginSettings.updateNoticeVersion = version;
-        void this.saveSettings();
-      },
       onChange: () => this.settingTab?.updateServerUpdateRow(),
+      onUpdated: (word, version) => {
+        const busy = Boolean(this.resyncInFlight || this.rejoinInFlight);
+        resumeAfterServerUpdate(this, word, version, busy);
+      },
     });
+    this.releases = new PluginReleaseController(this);
+    this.releases.register();
     registerCommands(this);
     this.statusBar = new StatusBar(this);
     this.statusBar.setPausedAt(this.pluginSettings.pauseAt);
@@ -182,10 +188,12 @@ export default class GeodePlugin extends Plugin {
     this.settingTab = new GeodeSettingTab(this.app, this, this.statusBar);
     this.addSettingTab(this.settingTab);
     this.registerFileMenu();
+    this.releases.onLayoutReady();
     this.showStartupModal();
   }
   onunload(): void {
     this.activity?.flush();
+    this.releases?.dispose();
     this.updater.dispose();
     this.statusBar?.dispose();
     disposeRuntime(this, { clearKeys: true, updateStatus: false });
@@ -424,6 +432,7 @@ export default class GeodePlugin extends Plugin {
     this.serverVersion = serverVersion;
     this.statusBar?.setVersionStatus(this.versionStatus);
     this.settingTab?.updateVersionBanner();
+    if (side === "server") void this.updater.refreshJob();
     if (!this.blockedNoticeShown) {
       this.blockedNoticeShown = true;
       new Notice(blockedCopy(side).notice, 15000);

@@ -56,7 +56,7 @@ Deno.test("sync-status - version blocked names the side that must update", () =>
   assertEquals(
     describeSyncStatus(input({ versionStatus: blockedServerBehind, lastBackupAt: 0 }), 0),
     {
-      text: "Update the Geode server to keep syncing. Not backed up yet.",
+      text: "Sync is stopped. Update the server to sync again. Not backed up yet.",
       dot: "red",
     },
   );

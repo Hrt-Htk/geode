@@ -259,6 +259,7 @@ export async function connectPhone(opts: PhoneObsidianOptions = {}): Promise<Pho
           argon2Params: TEST_ARGON2_PARAMS,
           unlockTimeoutHours: 24,
           debugLogging: false,
+          checkForUpdates: false,
           ...opts.geodeSettings,
         })
       });

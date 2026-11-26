@@ -1,9 +1,9 @@
 #!/usr/bin/env -S deno run -A
 /**
- * Promote a tested beta (`X.Y.Z-beta.N`) to the final `X.Y.Z` release (#22, #81):
- * bump root manifest.json, versions.json, and package.json in one commit, push
- * `main`, tag `X.Y.Z` so release.yml builds the final plugin + `latest` image,
- * wait for that run, and rewrite the release notes since the previous final.
+ * Promote a tested beta (`X.Y.Z-beta.N`) to the final `X.Y.Z` release (#22, #81, #93):
+ * require docs/releases/X.Y.Z.md, bump root manifest.json, versions.json, and package.json
+ * in one commit, push `main`, tag `X.Y.Z` so release.yml builds the final plugin + `latest`
+ * image, wait for that run, and set the GitHub release body from docs/releases/X.Y.Z.md.
  *
  * Usage: deno run -A scripts/promote.ts X.Y.Z
  */
@@ -12,13 +12,6 @@ import { compareSemVer } from "../core/version.ts";
 import { releaseHold } from "./release.ts";
 
 const SHIPPED = ["plugin", "server", "core", "db"];
-
-// #12: releases are tagged with the bare manifest version, so the community
-// directory can match tag to manifest. Tags cut before #12 keep their `v`, so
-// resolving the tag a release replaces has to try both forms.
-export function prevReleaseTag(version: string, tags: string[]): string | null {
-  return tags.find((t) => t === version || t === `v${version}`) ?? null;
-}
 
 type ActionRun = { databaseId: number; headBranch: string };
 
@@ -169,6 +162,17 @@ if (import.meta.main) {
     Deno.exit(1);
   }
 
+  // #93: curated release notes must exist before anything is written or pushed.
+  const notesRel = `docs/releases/${version}.md`;
+  const notesPath = `${root}/${notesRel}`;
+  const notesText = await Deno.readTextFile(notesPath).catch(() => "");
+  if (!notesText.trim()) {
+    console.error(
+      `Missing or empty release notes: ${notesRel}: draft and commit it via PR before promoting.`,
+    );
+    Deno.exit(1);
+  }
+
   // Capture the run high-water mark (and verify gh works) before modifying or pushing anything.
   const before = Math.max(0, ...(await releaseRuns()).map((r) => r.databaseId));
 
@@ -207,27 +211,17 @@ if (import.meta.main) {
   console.log(`[4/5] Waiting for release.yml on ${version}...`);
   await waitForRelease(version, before);
 
-  // ── Step 5: Rewrite release notes to span since the previous final ───────
+  // ── Step 5: Set the GitHub release body from docs/releases/X.Y.Z.md ─────
 
-  console.log(`[5/5] Writing release notes since ${promoted}...`);
-  const previous = prevReleaseTag(promoted, tags);
-  const notes = await run("gh", [
-    "api",
-    "repos/{owner}/{repo}/releases/generate-notes",
-    "-f",
-    `tag_name=${version}`,
-    ...(previous ? ["-f", `previous_tag_name=${previous}`] : []),
-    "--jq",
-    ".body",
-  ]);
+  console.log(`[5/5] Setting release notes from ${notesRel}...`);
   await run("gh", [
     "release",
     "edit",
     version,
     "--prerelease=false",
     "--latest",
-    "--notes",
-    notes,
+    "--notes-file",
+    notesPath,
   ]);
 
   console.log(`\nPromoted ${version}: the community directory serves it from the next index.`);

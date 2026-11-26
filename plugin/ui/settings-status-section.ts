@@ -7,12 +7,13 @@ import { runWithFeedback } from "./button-feedback.ts";
 import { createForgotLink } from "./forgot-modal.ts";
 import { FORGOT_TITLE } from "./passphrase-copy.ts";
 import {
+  PLUGIN_VERSION_ROW_NAME,
   type ServerUpdateInput,
   serverUpdateRow,
   UPDATE_BUTTON,
-  UPDATE_COPY,
   UPDATE_ROW_NAME,
 } from "./server-update-logic.ts";
+import { pluginVersionRow, type PluginVersionRowInput } from "./release-check-logic.ts";
 import type { SettingsRow } from "./settings-legacy.ts";
 import {
   NOT_SET_UP_SETUP_DESC,
@@ -42,11 +43,25 @@ export type StatusSectionHost = {
   openActivityModal: () => void;
   /** #432: the sync-status row's [Review] opens the Conflicts modal. */
   openConflictsModal: () => void;
-  /** #44: the Status row for the server's own version, and the two things it can do. */
+  /** #44/#51/#93: Server version row and Plugin version row in Status. */
   getServerUpdateInput: () => ServerUpdateInput;
+  getPluginVersionInput: () => PluginVersionRowInput;
   startServerUpdate: () => void;
-  copyUpdateCommand: () => void;
+  openPluginUpdate: () => void;
 };
+
+type VersionRowControl = "none" | "update" | "updating";
+
+type VersionRowSlot = {
+  setting: Setting | null;
+  descEl: HTMLElement | null;
+  btn: ButtonComponent | null;
+  control: VersionRowControl;
+};
+
+function emptyVersionSlot(): VersionRowSlot {
+  return { setting: null, descEl: null, btn: null, control: "none" };
+}
 
 /** Status section rows: sync-status row updates in place; never re-renders the tab. */
 export class SettingsStatusSection {
@@ -60,10 +75,8 @@ export class SettingsStatusSection {
   private storageTextEl: HTMLElement | null = null;
   private storageMeterEl: HTMLElement | null = null;
   private storageState: StorageState = { kind: "loading" };
-  private serverUpdateSetting: Setting | null = null;
-  private serverUpdateDescEl: HTMLElement | null = null;
-  private serverUpdateBtn: ButtonComponent | null = null;
-  private serverUpdateControl: "none" | "update" | "copy" | "updating" = "none";
+  private serverRow = emptyVersionSlot();
+  private pluginRow = emptyVersionSlot();
 
   constructor(private host: StatusSectionHost) {}
 
@@ -80,10 +93,28 @@ export class SettingsStatusSection {
     return [
       { name: "Sync status", render: (s) => this.renderStatusRow(s) },
       {
-        // #44: a locked tab keeps to its rows (#458), and the version it would offer is stale.
+        // #44/#51: Server version row, shown once unlocked and known.
         name: UPDATE_ROW_NAME,
         visible: () => this.host.getUnlocked() && this.host.getServerUpdateInput().server !== null,
-        render: (s) => this.renderServerUpdateRow(s),
+        render: (s) =>
+          this.renderVersionRow(
+            this.serverRow,
+            s,
+            "geode-settings-server-update",
+            () => this.updateServerUpdateRow(),
+          ),
+      },
+      {
+        // #51: Plugin version row beside Server version.
+        name: PLUGIN_VERSION_ROW_NAME,
+        visible: () => this.host.getUnlocked(),
+        render: (s) =>
+          this.renderVersionRow(
+            this.pluginRow,
+            s,
+            "geode-settings-plugin-version",
+            () => this.updatePluginVersionRow(),
+          ),
       },
       {
         // #440: "Forgot your passphrase?" link row, visible only while locked.
@@ -135,41 +166,67 @@ export class SettingsStatusSection {
     this.updateStatusRow();
   }
 
-  private renderServerUpdateRow(row: Setting): void {
-    row.settingEl.dataset.testid = "geode-settings-server-update";
-    this.serverUpdateSetting = row;
-    this.serverUpdateBtn = null;
-    this.serverUpdateControl = "none";
-    this.serverUpdateDescEl = row.descEl.createSpan();
-    this.updateServerUpdateRow();
+  private renderVersionRow(
+    slot: VersionRowSlot,
+    row: Setting,
+    testid: string,
+    update: () => void,
+  ): void {
+    row.settingEl.dataset.testid = testid;
+    slot.setting = row;
+    slot.btn = null;
+    slot.control = "none";
+    slot.descEl = row.descEl.createSpan();
+    update();
   }
 
-  /** Re-describe the Server update row in place: its control follows the job's state, so a
-   * closed dialog never leaves a second Update one click away. */
-  updateServerUpdateRow(): void {
-    const setting = this.serverUpdateSetting;
-    const input = this.host.getServerUpdateInput();
-    // The row renders only once the server's version is known, and the plugin never unlearns it.
-    if (!setting || !this.serverUpdateDescEl || input.server === null) return;
-    const row = serverUpdateRow({ ...input, server: input.server });
-    this.serverUpdateDescEl.setText(row.desc);
-    const control = row.kind === "action" ? row.control : "none";
-    if (control === this.serverUpdateControl) return;
-    this.serverUpdateBtn?.buttonEl.remove();
-    this.serverUpdateBtn = null;
-    this.serverUpdateControl = control;
+  private updateVersionRow(
+    slot: VersionRowSlot,
+    desc: string,
+    control: VersionRowControl,
+    btnTestid: string,
+    onClick: () => void,
+  ): void {
+    if (!slot.setting || !slot.descEl) return;
+    slot.descEl.setText(desc);
+    if (control === slot.control) return;
+    slot.btn?.buttonEl.remove();
+    slot.btn = null;
+    slot.control = control;
     if (control === "none") return;
-    setting.addButton((btn) => {
-      this.serverUpdateBtn = btn;
-      if (control === "copy") {
-        btn.setButtonText(UPDATE_COPY).onClick(() => this.host.copyUpdateCommand());
-        btn.buttonEl.dataset.testid = "geode-settings-update-copy";
-        return;
-      }
-      btn.setButtonText(UPDATE_BUTTON).onClick(() => this.host.startServerUpdate());
-      btn.buttonEl.dataset.testid = "geode-settings-update";
+    slot.setting.addButton((btn) => {
+      slot.btn = btn;
+      btn.setCta().setButtonText(UPDATE_BUTTON).onClick(onClick);
+      btn.buttonEl.dataset.testid = btnTestid;
       btn.setDisabled(control === "updating");
     });
+  }
+
+  /** #93: re-describe the Plugin version row in place when the check completes or toggles. */
+  updatePluginVersionRow(): void {
+    const row = pluginVersionRow(this.host.getPluginVersionInput());
+    this.updateVersionRow(
+      this.pluginRow,
+      row.desc,
+      row.showUpdate ? "update" : "none",
+      "geode-settings-plugin-update",
+      () => this.host.openPluginUpdate(),
+    );
+  }
+
+  /** Re-describe the Server version row in place: its control follows the run's state, so a
+   * closed dialog never leaves a second Update one click away. */
+  updateServerUpdateRow(): void {
+    const input = this.host.getServerUpdateInput();
+    if (input.server === null) return;
+    const row = serverUpdateRow({ ...input, server: input.server });
+    this.updateVersionRow(
+      this.serverRow,
+      row.desc,
+      row.kind === "action" ? row.control : "none",
+      "geode-settings-update",
+      () => this.host.startServerUpdate(),
+    );
   }
 
   private renderStorageRow(row: Setting): void {
@@ -346,6 +403,7 @@ export class SettingsStatusSection {
     this.updatePauseBtn();
     this.updateResyncControls();
     this.updateServerUpdateRow();
+    this.updatePluginVersionRow();
     const { text, dot, conflictText } = describeSyncStatus(this.host.getStatusInput(), Date.now());
     this.textEl.setText(text);
     this.conflictTextEl?.setText(conflictText ?? "");

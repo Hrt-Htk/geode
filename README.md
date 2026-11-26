@@ -290,18 +290,19 @@ device and join again. It gets a new identity, and your passphrase still works.
 ## Update
 
 The plugin and server don't need to run the same version. When versions differ, sync keeps working
-and Geode's settings show **Plugin update available** or **Server update available**. Sync stops
-only when the wire protocol changed or the server requires a newer plugin. The settings then show
-**Update required** or **Server update required**. Update the side the message names, then reload
-Obsidian.
+and Geode's settings show both **Server version** and **Plugin version** with an **Update** button
+when a newer version is available. Sync stops only when the wire protocol changed or the server
+requires a newer plugin. The settings then show **Update required** (plugin too old) or **Sync is
+stopped** (server too old).
 
-**Server:** Geode's settings have a **Server update** row. With the update job installed (optional,
-[`docs/architecture/server.md`](./docs/architecture/server.md) §11) its **Update** button pulls the new
-image, waits for Geode to report healthy, and puts the old image back if it does not come up. Without
-the job, the row's copy button gives the command to run in the compose directory:
+**Server:** Geode's settings have a **Server version** row. With the update job installed (optional,
+[`docs/architecture/server.md`](./docs/architecture/server.md) §11) its **Update** button pulls the
+new image, waits for Geode to report healthy, and puts the old image back if it does not come up.
+Without the job, the same **Update** button opens a dialog with the command to run in the compose
+directory:
 
 ```bash
-docker compose pull geode && docker compose up -d
+docker compose pull && docker compose up -d
 ```
 
 Either way your data and admin token stay, and Caddy keeps serving. A new image only exists when a
@@ -309,10 +310,13 @@ release is cut, and `/version` reports the one that is running. The tag in `comp
 which releases you get: `latest` moves on final releases promoted to the community directory,
 `beta` moves on every release (betas and finals, so `:beta` reaches the final too).
 
-**Plugin:** from the community directory, click **Check for updates** under **Settings → Community
-plugins**; there you get the versions that were promoted. BRAT installs every release, including
-pre-releases, so a new build reaches you as soon as it is cut: click **Update** next to Geode in
-BRAT's settings, or replace the three files with the ones from the latest release.
+**Plugin:** from the community directory, click **Update** on the **Plugin version** row or **Check
+for updates** under **Settings → Community plugins**; there you get the versions that were promoted.
+After updating to a new final version, Geode opens a **What's new** tab once with that version's
+release notes (also reachable under **Settings → Geode → Advanced → What's new**). BRAT installs
+every release, including pre-releases, so a new build reaches you as soon as it is cut: click
+**Update** next to Geode in BRAT's settings, or replace the three files with the ones from the
+latest release.
 
 ## Backup and restore
 
@@ -413,8 +417,8 @@ goes with the directory. The image stays on disk until you remove it:
 
 ## Network use
 
-Geode has one remote service: the Geode server you run yourself. The setup wizard asks for its
-address, and every request the plugin makes goes to that address and nowhere else.
+Geode talks to the Geode server you run yourself, plus an optional startup check to GitHub for new
+plugin releases.
 
 - **Sync.** The plugin keeps one WebSocket open to `/vaults/<id>/sync` and reports each change
   there. Encrypted chunks go over HTTP to `/blobs` on the same host, and the reads behind history and
@@ -422,9 +426,12 @@ address, and every request the plugin makes goes to that address and nowhere els
   your home network gets `ws://` and `http://`.
 - **The rest of the plugin.** Creating and listing vaults, joining one, file history, restore, the
   deleted-files list and the space figure in settings are calls to the same address.
-- **Update notices.** Your own server reports a version mismatch when the plugin connects. The plugin
-  reads no update feed of its own; updating is Obsidian's job through the community directory or
-  BRAT, or the download in [Install the plugin](#install-the-plugin).
+- **Plugin update check (optional, on by default).** When Obsidian starts, the plugin requests the
+  latest final release metadata from GitHub (`api.github.com/repos/Hrt-Htk/geode/releases/latest`
+  and, when a newer release exists, `raw.githubusercontent.com/Hrt-Htk/geode/main/versions.json` to
+  check `minAppVersion`). It never downloads release assets and sends no vault or device data. Turn
+  it off under **Settings → Geode → Advanced → Check for updates**. Your own server also reports a
+  version mismatch when the plugin connects.
 
 The server receives:
 
@@ -436,8 +443,8 @@ The server receives:
 
 It never receives note contents or file names in the clear.
 
-There is no telemetry, no analytics, no crash reporting and no third-party service: no CDN, no font
-or icon host, no update endpoint of its own. Those are the only network calls the plugin makes.
+There is no telemetry, no analytics, no crash reporting and no other third-party service: no CDN,
+no font or icon host. Those are the only network calls the plugin makes.
 
 What the plugin accesses on this device:
 

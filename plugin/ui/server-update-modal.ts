@@ -1,6 +1,7 @@
 import { App, Modal, setIcon, Setting } from "obsidian";
 import type { ServerUpdate } from "./server-update.ts";
 import {
+  GEODE_RELEASES_URL,
   SERVER_UPDATE_COMMAND,
   UPDATE_CONFIRM_LINES,
   UPDATE_COPY,
@@ -8,11 +9,28 @@ import {
   UPDATE_PROGRESS,
   UPDATE_TITLE_ASK,
   UPDATE_TITLE_RUN,
+  UPDATE_WHATS_NEW,
   type UpdateOutcome,
 } from "./server-update-logic.ts";
 
-/** #44: one dialog from question to outcome: the confirm, the progress, then one result line.
- * Every step is rendered from the run's state, so a reopened dialog shows where it got to. */
+/** Append a standard external link anchor with a testid. */
+export function appendExternalLink(
+  container: HTMLElement,
+  text: string,
+  url: string,
+  testid: string,
+): void {
+  const link = container.createEl("a", {
+    text,
+    href: url,
+    cls: "external-link",
+    attr: { target: "_blank", rel: "noopener noreferrer" },
+  });
+  link.dataset.testid = testid;
+}
+
+/** #44/#51: one dialog from question to outcome: confirm, progress, then one result line (or
+ * the command directly when the host job is not installed). */
 export class ServerUpdateModal extends Modal {
   constructor(app: App, private updater: ServerUpdate) {
     super(app);
@@ -40,6 +58,12 @@ export class ServerUpdateModal extends Modal {
   private renderConfirm(): void {
     const box = this.contentEl.createDiv({ cls: "geode-confirm-modal" });
     for (const line of UPDATE_CONFIRM_LINES) box.createEl("p", { text: line });
+    appendExternalLink(
+      box.createEl("p"),
+      UPDATE_WHATS_NEW,
+      GEODE_RELEASES_URL,
+      "geode-update-whats-new",
+    );
     new Setting(box)
       .addButton((btn) => {
         btn.setButtonText("Cancel");
@@ -62,8 +86,16 @@ export class ServerUpdateModal extends Modal {
   }
 
   private renderResult(outcome: UpdateOutcome): void {
-    this.contentEl.createDiv({ cls: "geode-confirm-modal" })
-      .createEl("p", { text: outcome.text });
+    const box = this.contentEl.createDiv({ cls: "geode-confirm-modal" });
+    box.createEl("p", { text: outcome.text });
+    if (outcome.showWhatsNew) {
+      appendExternalLink(
+        box.createEl("p"),
+        UPDATE_WHATS_NEW,
+        GEODE_RELEASES_URL,
+        "geode-update-whats-new",
+      );
+    }
     if (outcome.showCommand) {
       this.contentEl.createDiv({ cls: "geode-code-row" })
         .createEl("code", { text: SERVER_UPDATE_COMMAND });

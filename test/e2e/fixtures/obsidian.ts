@@ -38,6 +38,10 @@ export type GeodeSettings = {
   debugLogging: boolean;
   /** This device's name, as the activity feed and the history window label its rows. */
   deviceName: string;
+  /** #93: disabled by default in E2E fixtures so tests never call GitHub. */
+  checkForUpdates: boolean;
+  lastSeenVersion?: string;
+  lastNotifiedReleaseVersion?: string;
 };
 
 export type ObsidianInstance = {
@@ -394,6 +398,11 @@ function mergeSettings(
     syncObsidianConfig: patch.syncObsidianConfig ?? true,
     debugLogging: patch.debugLogging ?? false,
     deviceName: patch.deviceName ?? "",
+    checkForUpdates: patch.checkForUpdates ?? false,
+    ...(patch.lastSeenVersion !== undefined ? { lastSeenVersion: patch.lastSeenVersion } : {}),
+    ...(patch.lastNotifiedReleaseVersion !== undefined
+      ? { lastNotifiedReleaseVersion: patch.lastNotifiedReleaseVersion }
+      : {}),
   };
 }
 

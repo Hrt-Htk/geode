@@ -158,11 +158,11 @@ test("verify tier1-3 UI: #246 blocked version warning, #169 lock feedback, #168 
     await expect(hintBanner.first()).toBeHidden({ timeout: 10_000 });
     const updateRow = obsidian.win.locator('[data-testid="geode-settings-server-update"]');
     await expect(updateRow).toBeVisible({ timeout: 10_000 });
-    /* This throwaway server has no host job, so the row carries the command. */
+    /* #51: one Update button regardless of host job; the row says Update available. */
     await expect(updateRow.locator(".setting-item-description")).toHaveText(
-      "The update job is not installed. Run the command on the server.",
+      "0.0.1. Update available.",
     );
-    await expect(updateRow.locator('[data-testid="geode-settings-update-copy"]')).toBeVisible();
+    await expect(updateRow.locator('[data-testid="geode-settings-update"]')).toBeVisible();
     await expect
       .poll(async () => await statusRow.first().textContent(), { timeout: 10_000 })
       .toContain("Up to date.");
@@ -267,9 +267,9 @@ test("verify tier1-3 UI: #529 real-seam version difference syncs and shows the u
       .toContain("Up to date.");
     const updateRow = obsidian.win.locator('[data-testid="geode-settings-server-update"]');
     await expect(updateRow.locator(".setting-item-description")).toHaveText(
-      "The update job is not installed. Run the command on the server.",
+      `${serverVersion}. Update available.`,
     );
-    await expect(updateRow.locator('[data-testid="geode-settings-update-copy"]')).toBeVisible();
+    await expect(updateRow.locator('[data-testid="geode-settings-update"]')).toBeVisible();
     await obsidian.win.screenshot({ path: shotPath("529-realseam-settings-version-hint.png") });
   } finally {
     await obsidian.close();

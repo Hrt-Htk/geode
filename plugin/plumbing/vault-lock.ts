@@ -3,6 +3,7 @@
 
 import { checkVerifier, deriveKeys, type VaultKeys } from "../../core/crypto.ts";
 import { b64decode } from "../../core/protocol.ts";
+import { compareSemVer } from "../../core/version.ts";
 import { formatError, log } from "./log.ts";
 import {
   clearKeyCache,
@@ -41,6 +42,7 @@ export type VaultLockHost = SyncSessionHost & {
   isUnlocked: boolean;
   lastBackupAt: number;
   blockedNoticeShown: boolean;
+  versionStatus?: VersionStatus;
   /** #559: the open re-key cursor, cleared when leaving the vault. */
   rekeyCursor: RekeyCursor | null;
   /** #560: the vault's passphrase changed on another device: locked until re-unlocked. */
@@ -259,6 +261,7 @@ export function disposeRuntime(
   if (!opts.keepEpoch) host.syncEpoch += 1;
   disposeSession(host);
   host.blockedNoticeShown = false;
+  host.versionStatus = { kind: "ok" };
   if (opts.clearKeys) {
     host.keys = null;
     notifyKeysChanged(host);
@@ -269,4 +272,48 @@ export function disposeRuntime(
     host.statusBar?.updateDirty(0);
     host.statusBar?.setVersionStatus({ kind: "ok" });
   }
+}
+
+export type ServerUpdateResumeHost = VaultLockHost & {
+  serverVersion: string | null;
+  rekeyInProgress: boolean;
+  settingTab: { applyLockState(): void; refresh(): void; updateVersionBanner?(): void } | null;
+};
+
+function isServerUpdateProgressed(
+  host: ServerUpdateResumeHost,
+  word: string,
+  reportedVersion: string,
+): boolean {
+  if (word === "updated") return true;
+  return word === "up-to-date" && host.serverVersion !== null &&
+    compareSemVer(reportedVersion, host.serverVersion) > 0;
+}
+
+function isSessionBlockedOnServer(host: ServerUpdateResumeHost): boolean {
+  return host.isUnlocked &&
+    host.versionStatus?.kind === "blocked" &&
+    host.versionStatus.side === "server" &&
+    host.transport?.isBlocked() === true;
+}
+
+/** #51: resume sync when a server update finishes on a server-blocked unlocked vault. */
+export function resumeAfterServerUpdate(
+  host: ServerUpdateResumeHost,
+  word: string,
+  reportedVersion: string,
+  busy: boolean,
+): boolean {
+  if (!isServerUpdateProgressed(host, word, reportedVersion)) return false;
+  if (!isSessionBlockedOnServer(host)) return false;
+  if (busy || host.rekeyInProgress || host.rekeyCursor !== null) return false;
+  if (host.pluginSettings.resyncStop !== "") return false;
+  host.versionStatus = { kind: "ok" };
+  host.blockedNoticeShown = false;
+  host.statusBar?.setVersionStatus(host.versionStatus);
+  host.settingTab?.updateVersionBanner?.();
+  void host.restartUnlockedSession().catch((error) => {
+    log.error("failed to restart session after server update", { error: formatError(error) });
+  });
+  return true;
 }

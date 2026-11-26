@@ -26,6 +26,7 @@ import { SettingsScopeSection } from "./settings-scope-section.ts";
 import { SettingsAdvancedSection } from "./settings-advanced-section.ts";
 import type { SyncStatusInput } from "./sync-status.ts";
 import type { ServerUpdate } from "./server-update.ts";
+import type { PluginReleaseController } from "./plugin-releases.ts";
 import type { StatusBar } from "./statusbar.ts";
 import type { RekeyKind } from "./rekey-modal-logic.ts";
 
@@ -59,6 +60,8 @@ type PluginInstance = {
   /** #44: the server's own version, and the run the row and the dialog describe. */
   serverVersion: string | null;
   updater: ServerUpdate;
+  /** #93: startup plugin release check and What's new view controller. */
+  releases: PluginReleaseController;
   lastBackupAt: number;
   getPausedAt: () => number;
   pauseSync: () => Promise<void>;
@@ -211,6 +214,9 @@ export class GeodeSettingTab extends PluginSettingTab {
       this.plugin.setSyncObsidianConfig(value === true);
       void this.plugin.reconcileNow();
     }
+    if (key === "checkForUpdates") {
+      this.statusSection?.updatePluginVersionRow();
+    }
   }
 
   /** The whole tab for the current state. Section objects are built once and reused, so a re-read
@@ -242,8 +248,9 @@ export class GeodeSettingTab extends PluginSettingTab {
           this.plugin.versionStatus.kind === "blocked" &&
             this.plugin.versionStatus.side === "server",
         ),
+      getPluginVersionInput: () => this.plugin.releases.rowInput(),
       startServerUpdate: () => this.plugin.updater.prompt(),
-      copyUpdateCommand: () => this.plugin.updater.copyCommand(),
+      openPluginUpdate: () => this.plugin.releases.openCommunityPlugins(),
     });
     const status: TreeSection<SettingsRow> = {
       id: "status",
@@ -361,6 +368,7 @@ export class GeodeSettingTab extends PluginSettingTab {
       resync: () => this.plugin.getStatusInput().resync,
       leaveVault: () => this.plugin.leaveVault(),
       openRekeyModal: (kind) => this.plugin.openRekeyModal(kind),
+      openWhatsNew: () => void this.plugin.releases.openWhatsNew(),
     });
     return this.advancedSection.rows();
   }
@@ -394,6 +402,7 @@ export class GeodeSettingTab extends PluginSettingTab {
   /** A version change only rewrites the version rows; the state rows stay in place. */
   updateVersionBanner(): void {
     this.banners.updateVersion();
+    this.statusSection?.updateServerUpdateRow();
     this.refreshDom();
   }
 
@@ -404,5 +413,10 @@ export class GeodeSettingTab extends PluginSettingTab {
   /** #44: the update run changed state: re-describe its row now, not on the next tick. */
   updateServerUpdateRow(): void {
     this.statusSection?.updateServerUpdateRow();
+  }
+
+  /** #93: plugin release check finished or toggled: re-describe Plugin version in place. */
+  updatePluginVersionRow(): void {
+    this.statusSection?.updatePluginVersionRow();
   }
 }

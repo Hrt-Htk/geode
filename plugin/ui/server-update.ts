@@ -1,4 +1,5 @@
 import { App, Notice } from "obsidian";
+import type { PluginSettings } from "../plumbing/settings-types.ts";
 import {
   fetchServerVersion,
   fetchUpdateStatus,
@@ -11,15 +12,21 @@ import { withAdminToken } from "./admin-token-modal.ts";
 import { ServerUpdateModal } from "./server-update-modal.ts";
 import {
   freshResult,
+  INITIAL_FAILURE_STATE,
+  noteJobStatus,
+  noteUpdateFailure,
+  noteUpdateSuccess,
   noticeDue,
   notRun,
   SERVER_UPDATE_COMMAND,
   type ServerUpdateInput,
   UPDATE_BUTTON,
+  UPDATE_NO_JOB,
   UPDATE_NOTICE,
   UPDATE_TOKEN_MESSAGE,
   UPDATE_TOKEN_TITLE,
   updateExpired,
+  type UpdateFailureState,
   type UpdateOutcome,
   updateOutcome,
 } from "./server-update-logic.ts";
@@ -35,23 +42,24 @@ export type ServerUpdateState =
 /** Everything the run reads from the plugin; the dialog and the Status row render its state. */
 export type ServerUpdateHost = {
   app: App;
-  serverUrl: () => string;
-  deviceToken: () => string;
+  settings: () => Pick<PluginSettings, "serverUrl" | "deviceToken" | "updateNoticeVersion">;
+  saveSettings: () => Promise<void>;
   ownVersion: () => string;
   adminToken: () => string | null;
   setAdminToken: (token: string | null) => void;
-  seenVersion: () => string;
-  rememberSeenVersion: (version: string) => void;
   /** The state changed: re-describe the Status row in place. */
   onChange: () => void;
+  /** #51: the server finished updating; resume sync if it was blocked. */
+  onUpdated: (word: string, version: string) => void;
 };
 
-/** #44: runs one server update and reports it. Dialog-scoped state, plugin-scoped run: closing
- * the dialog hides it, the polling and the row keep going. */
+/** #44/#51: runs one server update and reports it. Dialog-scoped state, plugin-scoped run:
+ * closing the dialog hides it, the polling and the row keep going. */
 export class ServerUpdate {
   state: ServerUpdateState = { kind: "idle" };
   /** A heartbeat younger than three minutes; null until the first read answers. */
   jobInstalled: boolean | null = null;
+  private failure: UpdateFailureState = INITIAL_FAILURE_STATE;
   private modal: ServerUpdateModal | null = null;
   private timer: number | null = null;
   private requestEpoch = 0;
@@ -59,6 +67,10 @@ export class ServerUpdate {
   private lastResultAt = 0;
 
   constructor(private host: ServerUpdateHost) {}
+
+  get lastUpdateFailed(): boolean {
+    return this.failure.failed;
+  }
 
   isRunning(): boolean {
     return this.state.kind === "running";
@@ -70,8 +82,8 @@ export class ServerUpdate {
       own: this.host.ownVersion(),
       server,
       refused,
-      jobInstalled: this.jobInstalled,
       updating: this.isRunning(),
+      lastUpdateFailed: this.failure.failed,
     };
   }
 
@@ -79,15 +91,20 @@ export class ServerUpdate {
   async serverVersionReported(serverVersion: string): Promise<void> {
     await this.refreshJob();
     const own = this.host.ownVersion();
-    if (!noticeDue({ own, server: serverVersion, seenVersion: this.host.seenVersion() })) return;
+    const settings = this.host.settings();
+    if (!noticeDue({ own, server: serverVersion, seenVersion: settings.updateNoticeVersion })) {
+      return;
+    }
     // Remembered on show, not on click: a dismissed notice does not come back every launch.
-    this.host.rememberSeenVersion(own);
+    settings.updateNoticeVersion = own;
+    void this.host.saveSettings();
     this.showNotice();
   }
 
-  /** Re-read the job's heartbeat: the row's control and the notice both depend on it. */
+  /** Re-read the job's heartbeat and last result: the dialog and row both depend on them. */
   async refreshJob(): Promise<void> {
-    const status = await fetchUpdateStatus(this.host.serverUrl(), this.host.deviceToken())
+    const { serverUrl, deviceToken } = this.host.settings();
+    const status = await fetchUpdateStatus(serverUrl, deviceToken)
       .catch((e) => {
         // Unreachable keeps what we knew; the row offers the update that finds out.
         log.warn("server update status failed", { error: formatError(e) });
@@ -95,15 +112,22 @@ export class ServerUpdate {
       });
     if (status === null) return;
     this.jobInstalled = status.installed;
+    this.failure = noteJobStatus(this.failure, status.result);
     this.host.onChange();
   }
 
-  /** The dialog: confirm, then the admin token, then the run. Also the notice's and the
-   * refusal banner's action. */
+  /** The dialog: confirm (or command when no host job), then admin token, then the run. */
   prompt(): void {
     // A run is going: reopen it. Resetting to idle here would orphan it (no polling, no
     // "Updating the server." on the row) and leave a second request one click away.
-    if (this.state.kind !== "running") this.state = { kind: "idle" };
+    if (this.state.kind !== "running") {
+      this.state = this.jobInstalled === false
+        ? {
+          kind: "done",
+          outcome: { text: UPDATE_NO_JOB, showCommand: true, showWhatsNew: true },
+        }
+        : { kind: "idle" };
+    }
     this.openModal();
   }
 
@@ -120,7 +144,7 @@ export class ServerUpdate {
     withAdminToken(
       {
         app: this.host.app,
-        serverUrl: this.host.serverUrl(),
+        serverUrl: this.host.settings().serverUrl,
         getAdminToken: () => this.host.adminToken(),
         setAdminToken: (token) => this.host.setAdminToken(token),
       },
@@ -151,11 +175,12 @@ export class ServerUpdate {
   }
 
   private async run(adminToken: string): Promise<void> {
+    this.requestEpoch = 0;
     this.state = { kind: "running" };
     this.openModal();
     let epoch: number;
     try {
-      epoch = (await requestServerUpdate(this.host.serverUrl(), adminToken)).epoch;
+      epoch = (await requestServerUpdate(this.host.settings().serverUrl, adminToken)).epoch;
     } catch (e) {
       // A rotated admin token answers 401: drop it and ask again rather than ending the run.
       if (isAdminAuthFailure(e)) {
@@ -182,18 +207,24 @@ export class ServerUpdate {
   private async poll(): Promise<void> {
     this.timer = null;
     if (this.state.kind !== "running") return;
+    const { serverUrl, deviceToken } = this.host.settings();
     // Both tolerate the restart: a failed read is one missed tick, not an error.
-    const status = await fetchUpdateStatus(this.host.serverUrl(), this.host.deviceToken())
-      .catch(() => null);
-    const version = await fetchServerVersion(this.host.serverUrl()).catch(() => null);
+    const status = await fetchUpdateStatus(serverUrl, deviceToken).catch(() => null);
+    const version = await fetchServerVersion(serverUrl).catch(() => null);
     // An unload or a reopened run during those reads ends the run this tick belongs to.
     if (this.state.kind !== "running") return;
+    if (status?.result) {
+      this.failure = {
+        ...this.failure,
+        lastResultEpoch: Math.max(this.failure.lastResultEpoch, status.result.epoch),
+      };
+    }
     const result = freshResult(status, this.requestEpoch);
     if (result !== null) this.lastResultAt = Date.now();
     // The word is final, but the line names the version the server runs now: without one the
     // tick waits, and the deadline below still ends the wait.
     if (result !== null && result.word !== "running" && version !== null) {
-      this.finish(updateOutcome(result.word, version));
+      this.finish(updateOutcome(result.word, version), result.word, result.epoch, version);
       return;
     }
     const now = Date.now();
@@ -206,9 +237,22 @@ export class ServerUpdate {
     this.schedulePoll();
   }
 
-  private finish(outcome: UpdateOutcome): void {
+  private finish(
+    outcome: UpdateOutcome,
+    word?: string,
+    resultEpoch?: number,
+    version?: string,
+  ): void {
+    if (outcome.showCommand) {
+      this.failure = noteUpdateFailure(this.failure, this.requestEpoch);
+    } else if (word === "updated" || word === "up-to-date") {
+      this.failure = noteUpdateSuccess(this.failure, resultEpoch ?? 0);
+    }
     this.state = { kind: "done", outcome };
     this.repaint();
+    if (version && (word === "updated" || word === "up-to-date")) {
+      this.host.onUpdated(word, version);
+    }
     // The heartbeat and the result both moved: the row's control follows.
     void this.refreshJob();
   }
@@ -218,10 +262,9 @@ export class ServerUpdate {
     this.host.onChange();
   }
 
-  /** The one time notice: the action only when the job can answer it. */
+  /** The one time notice: opens the dialog (confirm when job is installed, command when not). */
   private showNotice(): void {
     const notice = new Notice(UPDATE_NOTICE, 0);
-    if (this.jobInstalled === false) return;
     const cta = notice.containerEl
       .createDiv({ cls: "notice-button-container" })
       .createDiv({ cls: "notice-cta", text: UPDATE_BUTTON });

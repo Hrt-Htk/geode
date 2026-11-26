@@ -22,8 +22,8 @@ const SERVER_VERSION = packageJson.version;
 const NEWER_PLUGIN = "9.9.9";
 
 const ROW = '[data-testid="geode-settings-server-update"]';
+const PLUGIN_ROW = '[data-testid="geode-settings-plugin-version"]';
 const UPDATE = '[data-testid="geode-settings-update"]';
-const COPY = '[data-testid="geode-settings-update-copy"]';
 const BANNER_UPDATE = '[data-testid="geode-settings-version-update"]';
 const STATUS_ROW = '[data-testid="geode-settings-sync-status"]';
 const NOTICE = ".notice";
@@ -79,11 +79,9 @@ async function dialogsGone(o: ObsidianInstance): Promise<void> {
  * newer side, so the server is the one that has to update. */
 function blockServer(o: ObsidianInstance): Promise<void> {
   return o.eval(`
-    app.plugins.plugins.geode.transport.dispatchEvent(new CustomEvent("blocked", {
-      detail: { server_version: ${JSON.stringify(SERVER_VERSION)}, client_version: ${
+    app.plugins.plugins.geode.transport.enterBlocked(${JSON.stringify(SERVER_VERSION)}, ${
     JSON.stringify(NEWER_PLUGIN)
-  } },
-    }));
+  }, "");
     return true;
   `);
 }
@@ -125,9 +123,13 @@ test("server update: the notice, the row, the confirm, the token, and one result
     }).toMatch(/^Up to date\. Last backup /);
     const row = o.win.locator(ROW);
     await expect(row.locator(".setting-item-description")).toHaveText(
-      `Server ${SERVER_VERSION}, plugin ${NEWER_PLUGIN}.`,
+      `${SERVER_VERSION}. Update available.`,
     );
     await expect(row.locator(UPDATE)).toBeEnabled();
+    await expect(row.locator(UPDATE)).toHaveClass(/mod-cta/);
+    await expect(o.win.locator(PLUGIN_ROW).locator(".setting-item-description")).toContainText(
+      NEWER_PLUGIN,
+    );
     await o.win.locator(".vertical-tab-content").screenshot({
       path: shotPath("44-B1-row-update-desktop.png"),
     });
@@ -145,12 +147,16 @@ test("server update: the notice, the row, the confirm, the token, and one result
     });
     await o.eval(`window.resizeTo(1280, 900); return true;`);
 
-    /* ---- C: the confirm names the blast radius, not a vault count ---- */
+    /* ---- C: the confirm names the blast radius, links What's new, no target version ---- */
     await openDialog(o, () => row.locator(UPDATE).click());
     const modal = dialog(o);
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await expect(modal.locator(".modal-title")).toHaveText("Update the Geode server?");
-    await expect(modal.locator(".geode-confirm-modal p")).toHaveCount(3);
+    await expect(modal.locator(".geode-confirm-modal p")).toHaveCount(4);
+    await expect(modal.locator('[data-testid="geode-update-whats-new"]')).toHaveAttribute(
+      "href",
+      "https://github.com/Hrt-Htk/geode/releases",
+    );
     await o.win.screenshot({ path: shotPath("44-C-confirm-desktop.png") });
 
     /* ---- D: the session's admin token prompt, asked once ---- */
@@ -244,7 +250,7 @@ test("server update: each result word ends the dialog, the token is asked once",
     await dialog(o).locator('[data-testid="geode-update-done"]').click();
     await dialogsGone(o);
 
-    /* E5: a failed run shows the version it is back on, and the command. */
+    /* E5: a failed run shows the version it is back on, the command, and stays on the row. */
     const failed = await run("rolled-back");
     await expect(failed).toHaveText(`The update failed. The server is back on ${SERVER_VERSION}.`);
     await expect(dialog(o).locator(".geode-code-row code")).toHaveText(
@@ -253,6 +259,9 @@ test("server update: each result word ends the dialog, the token is asked once",
     await o.win.screenshot({ path: shotPath("44-E5-result-failed-desktop.png") });
     await dialog(o).locator('[data-testid="geode-update-done"]').click();
     await dialogsGone(o);
+    await expect(row.locator(".setting-item-description")).toHaveText(
+      `${SERVER_VERSION}. Last update failed.`,
+    );
 
     /* E6: a run that never happened, same command. */
     const notRun = await run("no-flock");
@@ -260,6 +269,15 @@ test("server update: each result word ends the dialog, the token is asked once",
     await o.win.screenshot({ path: shotPath("44-E6-result-not-run-desktop.png") });
     await dialog(o).locator('[data-testid="geode-update-done"]').click();
     await dialogsGone(o);
+
+    /* A later successful update clears Last update failed from the row. */
+    const recovered = await run("updated");
+    await expect(recovered).toHaveText(`Server updated to ${SERVER_VERSION}.`);
+    await dialog(o).locator('[data-testid="geode-update-done"]').click();
+    await dialogsGone(o);
+    await expect(row.locator(".setting-item-description")).toHaveText(
+      `${SERVER_VERSION}. Update available.`,
+    );
 
     /* The token was asked for the first run only: the rest ran on the session's copy. */
     expect(await o.eval(`app.plugins.plugins.geode.adminToken`)).toBe("e2e");
@@ -269,7 +287,7 @@ test("server update: each result word ends the dialog, the token is asked once",
   }
 });
 
-test("server update: no job means the command, and a notice without an action", async () => {
+test("server update: no job keeps one Update button, dialog shows the command", async () => {
   test.slow();
   // A heartbeat the job would have written four minutes ago: gone, not installed.
   const { server, o } = await scenario("server-update-no-job", {
@@ -280,28 +298,50 @@ test("server update: no job means the command, and a notice without an action", 
   try {
     const notice = o.win.locator(NOTICE).filter({ hasText: "Server update available." }).first();
     await expect(notice).toBeVisible({ timeout: 20_000 });
-    await expect(notice.locator(NOTICE_CTA)).toHaveCount(0);
+    await expect(notice.locator(NOTICE_CTA)).toHaveText("Update");
     await clearNotices(o);
 
     await openSettingsTab(o);
     const row = o.win.locator(ROW);
     await expect(row.locator(".setting-item-description")).toHaveText(
-      "The update job is not installed. Run the command on the server.",
+      `${SERVER_VERSION}. Update available.`,
     );
-    await expect(row.locator(COPY)).toHaveText("Copy command");
-    await expect(row.locator(UPDATE)).toHaveCount(0);
+    await expect(row.locator(UPDATE)).toBeEnabled();
     await o.win.locator(".vertical-tab-content").screenshot({
       path: shotPath("44-B2-row-no-job-desktop.png"),
     });
-    /* No job anywhere on the screen: the settings row is the only way to the command. */
-    await expect(row.locator(COPY)).toBeEnabled();
+    /* Clicking Update when no job is installed opens the dialog with the command. */
+    await openDialog(o, () => row.locator(UPDATE).click());
+    await expect(dialog(o).locator(".geode-confirm-modal p").first()).toHaveText(
+      "The update job is not installed. Run the command on the server.",
+    );
+    await expect(dialog(o).locator(".geode-code-row code")).toHaveText(
+      "docker compose pull && docker compose up -d",
+    );
+    await expect(dialog(o).locator('[data-testid="geode-update-copy"]')).toBeEnabled();
+    await expect(dialog(o).locator('[data-testid="geode-update-whats-new"]')).toBeVisible();
+    await dialog(o).locator('[data-testid="geode-update-done"]').click();
+    await dialogsGone(o);
+
+    /* #51 (onBlocked): when a refusal arrives without a prior hello_ack, onBlocked refreshes job
+       status so Update on the banner opens the command dialog directly instead of confirm. */
+    await o.eval(`app.plugins.plugins.geode.updater.jobInstalled = null; return true;`);
+    await blockServer(o);
+    await clearNotices(o);
+    await expect.poll(() => o.eval(`app.plugins.plugins.geode.updater.jobInstalled`), {
+      timeout: 15_000,
+    }).toBe(false);
+    await openDialog(o, () => o.win.locator(BANNER_UPDATE).click());
+    await expect(dialog(o).locator(".geode-confirm-modal p").first()).toHaveText(
+      "The update job is not installed. Run the command on the server.",
+    );
   } finally {
     await o.close();
     await server.stop().catch(() => {});
   }
 });
 
-test("server update: matching versions show the version and no control", async () => {
+test("server update: matching versions show Up to date and no control", async () => {
   test.slow();
   const { server, o } = await scenario("server-update-match");
 
@@ -313,7 +353,7 @@ test("server update: matching versions show the version and no control", async (
     await openSettingsTab(o);
     const row = o.win.locator(ROW);
     await expect(row.locator(".setting-item-description")).toHaveText(
-      `Server ${SERVER_VERSION}.`,
+      `${SERVER_VERSION}. Up to date.`,
     );
     await expect(row.locator("button")).toHaveCount(0);
     await o.win.locator(".vertical-tab-content").screenshot({
@@ -325,7 +365,7 @@ test("server update: matching versions show the version and no control", async (
   }
 });
 
-test("server update: a refused server keeps the row to the versions, the banner acts", async () => {
+test("server update: a refused server names the stop, the banner carries Update", async () => {
   test.slow();
   const { server, o } = await scenario("server-update-blocked", {
     pluginVersion: NEWER_PLUGIN,
@@ -337,20 +377,21 @@ test("server update: a refused server keeps the row to the versions, the banner 
     await openSettingsTab(o);
     const banner = o.win.locator('[data-testid="geode-settings-version-banner"]');
     await expect(banner).toBeVisible({ timeout: 10_000 });
+    await expect(banner.locator(".setting-item-name")).toContainText("Sync is stopped");
     await expect(banner.locator(".setting-item-description")).toHaveText(
-      "Update the Geode server, then reload Obsidian.",
+      "The server is too old for this plugin. Update it to sync again.",
     );
     await expect(banner.locator(BANNER_UPDATE)).toHaveText("Update");
     const row = o.win.locator(ROW);
     await expect(row.locator(".setting-item-description")).toHaveText(
-      `Server ${SERVER_VERSION}, plugin ${NEWER_PLUGIN}.`,
+      `${SERVER_VERSION}. Too old for this plugin.`,
     );
     await expect(row.locator("button")).toHaveCount(0);
     await clearNotices(o);
     await o.win.locator(".vertical-tab-content").screenshot({
       path: shotPath("44-B4-blocked-banner-desktop.png"),
     });
-    /* The banner's Update is the way in while the row keeps to the versions. */
+    /* The banner's Update is the way in while the row carries no button. */
     await openDialog(o, () => banner.locator(BANNER_UPDATE).click());
     await expect(dialog(o).locator(".modal-title")).toHaveText("Update the Geode server?");
   } finally {
@@ -390,12 +431,19 @@ test("server update: Update again while a run is going reopens that run, not a n
     await expect(dialog(o).locator('[data-testid="geode-update-confirm"]')).toHaveCount(0);
     expect(await runState(o)).toBe("running");
 
-    /* One result ends that one run. */
+    /* One result ends that one run, clears the block banner, and resumes sync automatically. */
     writeResult(dir, "updated");
     await expect(dialog(o).locator(".geode-confirm-modal p")).toHaveText(
       `Server updated to ${SERVER_VERSION}.`,
       { timeout: 20_000 },
     );
+    await expect(o.win.locator('[data-testid="geode-settings-version-banner"]')).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect.poll(() => o.eval<string>(`app.plugins.plugins.geode.transport?.getState()`), {
+      timeout: 20_000,
+    }).toBe("live");
+    await waitForStatusBar(o.win, "Geode: synced", 20_000);
   } finally {
     await o.close();
     await server.stop().catch(() => {});

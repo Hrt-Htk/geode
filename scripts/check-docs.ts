@@ -194,7 +194,9 @@ export async function checkDocs(root = "."): Promise<Violation[]> {
       tasks?: Record<string, string>;
     }).tasks ?? {},
   ));
-  const docs = [...paths].filter((p) => p.startsWith("docs/") && p.endsWith(".md")).sort();
+  const docs = [...paths].filter((p) =>
+    p.startsWith("docs/") && p.endsWith(".md") && !p.startsWith("docs/releases/")
+  ).sort();
   const skills = [...paths].filter((p) =>
     p.startsWith(".claude/skills/") && p.endsWith("/SKILL.md")
   );
@@ -203,6 +205,7 @@ export async function checkDocs(root = "."): Promise<Violation[]> {
   const roots = [...ROOTS, ...skills, ...templates].filter((p) => paths.has(p));
   const exists = (p: string) =>
     paths.has(p) || GENERATED.some((g) => p === g || p.startsWith(`${g}/`)) ||
+    p === "docs/releases" || p === "docs/releases/X.Y.Z.md" ||
     (/[*{]/.test(p) && [...paths].some((q) => globToRegExp(p).test(q)));
   const found: Violation[] = [];
   const report = (

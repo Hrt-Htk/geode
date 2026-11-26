@@ -1,17 +1,12 @@
 import { assertEquals } from "@std/assert";
-import {
-  blockedCopy,
-  blockedSide,
-  describeVersionHint,
-} from "../../../plugin/sync/version-state.ts";
+import { blockedSide, describeVersionHint } from "../../../plugin/sync/version-state.ts";
+import { blockedCopy } from "../../../plugin/ui/version-copy.ts";
 
-// #625: the blocked state only happens to a client the server refuses: either
+// #625/#51: the blocked state only happens to a client the server refuses: either
 // this plugin is too old, or the refusing server is (and only a server that is
 // behind refuses a newer plugin).
 
 Deno.test("version-state - blockedSide: the refusal reason names the side", () => {
-  // A minimum-version refusal always means the plugin is behind, even when the
-  // server's own version is older (a stale server with a newer minimum).
   assertEquals(
     blockedSide(
       "0.37.5",
@@ -20,8 +15,6 @@ Deno.test("version-state - blockedSide: the refusal reason names the side", () =
     ),
     "plugin",
   );
-  // A protocol refusal compares the two protocol numbers, even when the server
-  // reports a newer version.
   assertEquals(
     blockedSide(
       "0.36.0",
@@ -62,14 +55,13 @@ Deno.test("version-state - blocked copy when the plugin is behind", () => {
   });
 });
 
-Deno.test("version-state - blocked copy when the server is behind", () => {
+Deno.test("version-state - blocked copy when the server is behind (#51)", () => {
   assertEquals(blockedCopy("server"), {
-    title: "Server update required",
-    notice:
-      "The Geode server needs an update to keep syncing. Update the server, then reload Obsidian.",
-    bannerDesc: "Update the Geode server, then reload Obsidian.",
-    tooltip: "Geode: the server needs an update to keep syncing",
-    row: "Update the Geode server to keep syncing.",
+    title: "Sync is stopped",
+    notice: "Sync is stopped. The server is too old for this plugin. Update it to sync again.",
+    bannerDesc: "The server is too old for this plugin. Update it to sync again.",
+    tooltip: "Geode: sync is stopped. Update the server to sync again.",
+    row: "Sync is stopped. Update the server to sync again.",
   });
 });
 

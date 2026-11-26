@@ -354,3 +354,17 @@ Deno.test("checkDocs: generated build output is not a dead path", async () => {
     await Deno.remove(root, { recursive: true });
   }
 });
+
+Deno.test("checkDocs: release notes under docs/releases/ need no covers: or root link", async () => {
+  const root = await Deno.makeTempDir();
+  await Deno.mkdir(`${root}/docs/releases`, { recursive: true });
+  await Deno.writeTextFile(`${root}/deno.json`, `{}`);
+  await Deno.writeTextFile(`${root}/CLAUDE.md`, "index: docs/README.md (`docs/releases/X.Y.Z.md`)");
+  await Deno.writeTextFile(`${root}/docs/README.md`, doc("[]", ""));
+  await Deno.writeTextFile(`${root}/docs/releases/1.0.2.md`, "## Highlights\n- New feature.\n");
+  try {
+    assertEquals(await checkDocs(root), []);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});

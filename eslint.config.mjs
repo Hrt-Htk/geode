@@ -32,7 +32,17 @@ export default defineConfig(
           // names UI text may use and add the plugin's own.
           "obsidianmd/ui/sentence-case": ["warn", {
             enforceCamelCaseLower: true,
-            brands: ["Geode", "Obsidian", "iOS", "iPadOS", "Android", "Windows", "macOS", "Linux"],
+            brands: [
+              "Geode",
+              "Obsidian",
+              "GitHub",
+              "iOS",
+              "iPadOS",
+              "Android",
+              "Windows",
+              "macOS",
+              "Linux",
+            ],
           }],
         },
       },

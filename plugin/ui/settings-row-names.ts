@@ -5,3 +5,4 @@ export const AUTO_LOCK_ROW = "Auto lock after (hours)";
 export const TRASH_RETENTION_ROW = "Trash retention (days)";
 export const DEVELOPER_CONSOLE_ROW = "Developer console";
 export const SYNC_CONFIG_ROW = "Sync config folder";
+export const CHECK_FOR_UPDATES_ROW = "Check for updates";
